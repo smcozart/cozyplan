@@ -1,3 +1,16 @@
+# Normalize line endings on check-in: store text files with LF, check out native.
+* text=auto
+
+# Binary assets — never normalize line endings, diff, or merge them.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.ico  binary
+*.pdf  binary
+*.mov  binary
+
 # Append-only plan event logs: union-merge so concurrent appends from different
 # writers/roles combine cleanly instead of conflicting.
 specs/*.log.ndjson merge=union

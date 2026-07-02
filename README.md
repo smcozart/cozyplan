@@ -141,6 +141,7 @@ A plan is a living artifact many agents (and, soon, many roles) touch over time.
 
 | Command | What it does |
 |---|---|
+| `new` | Scaffold a fresh plan from `templates/plan.html` — stamps every `data-*` anchor + metadata (`status=draft`); refuses to overwrite |
 | `status` | Flip a task/phase marker (`idle`/`wip`/`x`/`f`; `f` requires `--reason`) |
 | `meta` | Set or append a metadata field (`id`/`owner`/`status`, or the append-only lists) |
 | `build-meta` | Append commit + agent + session and stamp `modified` in one call |
@@ -222,8 +223,9 @@ planf3/
 ├── .claude/
 │   ├── settings.json.sample        # opt-in PreToolUse guard + PostToolUse lint hooks
 │   └── skills/planf3/              # the meta-skill itself
-│       ├── SKILL.md                # API, instructions, and the HTML Plan Template
+│       ├── SKILL.md                # API, instructions, and plan-template conventions
 │       ├── templates/
+│       │   ├── plan.html           # the HTML plan template — single source of truth (stamped by plan_tool new)
 │       │   └── role.md             # source template for a project's role files
 │       └── workflows/              # five workflows + one subworkflow
 │           ├── create-plan.md

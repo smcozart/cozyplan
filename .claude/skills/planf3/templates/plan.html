@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plan: {{PLAN_TITLE}}</title>
+</head>
+<body>
+<main>
+
+  <!-- ===== HEADER + UPDATABLE METADATA ===== -->
+  <header>
+    <h1>Plan: {{PLAN_TITLE}}</h1>
+    <details class="meta" data-region="metadata" data-managed="cli">
+      <summary>Metadata</summary>
+      <dl>
+        <dt>schema</dt>       <dd data-meta="schema">1</dd>
+        <dt>id</dt>           <dd data-meta="id">{{PLAN_ID}}</dd>
+        <dt>owner</dt>        <dd data-meta="owner">{{OWNER_ROLE}}</dd>
+        <dt>status</dt>       <dd data-meta="status">draft</dd>
+        <dt>created</dt>      <dd data-meta="created">{{CREATED_ISO}}</dd>
+        <dt>modified</dt>     <dd data-meta="modified">{{MODIFIED_ISO_LIST}}</dd>
+        <dt>commits</dt>      <dd data-meta="commits">{{COMMIT_SHA_LIST}}</dd>
+        <dt>agent name</dt>   <dd data-meta="agent">{{AGENT_NAME_LIST}}</dd>
+        <dt>session id</dt>   <dd data-meta="session">{{SESSION_ID_LIST}}</dd>
+        <dt>back refs</dt>    <dd data-meta="back-refs">{{BACK_REFERENCES}}</dd>
+        <dt>forward refs</dt> <dd data-meta="forward-refs">{{FORWARD_REFERENCES}}</dd>
+      </dl>
+    </details>
+    <!-- Metadata, status markers, and amendments are CLI-managed (data-managed="cli").
+         Never hand-edit them — use PLAN_TOOL (see ## Managed Writes). -->
+  </header>
+
+  <!-- Hero image — synced to the :root visual identity. Replace with <img> once generated. -->
+  <figure>
+    <!-- {{HERO_IMAGE: subject describing the plan at a glance}} -->
+    <figcaption>{{HERO_IMAGE_CAPTION}}</figcaption>
+  </figure>
+
+  <!-- ===== PURPOSE / PROBLEM / SOLUTION ===== -->
+  <section id="purpose">
+    <h2>Purpose</h2>
+    <p>{{PURPOSE}}</p>
+  </section>
+
+  <section id="problem">
+    <h2>Problem</h2>
+    <p>{{PROBLEM}}</p>
+    <figure>
+      <!-- {{PROBLEM_IMAGE: subject visualizing the problem this plan addresses}} -->
+      <figcaption>{{PROBLEM_IMAGE_CAPTION}}</figcaption>
+    </figure>
+  </section>
+
+  <section id="solution">
+    <h2>Solution</h2>
+    <p>{{SOLUTION}}</p>
+    <figure>
+      <!-- {{SOLUTION_IMAGE: subject visualizing the proposed solution}} -->
+      <figcaption>{{SOLUTION_IMAGE_CAPTION}}</figcaption>
+    </figure>
+  </section>
+
+  <!-- ===== RELEVANT FILES ===== -->
+  <section id="files" class="files">
+    <h2>Relevant Files</h2>
+
+    <h3>Existing Files</h3>
+    <ul>
+      <!-- repeat -->
+      <li><span class="tag existing">existing</span> <code>{{EXISTING_FILE_PATH}}</code> — {{WHY_RELEVANT}}</li>
+    </ul>
+
+    <h3>New Files</h3>
+    <ul>
+      <!-- repeat -->
+      <li><span class="tag new">new</span> <code>{{NEW_FILE_PATH}}</code> — {{WHY_NEEDED}}</li>
+    </ul>
+  </section>
+
+  <!-- ===== IMPLEMENTATION PHASES ===== -->
+  <section id="phases">
+    <h2>Implementation Phases</h2>
+    <p><strong>IMPORTANT:</strong> Execute every phase and task step by step, in order, top to bottom.</p>
+    <p>Status markers: <code>[]</code> idle · <code>[wip]</code> in progress · <code>[x]</code> complete · <code>[f]</code> failed (terminal — requires a one-line reason). All start as <code>[]</code>; the Build Plan workflow flips them via <code>PLAN_TOOL status</code> as it works. The <code>data-status-for</code> / <code>data-phase</code> / <code>data-task</code> ids are the anchors the CLI targets — assign them at Create (or run <code>PLAN_TOOL init-ids</code>), numbering tasks <code>&lt;phase&gt;.&lt;task&gt;</code> and phases <code>phase-&lt;n&gt;</code>.</p>
+
+    <!-- repeat: one .phase block per phase. data-phase is sequential (1, 2, …) -->
+    <div class="phase" data-phase="{{PHASE_NUMBER}}">
+      <h3><code class="status" data-status-for="phase-{{PHASE_NUMBER}}">[]</code> Phase {{PHASE_NUMBER}}: {{PHASE_NAME}}</h3>
+      <p>{{PHASE_DESCRIPTION}}</p>
+
+      <!-- Optional focused image for this phase, synced to :root identity -->
+      <figure>
+        <!-- {{PHASE_IMAGE: subject describing this phase's architecture/flow}} -->
+        <figcaption>{{PHASE_IMAGE_CAPTION}}</figcaption>
+      </figure>
+
+      <!-- repeat: one <h4> + checklist per task -->
+      <h4>{{TASK_NUMBER}}. {{TASK_NAME}}</h4>
+      <ul class="checklist">
+        <!-- repeat: data-task is <phase>.<task>, e.g. 1.1, 1.2 -->
+        <li data-task="{{PHASE_NUMBER}}.{{TASK_NUMBER}}"><code class="status" data-status-for="{{PHASE_NUMBER}}.{{TASK_NUMBER}}">[]</code> {{SPECIFIC_ACTION}}</li>
+      </ul>
+
+      <!-- Final task of every phase: Testing Strategy + validation loop -->
+      <h4>{{LAST_TASK_NUMBER}}. Testing Strategy</h4>
+      <p>{{TESTING_APPROACH: technology used to test/validate, including edge cases}}</p>
+      <ul class="checklist">
+        <!-- repeat -->
+        <li data-task="{{PHASE_NUMBER}}.{{LAST_TASK_NUMBER}}"><code class="status" data-status-for="{{PHASE_NUMBER}}.{{LAST_TASK_NUMBER}}">[]</code> <code>{{VALIDATION_COMMAND}}</code> — {{WHAT_IT_PROVES}}</li>
+      </ul>
+      <div class="loop">
+        🔁 <strong>Do not exit this phase until every box above is <code>[x]</code> or <code>[f]</code>.</strong>
+        If a command fails, fix the cause and re-run; loop until it passes. <code>[f]</code> is terminal — only when a box genuinely cannot be made to pass, mark it <code>[f]</code> (with a one-line reason via <code>PLAN_TOOL status … --state f --reason "…"</code>) and move on.
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== GLOBAL VALIDATION ===== -->
+  <section id="validation">
+    <h2>Validation Commands</h2>
+    <p>Execute these commands to validate the entire plan is complete:</p>
+    <ul class="checklist">
+      <!-- repeat: data-task ids for global checks are g.1, g.2, … -->
+      <li data-task="g.{{CHECK_NUMBER}}"><code class="status" data-status-for="g.{{CHECK_NUMBER}}">[]</code> <code>{{VALIDATION_COMMAND}}</code> — {{WHAT_IT_PROVES}}</li>
+    </ul>
+    <div class="loop">
+      🔁 <strong>The plan is not complete until every box is <code>[x]</code> or <code>[f]</code> and every command passes. If a step genuinely cannot be completed, mark it <code>[f]</code> (terminal, with a one-line reason) and move on.</strong>
+    </div>
+  </section>
+
+  <!-- ===== QUESTIONABLES (only include this section if QUESTIONABLE is true) ===== -->
+  <section id="questionables">
+    <h2>Questionables</h2>
+    <!-- Optional image for this section, synced to :root identity -->
+    <figure>
+      <!-- {{QUESTIONABLES_IMAGE: subject visualizing the key open question/risk}} -->
+      <figcaption>{{QUESTIONABLES_IMAGE_CAPTION}}</figcaption>
+    </figure>
+    <!-- repeat: one <details> per questionable decision / assumption / risk -->
+    <details>
+      <summary>{{QUESTIONABLE}}</summary>
+      <p class="qa-answer">{{ASSUMPTION_OR_RATIONALE}}</p>
+    </details>
+  </section>
+
+  <!-- ===== NOTES ===== -->
+  <!-- Open canvas — the planning agent runs free here. There is no fixed shape:
+       use whatever HTML best serves the plan (prose, lists, tables, code blocks,
+       diagrams, callouts, decision logs, alternatives considered, open threads,
+       links, anything). Embed as many image slots as the plan benefits from. -->
+  <section id="notes">
+    <h2>Notes</h2>
+    {{NOTES: free-form. Capture anything that helps the trifecta understand, build,
+      or extend this plan — context, dependencies (new libraries via `uv add`),
+      tradeoffs, rejected approaches, risks, future work, references. Author rich,
+      bespoke HTML as needed.}}
+    <!-- repeat: add as many of these image slots as the notes warrant including the image block below -->
+    <figure>
+      <!-- {{NOTES_IMAGE: subject for a note worth visualizing}} -->
+      <figcaption>{{NOTES_IMAGE_CAPTION}}</figcaption>
+    </figure>
+  </section>
+
+  <!-- ===== AMENDMENTS ===== -->
+  <!-- Running history of changes made AFTER the plan was first executed. Append-only.
+       Populated by the Update Plan and Update References workflows — never edited during Create. -->
+  <section id="amendments" data-region="amendments" data-managed="cli">
+    <h2>Amendments</h2>
+    <!-- CLI-managed: PLAN_TOOL amend/ref/report append <details> entries into the
+         container below, newest at the bottom. Do not hand-edit. -->
+    <div data-amendments-list>
+    </div>
+  </section>
+
+</main>
+</body>
+</html>

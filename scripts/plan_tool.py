@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from datetime import datetime
@@ -193,9 +194,17 @@ def validate_text(path: Path, text: str) -> tuple[list[str], list[str], bool]:
     warns: list[str] = []
     anchored = 'data-meta="' in text
 
+    # Leftover {{}} tokens are expected in a fresh scaffold, so they are only a
+    # warning while status=draft (a `new` scaffold validates clean, exit 0) and a
+    # hard failure once the plan leaves draft — every slot must be filled by then.
+    status = strip_tags(get_meta_raw(text, "status") or "")
     tokens = re.findall(r"\{\{.*?\}\}", text, re.S)
     if tokens:
-        problems.append(f"{len(tokens)} leftover {{{{}}}} placeholder token(s)")
+        msg = f"{len(tokens)} leftover {{{{}}}} placeholder token(s)"
+        if status == "draft":
+            warns.append(msg + " (allowed while status=draft; fill before leaving draft)")
+        else:
+            problems.append(msg)
 
     for m in re.finditer(r'<code\b[^>]*\bclass="status"[^>]*>(.*?)</code>', text, re.S):
         val = m.group(1).strip()
@@ -1095,6 +1104,90 @@ def cmd_rollup(args) -> int:
     return 0
 
 
+# ── new (deterministic plan scaffolding from templates/plan.html) ─────────────
+def template_candidates() -> list[Path]:
+    """Ordered locations to look for templates/plan.html.
+
+    Mirrors how the hooks resolve plan_tool.py: prefer CLAUDE_PLUGIN_ROOT (the
+    bundled plugin), then the project cwd, then this script's own location — each
+    with the in-project `.claude/skills/...` layout and the moved-as-a-unit layout.
+    """
+    rels = [
+        Path(".claude") / "skills" / "planf3" / "templates" / "plan.html",
+        Path("skills") / "planf3" / "templates" / "plan.html",
+        Path("templates") / "plan.html",
+    ]
+    roots: list[Path] = []
+    pr = os.environ.get("CLAUDE_PLUGIN_ROOT")
+    if pr:
+        roots.append(Path(pr))
+    roots.append(Path.cwd())
+    roots.append(Path(__file__).resolve().parent.parent)  # <repo>/scripts/ -> <repo>/
+    seen: list[Path] = []
+    for root in roots:
+        for rel in rels:
+            c = root / rel
+            if c not in seen:
+                seen.append(c)
+    return seen
+
+
+def resolve_template() -> Path | None:
+    for c in template_candidates():
+        if c.exists():
+            return c
+    return None
+
+
+# Structural slots `new` fills; every other {{...}} token is a free-form content
+# slot left for the authoring agent. Numeric slots stamp the one example
+# phase/task/check block (phase 1, tasks 1.1/1.2, global check g.1).
+def _new_substitutions(name: str, args, created: str) -> dict[str, str]:
+    return {
+        "PLAN_TITLE": esc(args.title),
+        "PLAN_ID": esc(name),
+        "OWNER_ROLE": esc(args.owner or ""),
+        "CREATED_ISO": esc(created),
+        "MODIFIED_ISO_LIST": esc(created),
+        "COMMIT_SHA_LIST": "—",
+        "AGENT_NAME_LIST": esc(args.agent) if args.agent else "—",
+        "SESSION_ID_LIST": esc(args.session) if args.session else "—",
+        "BACK_REFERENCES": "—",
+        "FORWARD_REFERENCES": "—",
+        "PHASE_NUMBER": "1",
+        "TASK_NUMBER": "1",
+        "LAST_TASK_NUMBER": "2",
+        "CHECK_NUMBER": "1",
+    }
+
+
+def cmd_new(args) -> int:
+    name = args.name
+    if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name):
+        return fail(f"plan name must be kebab-case (lowercase letters, digits, hyphens): {name!r}")
+    specs = Path(args.specs)
+    path = specs / f"{name}.html"
+    if path.exists():
+        return fail(f"plan already exists: {path} - refusing to overwrite. "
+                    f"Pick a new name, or edit the existing plan in place / via plan_tool.")
+    tmpl = resolve_template()
+    if tmpl is None:
+        looked = "\n  ".join(str(c) for c in template_candidates())
+        return fail("plan template (templates/plan.html) not found. Looked in:\n  " + looked)
+
+    text = read(tmpl)
+    for tok, val in _new_substitutions(name, args, now_iso()).items():
+        text = text.replace("{{" + tok + "}}", val)
+
+    specs.mkdir(parents=True, exist_ok=True)
+    write(path, text)
+    log_event(path, "created", args,
+              {"id": name, "title": args.title, "owner": args.owner or "", "file": path.name})
+    print(f"new: created {path} (id={name}, status=draft) from {tmpl}")
+    self_validate(path, text)
+    return 0
+
+
 # ── argparse wiring ───────────────────────────────────────────────────────────
 def build_parser() -> argparse.ArgumentParser:
     parent = argparse.ArgumentParser(add_help=False)
@@ -1105,6 +1198,13 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="plan_tool", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
+
+    sp = sub.add_parser("new", parents=[parent], help="scaffold a fresh plan from templates/plan.html")
+    sp.add_argument("name", help="kebab-case plan name (also the immutable id and filename stem)")
+    sp.add_argument("--title", required=True, help="human-readable plan title")
+    sp.add_argument("--owner", help="owning role (metadata owner field); empty if omitted")
+    sp.add_argument("--specs", default="specs", help="specs directory (default: specs)")
+    sp.set_defaults(func=cmd_new)
 
     sp = sub.add_parser("status", parents=[parent], help="flip a task/phase status marker")
     sp.add_argument("plan")
