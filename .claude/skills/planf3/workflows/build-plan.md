@@ -6,11 +6,11 @@ Task status markers: `[]` idle · `[wip]` in progress · `[x]` complete · `[f]`
 2. Absorb Context - Read the full plan: all embedded images, the metadata header, and every back reference (depth 1) so you fully understand prior/related work before writing code
 3. Execute Phases - For each phase in order, top to bottom:
    - Announce the phase you are starting
-   - Set the phase and current task marker to `[wip]` in the plan file
+   - Set the phase and current task marker to `[wip]`: `PLAN_TOOL status PLAN_FILE --id <id> --state wip` (ids are `phase-<n>` and `<phase>.<task>`)
    - Implement the task's specific actions
    - Run that phase's Testing Strategy commands; loop on failure until they pass
-   - Mark each task `[x]` when complete or `[f]` if it cannot be made to pass, then move on
+   - Mark each task complete `PLAN_TOOL status PLAN_FILE --id <id> --state x`, or if it cannot be made to pass, `--state f --reason "<one line>"`, then move on
    - Do not start the next phase until the current phase's tasks and tests resolve
-4. Final Validation - Run the global Validation Commands and confirm every box passes
-5. Update Metadata - Append the current ISO timestamp to `modified`, append agent name / session id, and append the relevant commit SHA(s) to the metadata header
+4. Final Validation - Run the global Validation Commands, mark each with `PLAN_TOOL status`, and confirm every box is `[x]` or `[f]`
+5. Update Metadata - Record the build in the metadata header: `PLAN_TOOL build-meta PLAN_FILE --commit <sha> --agent <name> --session <id>` (appends commit/agent/session and stamps `modified`). When the plan is implemented and tests pass, set `PLAN_TOOL meta PLAN_FILE --field status --value built`
 6. Report - Summarize what was built per phase, the final status of every task, and any `[f]` failures that need attention

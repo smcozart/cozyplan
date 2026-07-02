@@ -1,0 +1,29 @@
+{
+  "//": "planf3 plan-write hardening hooks. To activate: merge this into .claude/settings.json (or copy it there). The live file was intentionally NOT written automatically — installing hooks that execute commands requires your explicit approval.",
+  "//guard": "PreToolUse: steers raw Edit/Write of CLI-managed plan regions (status/metadata/amendments) to plan_tool. Fail-open.",
+  "//lint": "PostToolUse: runs plan_tool validate after any write to specs/*.html and reports failures back to the agent. Fail-open.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run \"${CLAUDE_PROJECT_DIR}/scripts/hooks/guard_plan_edit.py\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run \"${CLAUDE_PROJECT_DIR}/scripts/hooks/lint_plan.py\""
+          }
+        ]
+      }
+    ]
+  }
+}

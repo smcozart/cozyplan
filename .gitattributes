@@ -1,0 +1,3 @@
+# Append-only plan event logs: union-merge so concurrent appends from different
+# writers/roles combine cleanly instead of conflicting.
+specs/*.log.ndjson merge=union

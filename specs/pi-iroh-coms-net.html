@@ -185,16 +185,20 @@
   <header>
     <h1>coms-net on iroh</h1>
     <p class="tagline">Reimplement the pi agent communication network as a <strong>serverless, peer-to-peer-to-peer</strong> mesh on <strong>iroh</strong> — one env var, zero servers, zero tokens, full feature parity.</p>
-    <details class="meta">
+    <details class="meta" data-region="metadata" data-managed="cli">
       <summary>Metadata</summary>
       <dl>
-        <dt>created</dt>      <dd>2026-06-16T13:39:57-05:00</dd>
-        <dt>modified</dt>     <dd>2026-06-16T13:39:57-05:00</dd>
-        <dt>commits</dt>      <dd>4235190</dd>
-        <dt>agent name</dt>   <dd>claude-opus-4-8[1m]</dd>
-        <dt>session id</dt>   <dd>planf3-pi-iroh-coms-net</dd>
-        <dt>back refs</dt>    <dd>pi-iroh-coms.md, github:disler/pi-vs-claude-code (extensions/coms-net.ts, scripts/coms-net-server.ts)</dd>
-        <dt>forward refs</dt> <dd>—</dd>
+        <dt>id</dt> <dd data-meta="id">pi-iroh-coms-net</dd>
+        <dt>owner</dt> <dd data-meta="owner">architect</dd>
+        <dt>status</dt> <dd data-meta="status">built</dd>
+        <dt>schema</dt> <dd data-meta="schema">1</dd>
+        <dt>created</dt>      <dd data-meta="created">2026-06-16T13:39:57-05:00</dd>
+        <dt>modified</dt>     <dd data-meta="modified">2026-06-16T13:39:57-05:00, 2026-07-02T16:29:45-05:00</dd>
+        <dt>commits</dt>      <dd data-meta="commits">4235190</dd>
+        <dt>agent name</dt>   <dd data-meta="agent">claude-opus-4-8[1m]</dd>
+        <dt>session id</dt>   <dd data-meta="session">planf3-pi-iroh-coms-net</dd>
+        <dt>back refs</dt>    <dd data-meta="back-refs">../prompts/pi-iroh-coms.md, github:disler/pi-vs-claude-code (extensions/coms-net.ts + scripts/coms-net-server.ts)</dd>
+        <dt>forward refs</dt> <dd data-meta="forward-refs">—</dd>
       </dl>
     </details>
   </header>
@@ -315,8 +319,8 @@
     <p>Status markers: <code>[]</code> idle · <code>[wip]</code> in progress · <code>[x]</code> complete · <code>[f]</code> failed. All start as <code>[]</code>; the Build Plan workflow updates them as it works.</p>
 
     <!-- ───────── PHASE 1 ───────── -->
-    <div class="phase">
-      <h3><code class="status">[]</code> Phase 1: Foundation &amp; iroh gossip proof-of-concept</h3>
+    <div class="phase" data-phase="1">
+      <h3><code class="status" data-status-for="phase-1">[]</code> Phase 1: Foundation &amp; iroh gossip proof-of-concept</h3>
       <p>
         De-risk the single hardest dependency first: confirm two iroh Python nodes can exchange gossip messages on this
         machine. Establish the project skeleton, pin the gossip-capable version, and lock in the static-resource
@@ -330,29 +334,29 @@
 
       <h4>1. Project skeleton &amp; pinned dependency</h4>
       <ul class="checklist">
-        <li><code class="status">[]</code> Create <code>scripts/pyproject.toml</code> declaring <code>requires-python &gt;= 3.10</code> and <code>dependencies = ["iroh==0.35.0"]</code> (1.0 dropped gossip — see Notes/Risks).</li>
-        <li><code class="status">[]</code> Verify the wheel installs on this platform: <code>uv run --with iroh==0.35.0 python -c "import iroh; print(iroh.__file__)"</code>.</li>
-        <li><code class="status">[]</code> Decide IPC = newline-delimited JSON over the sidecar’s stdin/stdout (no ports, no token — the extension owns the child).</li>
+        <li><code class="status" data-status-for="1.1">[]</code> Create <code>scripts/pyproject.toml</code> declaring <code>requires-python &gt;= 3.10</code> and <code>dependencies = ["iroh==0.35.0"]</code> (1.0 dropped gossip — see Notes/Risks).</li>
+        <li><code class="status" data-status-for="1.2">[]</code> Verify the wheel installs on this platform: <code>uv run --with iroh==0.35.0 python -c "import iroh; print(iroh.__file__)"</code>.</li>
+        <li><code class="status" data-status-for="1.3">[]</code> Decide IPC = newline-delimited JSON over the sidecar’s stdin/stdout (no ports, no token — the extension owns the child).</li>
       </ul>
 
       <h4>2. Static-resource primitives</h4>
       <ul class="checklist">
-        <li><code class="status">[]</code> Implement <code>topic_for(project)</code> = <code>hashlib.sha256(f"pi.coms-net.v1.{project}".encode()).digest()</code> (exactly 32 bytes; iroh validates length).</li>
-        <li><code class="status">[]</code> Implement persistent identity: load/create 32-byte secret at <code>~/.pi/coms-net-iroh/identity/&lt;project&gt;.key</code> (mode 0600, <code>os.urandom(32)</code> if absent); pass via <code>NodeOptions.secret_key</code> for a stable <code>NodeId</code>.</li>
-        <li><code class="status">[]</code> Implement the peers-dir rendezvous: write self <code>NodeId</code>/<code>NodeAddr</code> to <code>~/.pi/coms-net-iroh/projects/&lt;project&gt;/peers/&lt;short&gt;.json</code>; read sibling files → bootstrap list for <code>subscribe</code>.</li>
+        <li><code class="status" data-status-for="1.4">[]</code> Implement <code>topic_for(project)</code> = <code>hashlib.sha256(f"pi.coms-net.v1.{project}".encode()).digest()</code> (exactly 32 bytes; iroh validates length).</li>
+        <li><code class="status" data-status-for="1.5">[]</code> Implement persistent identity: load/create 32-byte secret at <code>~/.pi/coms-net-iroh/identity/&lt;project&gt;.key</code> (mode 0600, <code>os.urandom(32)</code> if absent); pass via <code>NodeOptions.secret_key</code> for a stable <code>NodeId</code>.</li>
+        <li><code class="status" data-status-for="1.6">[]</code> Implement the peers-dir rendezvous: write self <code>NodeId</code>/<code>NodeAddr</code> to <code>~/.pi/coms-net-iroh/projects/&lt;project&gt;/peers/&lt;short&gt;.json</code>; read sibling files → bootstrap list for <code>subscribe</code>.</li>
       </ul>
 
       <h4>3. Two-node gossip PoC</h4>
       <ul class="checklist">
-        <li><code class="status">[]</code> Write <code>scripts/iroh_gossip_poc.py</code> modeled on iroh-ffi <code>python/gossip_test.py</code>: <code>iroh.iroh_ffi.uniffi_set_event_loop(asyncio.get_running_loop())</code> first, two <code>Iroh.memory()</code> nodes, cross-seed via <code>add_node_addr</code>, <code>gossip().subscribe(topic, [peer_id], cb)</code>, wait for <code>MessageType.JOINED</code>, broadcast, assert <code>RECEIVED</code> with matching <code>content</code> + <code>delivered_from</code>.</li>
-        <li><code class="status">[]</code> Confirm the receive model: a <code>GossipMessageCallback</code> subclass whose <code>async def on_message(self, msg)</code> pushes to an <code>asyncio.Queue</code> (never block in the callback).</li>
+        <li><code class="status" data-status-for="1.7">[]</code> Write <code>scripts/iroh_gossip_poc.py</code> modeled on iroh-ffi <code>python/gossip_test.py</code>: <code>iroh.iroh_ffi.uniffi_set_event_loop(asyncio.get_running_loop())</code> first, two <code>Iroh.memory()</code> nodes, cross-seed via <code>add_node_addr</code>, <code>gossip().subscribe(topic, [peer_id], cb)</code>, wait for <code>MessageType.JOINED</code>, broadcast, assert <code>RECEIVED</code> with matching <code>content</code> + <code>delivered_from</code>.</li>
+        <li><code class="status" data-status-for="1.8">[]</code> Confirm the receive model: a <code>GossipMessageCallback</code> subclass whose <code>async def on_message(self, msg)</code> pushes to an <code>asyncio.Queue</code> (never block in the callback).</li>
       </ul>
 
       <h4>4. Testing Strategy</h4>
       <p>Run the PoC end-to-end on this machine; a single deterministic script proves the binding, the event loop bridge, topic length, and the JOINED→broadcast→RECEIVED sequence. This is the gate for all later work.</p>
       <ul class="checklist">
-        <li><code class="status">[]</code> <code>uv run scripts/iroh_gossip_poc.py</code> — exits 0 and prints the round-tripped "hello" with the sender NodeId.</li>
-        <li><code class="status">[]</code> <code>uv run python -c "import hashlib; print(len(hashlib.sha256(b'pi.coms-net.v1.default').digest()))"</code> — prints <code>32</code>.</li>
+        <li><code class="status" data-status-for="1.9">[]</code> <code>uv run scripts/iroh_gossip_poc.py</code> — exits 0 and prints the round-tripped "hello" with the sender NodeId.</li>
+        <li><code class="status" data-status-for="1.10">[]</code> <code>uv run python -c "import hashlib; print(len(hashlib.sha256(b'pi.coms-net.v1.default').digest()))"</code> — prints <code>32</code>.</li>
       </ul>
       <div class="loop">
         🔁 <strong>Do not exit this phase until every box above is checked.</strong>
@@ -361,8 +365,8 @@
     </div>
 
     <!-- ───────── PHASE 2 ───────── -->
-    <div class="phase">
-      <h3><code class="status">[]</code> Phase 2: The iroh sidecar — presence + messaging engine</h3>
+    <div class="phase" data-phase="2">
+      <h3><code class="status" data-status-for="phase-2">[]</code> Phase 2: The iroh sidecar — presence + messaging engine</h3>
       <p>
         Build <code>scripts/coms_net_iroh.py</code>: a long-lived process that joins the swarm and re-implements the hub’s
         semantics <em>peer-locally</em>. Every former HTTP route + SSE event becomes either a gossip envelope or a stdio
@@ -376,31 +380,31 @@
 
       <h4>1. Node lifecycle &amp; envelope schema</h4>
       <ul class="checklist">
-        <li><code class="status">[]</code> Boot the node with persisted <code>secret_key</code> + default discovery; subscribe to <code>topic_for(project)</code> with the peers-dir bootstrap list; emit a <code>ready</code> stdio line carrying our <code>NodeId</code>.</li>
-        <li><code class="status">[]</code> Define the gossip envelope: <code>{ v, kind, from, ts, ... }</code> where <code>kind ∈ {presence, presence_bye, prompt, response}</code>; serialize as UTF-8 JSON bytes for <code>sink.broadcast(...)</code>.</li>
-        <li><code class="status">[]</code> Define the stdio line protocol — <strong>in</strong> (extension→sidecar): <code>identity</code>, <code>send</code>, <code>list</code>, <code>get</code>, <code>await</code>, <code>response</code>, <code>shutdown</code>; <strong>out</strong> (sidecar→extension): <code>ready</code>, <code>peer_joined</code>, <code>peer_updated</code>, <code>peer_stale</code>, <code>peer_left</code>, <code>prompt</code>, <code>response</code>, <code>status</code>, <code>error</code>.</li>
+        <li><code class="status" data-status-for="2.1">[]</code> Boot the node with persisted <code>secret_key</code> + default discovery; subscribe to <code>topic_for(project)</code> with the peers-dir bootstrap list; emit a <code>ready</code> stdio line carrying our <code>NodeId</code>.</li>
+        <li><code class="status" data-status-for="2.2">[]</code> Define the gossip envelope: <code>{ v, kind, from, ts, ... }</code> where <code>kind ∈ {presence, presence_bye, prompt, response}</code>; serialize as UTF-8 JSON bytes for <code>sink.broadcast(...)</code>.</li>
+        <li><code class="status" data-status-for="2.3">[]</code> Define the stdio line protocol — <strong>in</strong> (extension→sidecar): <code>identity</code>, <code>send</code>, <code>list</code>, <code>get</code>, <code>await</code>, <code>response</code>, <code>shutdown</code>; <strong>out</strong> (sidecar→extension): <code>ready</code>, <code>peer_joined</code>, <code>peer_updated</code>, <code>peer_stale</code>, <code>peer_left</code>, <code>prompt</code>, <code>response</code>, <code>status</code>, <code>error</code>.</li>
       </ul>
 
       <h4>2. Presence (replaces register + heartbeat + pool snapshot)</h4>
       <ul class="checklist">
-        <li><code class="status">[]</code> Broadcast a <code>presence</code> envelope (the <code>AgentCard</code>: name, purpose, model, color, cwd, project, explicit, started_at, context_used_pct, queue_depth, status) on join and every <code>HEARTBEAT_MS</code> (default 10s).</li>
-        <li><code class="status">[]</code> Maintain a local <code>peers: dict[NodeId, AgentCard]</code>; on each inbound <code>presence</code> upsert + emit <code>peer_joined</code>/<code>peer_updated</code> to the extension (diff to suppress no-op renders, like <code>poolSnapshotKey</code>).</li>
-        <li><code class="status">[]</code> Run the local stale scan: no presence within <code>STALE_AFTER_MS</code> (30s) → <code>peer_stale</code>; within <code>OFFLINE_AFTER_MS</code> (60s) → drop + <code>peer_left</code>. Broadcast <code>presence_bye</code> on clean shutdown.</li>
+        <li><code class="status" data-status-for="2.4">[]</code> Broadcast a <code>presence</code> envelope (the <code>AgentCard</code>: name, purpose, model, color, cwd, project, explicit, started_at, context_used_pct, queue_depth, status) on join and every <code>HEARTBEAT_MS</code> (default 10s).</li>
+        <li><code class="status" data-status-for="2.5">[]</code> Maintain a local <code>peers: dict[NodeId, AgentCard]</code>; on each inbound <code>presence</code> upsert + emit <code>peer_joined</code>/<code>peer_updated</code> to the extension (diff to suppress no-op renders, like <code>poolSnapshotKey</code>).</li>
+        <li><code class="status" data-status-for="2.6">[]</code> Run the local stale scan: no presence within <code>STALE_AFTER_MS</code> (30s) → <code>peer_stale</code>; within <code>OFFLINE_AFTER_MS</code> (60s) → drop + <code>peer_left</code>. Broadcast <code>presence_bye</code> on clean shutdown.</li>
       </ul>
 
       <h4>3. Messaging (send / get / await / response, hops, TTL, inbox)</h4>
       <ul class="checklist">
-        <li><code class="status">[]</code> <code>send</code>: resolve <code>target</code> (peer name → NodeId via the local <code>peers</code> map; ambiguous-name and not-found errors as in the server); mint a ULID <code>msg_id</code>; enforce <code>hops &lt; MAX_HOPS</code> (5) and per-target inbox cap (<code>MAX_INBOX</code> 100); broadcast a <code>prompt</code> envelope carrying <code>target_node</code>; reply to the extension with <code>{ msg_id, target_node }</code>.</li>
-        <li><code class="status">[]</code> Inbound <code>prompt</code>: ignore unless <code>target_node == self</code>; otherwise enqueue + emit a <code>prompt</code> stdio line (the extension turns it into a follow-up turn). Track outbound msg_ids → pending, resolved by matching <code>response</code> (powers <code>get</code>/<code>await</code>).</li>
-        <li><code class="status">[]</code> <code>response</code> from extension: broadcast a <code>response</code> envelope (<code>msg_id</code>, payload, error) addressed back to the original sender NodeId; sender side resolves the pending entry and emits <code>response</code> + terminal <code>status</code>. Enforce message TTL (<code>MESSAGE_TTL_MS</code> 30min) with a local scan → <code>timeout</code>.</li>
+        <li><code class="status" data-status-for="2.7">[]</code> <code>send</code>: resolve <code>target</code> (peer name → NodeId via the local <code>peers</code> map; ambiguous-name and not-found errors as in the server); mint a ULID <code>msg_id</code>; enforce <code>hops &lt; MAX_HOPS</code> (5) and per-target inbox cap (<code>MAX_INBOX</code> 100); broadcast a <code>prompt</code> envelope carrying <code>target_node</code>; reply to the extension with <code>{ msg_id, target_node }</code>.</li>
+        <li><code class="status" data-status-for="2.8">[]</code> Inbound <code>prompt</code>: ignore unless <code>target_node == self</code>; otherwise enqueue + emit a <code>prompt</code> stdio line (the extension turns it into a follow-up turn). Track outbound msg_ids → pending, resolved by matching <code>response</code> (powers <code>get</code>/<code>await</code>).</li>
+        <li><code class="status" data-status-for="2.9">[]</code> <code>response</code> from extension: broadcast a <code>response</code> envelope (<code>msg_id</code>, payload, error) addressed back to the original sender NodeId; sender side resolves the pending entry and emits <code>response</code> + terminal <code>status</code>. Enforce message TTL (<code>MESSAGE_TTL_MS</code> 30min) with a local scan → <code>timeout</code>.</li>
       </ul>
 
       <h4>4. Testing Strategy</h4>
       <p>Drive two sidecars directly over stdio with a Python harness (no pi involved) and assert the full message lifecycle and presence transitions — the sidecar must be correct in isolation before the TS bridge is added.</p>
       <ul class="checklist">
-        <li><code class="status">[]</code> <code>uv run python -m py_compile scripts/coms_net_iroh.py</code> — sidecar compiles.</li>
-        <li><code class="status">[]</code> <code>uv run scripts/test_two_sidecars.py</code> — spawn two sidecars, feed <code>identity</code> + <code>send</code>, assert a <code>prompt</code> arrives at the target and a matching <code>response</code> returns to the sender; assert <code>peer_joined</code> then <code>peer_left</code> after a kill.</li>
-        <li><code class="status">[]</code> Assert hop-limit, ambiguous-target, and TTL-timeout paths each return the correct <code>status</code>/<code>error</code>.</li>
+        <li><code class="status" data-status-for="2.10">[]</code> <code>uv run python -m py_compile scripts/coms_net_iroh.py</code> — sidecar compiles.</li>
+        <li><code class="status" data-status-for="2.11">[]</code> <code>uv run scripts/test_two_sidecars.py</code> — spawn two sidecars, feed <code>identity</code> + <code>send</code>, assert a <code>prompt</code> arrives at the target and a matching <code>response</code> returns to the sender; assert <code>peer_joined</code> then <code>peer_left</code> after a kill.</li>
+        <li><code class="status" data-status-for="2.12">[]</code> Assert hop-limit, ambiguous-target, and TTL-timeout paths each return the correct <code>status</code>/<code>error</code>.</li>
       </ul>
       <div class="loop">
         🔁 <strong>Do not exit this phase until every box above is checked.</strong>
@@ -409,8 +413,8 @@
     </div>
 
     <!-- ───────── PHASE 3 ───────── -->
-    <div class="phase">
-      <h3><code class="status">[]</code> Phase 3: The TS pi extension — identical surface, sidecar-backed</h3>
+    <div class="phase" data-phase="3">
+      <h3><code class="status" data-status-for="phase-3">[]</code> Phase 3: The TS pi extension — identical surface, sidecar-backed</h3>
       <p>
         Write <code>extensions/coms-net-iroh.ts</code> by transplanting <code>coms-net.ts</code> and swapping its
         HTTP/SSE transport for a spawned Python sidecar. Identity resolution, the four tools, the <code>/coms-net</code>
@@ -424,24 +428,24 @@
 
       <h4>1. Sidecar process management (replaces SSE connection)</h4>
       <ul class="checklist">
-        <li><code class="status">[]</code> On <code>session_start</code>, resolve identity exactly as before (CLI <code>--cname/--purpose/--project/--color/--explicit</code> &gt; frontmatter &gt; defaults) and spawn <code>uv run scripts/coms_net_iroh.py</code> as a child; send the <code>identity</code> line.</li>
-        <li><code class="status">[]</code> Parse the sidecar’s newline-JSON stdout; route each event to the existing handlers (<code>peer_*</code> → <code>peerCards</code> + widget; <code>prompt</code> → <code>handleInboundPrompt</code>; <code>response</code>/<code>status</code> → <code>handleInboundResponse</code>).</li>
-        <li><code class="status">[]</code> Respawn-with-backoff if the child exits unexpectedly (mirror <code>scheduleReconnect</code>’s 500ms→10s backoff + the ceiling notify); drop <code>--server-url</code>/<code>--auth-token</code> flags and all token/redaction code.</li>
+        <li><code class="status" data-status-for="3.1">[]</code> On <code>session_start</code>, resolve identity exactly as before (CLI <code>--cname/--purpose/--project/--color/--explicit</code> &gt; frontmatter &gt; defaults) and spawn <code>uv run scripts/coms_net_iroh.py</code> as a child; send the <code>identity</code> line.</li>
+        <li><code class="status" data-status-for="3.2">[]</code> Parse the sidecar’s newline-JSON stdout; route each event to the existing handlers (<code>peer_*</code> → <code>peerCards</code> + widget; <code>prompt</code> → <code>handleInboundPrompt</code>; <code>response</code>/<code>status</code> → <code>handleInboundResponse</code>).</li>
+        <li><code class="status" data-status-for="3.3">[]</code> Respawn-with-backoff if the child exits unexpectedly (mirror <code>scheduleReconnect</code>’s 500ms→10s backoff + the ceiling notify); drop <code>--server-url</code>/<code>--auth-token</code> flags and all token/redaction code.</li>
       </ul>
 
       <h4>2. Tools, command, widget, auto-reply (parity)</h4>
       <ul class="checklist">
-        <li><code class="status">[]</code> Reimplement <code>coms_net_list</code> (sidecar <code>list</code>), <code>coms_net_send</code> (<code>send</code> → returns <code>msg_id</code>), <code>coms_net_get</code> (non-blocking poll of pending), <code>coms_net_await</code> (block on the pending promise / <code>await</code> with timeout) — same descriptions, params, and <code>renderCall</code>/<code>renderResult</code>.</li>
-        <li><code class="status">[]</code> Reinstall the <code>coms-net-pool</code> belowEditor widget (<code>renderPool</code> unchanged) and the <code>/coms-net</code> command (<code>--all</code> toggle explicit, <code>--reconnect</code> → respawn sidecar, <code>--project</code> filter, bare → refresh; replace <code>--server</code> health with <code>--node</code> showing our <code>NodeId</code> + peer count).</li>
-        <li><code class="status">[]</code> Keep <code>agent_end</code> auto-reply: capture the last assistant text, JSON-parse when a <code>response_schema</code> was attached, send a <code>response</code> line for the open inbound <code>msg_id</code>; keep the audit log channel <code>coms-net-log</code> and the <code>coms-net</code> status key.</li>
+        <li><code class="status" data-status-for="3.4">[]</code> Reimplement <code>coms_net_list</code> (sidecar <code>list</code>), <code>coms_net_send</code> (<code>send</code> → returns <code>msg_id</code>), <code>coms_net_get</code> (non-blocking poll of pending), <code>coms_net_await</code> (block on the pending promise / <code>await</code> with timeout) — same descriptions, params, and <code>renderCall</code>/<code>renderResult</code>.</li>
+        <li><code class="status" data-status-for="3.5">[]</code> Reinstall the <code>coms-net-pool</code> belowEditor widget (<code>renderPool</code> unchanged) and the <code>/coms-net</code> command (<code>--all</code> toggle explicit, <code>--reconnect</code> → respawn sidecar, <code>--project</code> filter, bare → refresh; replace <code>--server</code> health with <code>--node</code> showing our <code>NodeId</code> + peer count).</li>
+        <li><code class="status" data-status-for="3.6">[]</code> Keep <code>agent_end</code> auto-reply: capture the last assistant text, JSON-parse when a <code>response_schema</code> was attached, send a <code>response</code> line for the open inbound <code>msg_id</code>; keep the audit log channel <code>coms-net-log</code> and the <code>coms-net</code> status key.</li>
       </ul>
 
       <h4>3. Testing Strategy</h4>
       <p>Validate inside real pi sessions: two agents in the same project must list each other and complete a send→reply round-trip with the operator setting nothing but (optionally) <code>PI_COMS_NET_PROJECT</code>.</p>
       <ul class="checklist">
-        <li><code class="status">[]</code> <code>bun build extensions/coms-net-iroh.ts --target node</code> (or <code>tsc --noEmit</code>) — extension type-checks/builds.</li>
-        <li><code class="status">[]</code> Launch two <code>pi -e extensions/coms-net-iroh.ts --cname planner</code> / <code>--cname worker</code>; confirm each appears in the other’s pool widget and <code>coms_net_list</code> with <strong>zero</strong> URL/token config.</li>
-        <li><code class="status">[]</code> From <code>planner</code>, <code>coms_net_send</code> to <code>worker</code> + <code>coms_net_await</code>; confirm <code>worker</code>’s end-of-turn text returns as the reply.</li>
+        <li><code class="status" data-status-for="3.7">[]</code> <code>bun build extensions/coms-net-iroh.ts --target node</code> (or <code>tsc --noEmit</code>) — extension type-checks/builds.</li>
+        <li><code class="status" data-status-for="3.8">[]</code> Launch two <code>pi -e extensions/coms-net-iroh.ts --cname planner</code> / <code>--cname worker</code>; confirm each appears in the other’s pool widget and <code>coms_net_list</code> with <strong>zero</strong> URL/token config.</li>
+        <li><code class="status" data-status-for="3.9">[]</code> From <code>planner</code>, <code>coms_net_send</code> to <code>worker</code> + <code>coms_net_await</code>; confirm <code>worker</code>’s end-of-turn text returns as the reply.</li>
       </ul>
       <div class="loop">
         🔁 <strong>Do not exit this phase until every box above is checked.</strong>
@@ -450,8 +454,8 @@
     </div>
 
     <!-- ───────── PHASE 4 ───────── -->
-    <div class="phase">
-      <h3><code class="status">[]</code> Phase 4: Parity verification, resilience &amp; docs</h3>
+    <div class="phase" data-phase="4">
+      <h3><code class="status" data-status-for="phase-4">[]</code> Phase 4: Parity verification, resilience &amp; docs</h3>
       <p>
         Prove 1:1 parity against the original, harden the failure modes that change when the substrate becomes p2p, and
         write the operator docs that make the one-step promise real.
@@ -464,22 +468,22 @@
 
       <h4>1. Parity matrix &amp; resilience</h4>
       <ul class="checklist">
-        <li><code class="status">[]</code> Walk the <a href="#parity">parity matrix</a> below; for every original capability confirm an equivalent exists or is consciously dropped with rationale.</li>
-        <li><code class="status">[]</code> Resilience: kill a peer mid-conversation → sender sees <code>timeout</code> at TTL; kill+restart the sidecar → stable <code>NodeId</code> (persisted key) and auto-rejoin; offline-then-online peer reappears via presence.</li>
-        <li><code class="status">[]</code> Confirm the deny-by-default posture: an agent in project <code>A</code> never sees or is addressable by project <code>B</code> (different topic).</li>
+        <li><code class="status" data-status-for="4.1">[]</code> Walk the <a href="#parity">parity matrix</a> below; for every original capability confirm an equivalent exists or is consciously dropped with rationale.</li>
+        <li><code class="status" data-status-for="4.2">[]</code> Resilience: kill a peer mid-conversation → sender sees <code>timeout</code> at TTL; kill+restart the sidecar → stable <code>NodeId</code> (persisted key) and auto-rejoin; offline-then-online peer reappears via presence.</li>
+        <li><code class="status" data-status-for="4.3">[]</code> Confirm the deny-by-default posture: an agent in project <code>A</code> never sees or is addressable by project <code>B</code> (different topic).</li>
       </ul>
 
       <h4>2. Documentation &amp; cross-machine notes</h4>
       <ul class="checklist">
-        <li><code class="status">[]</code> Write <code>extensions/coms-net-iroh.README.md</code>: the single env var, how the topic/identity/peers-dir work, the optional <code>PI_COMS_NET_IROH_BOOTSTRAP</code> (comma-sep NodeIds) escape hatch for cross-machine swarms, and troubleshooting (no peers → check discovery/topic).</li>
-        <li><code class="status">[]</code> Document all env knobs and their defaults (<code>PI_COMS_NET_PROJECT</code>, <code>*_HEARTBEAT_MS</code>, <code>*_MAX_HOPS</code>, <code>*_MESSAGE_TTL_MS</code>, <code>*_STALE_AFTER_MS</code>, <code>*_OFFLINE_AFTER_MS</code>, <code>*_MAX_INBOX</code>) — same names/semantics as the server, minus URL/TOKEN.</li>
+        <li><code class="status" data-status-for="4.4">[]</code> Write <code>extensions/coms-net-iroh.README.md</code>: the single env var, how the topic/identity/peers-dir work, the optional <code>PI_COMS_NET_IROH_BOOTSTRAP</code> (comma-sep NodeIds) escape hatch for cross-machine swarms, and troubleshooting (no peers → check discovery/topic).</li>
+        <li><code class="status" data-status-for="4.5">[]</code> Document all env knobs and their defaults (<code>PI_COMS_NET_PROJECT</code>, <code>*_HEARTBEAT_MS</code>, <code>*_MAX_HOPS</code>, <code>*_MESSAGE_TTL_MS</code>, <code>*_STALE_AFTER_MS</code>, <code>*_OFFLINE_AFTER_MS</code>, <code>*_MAX_INBOX</code>) — same names/semantics as the server, minus URL/TOKEN.</li>
       </ul>
 
       <h4>3. Testing Strategy</h4>
       <p>Final acceptance: a clean-machine run with no prior state reaches a working two-agent conversation using only the default project, and the parity matrix is fully accounted for.</p>
       <ul class="checklist">
-        <li><code class="status">[]</code> Fresh-state run: delete <code>~/.pi/coms-net-iroh/</code>, launch two agents with no env vars, confirm discovery → list → round-trip.</li>
-        <li><code class="status">[]</code> Three-agent relay (<code>peer-to-peer-to-peer</code>): A→B→C forwarding increments <code>hops</code> and the chain halts at <code>MAX_HOPS</code>.</li>
+        <li><code class="status" data-status-for="4.6">[]</code> Fresh-state run: delete <code>~/.pi/coms-net-iroh/</code>, launch two agents with no env vars, confirm discovery → list → round-trip.</li>
+        <li><code class="status" data-status-for="4.7">[]</code> Three-agent relay (<code>peer-to-peer-to-peer</code>): A→B→C forwarding increments <code>hops</code> and the chain halts at <code>MAX_HOPS</code>.</li>
       </ul>
       <div class="loop">
         🔁 <strong>Do not exit this phase until every box above is checked.</strong>
@@ -493,12 +497,12 @@
     <h2>Validation Commands</h2>
     <p>Execute these commands to validate the entire plan is complete:</p>
     <ul class="checklist">
-      <li><code class="status">[]</code> <code>uv run scripts/iroh_gossip_poc.py</code> — the iroh gossip primitive round-trips on this machine.</li>
-      <li><code class="status">[]</code> <code>uv run python -m py_compile scripts/coms_net_iroh.py</code> — the sidecar compiles cleanly.</li>
-      <li><code class="status">[]</code> <code>uv run scripts/test_two_sidecars.py</code> — full send→prompt→response lifecycle + presence join/leave pass at the sidecar layer.</li>
-      <li><code class="status">[]</code> <code>tsc --noEmit -p extensions</code> (or <code>bun build extensions/coms-net-iroh.ts</code>) — the extension type-checks.</li>
-      <li><code class="status">[]</code> Two live <code>pi -e extensions/coms-net-iroh.ts</code> agents in the default project list each other and complete a <code>coms_net_send</code>/<code>coms_net_await</code> round-trip with no URL/token configuration.</li>
-      <li><code class="status">[]</code> Fresh-state run (no <code>~/.pi/coms-net-iroh/</code>, no env vars) reaches a working conversation — proves 1-step / 1-time config.</li>
+      <li><code class="status" data-status-for="4.8">[]</code> <code>uv run scripts/iroh_gossip_poc.py</code> — the iroh gossip primitive round-trips on this machine.</li>
+      <li><code class="status" data-status-for="4.9">[]</code> <code>uv run python -m py_compile scripts/coms_net_iroh.py</code> — the sidecar compiles cleanly.</li>
+      <li><code class="status" data-status-for="4.10">[]</code> <code>uv run scripts/test_two_sidecars.py</code> — full send→prompt→response lifecycle + presence join/leave pass at the sidecar layer.</li>
+      <li><code class="status" data-status-for="4.11">[]</code> <code>tsc --noEmit -p extensions</code> (or <code>bun build extensions/coms-net-iroh.ts</code>) — the extension type-checks.</li>
+      <li><code class="status" data-status-for="4.12">[]</code> Two live <code>pi -e extensions/coms-net-iroh.ts</code> agents in the default project list each other and complete a <code>coms_net_send</code>/<code>coms_net_await</code> round-trip with no URL/token configuration.</li>
+      <li><code class="status" data-status-for="4.13">[]</code> Fresh-state run (no <code>~/.pi/coms-net-iroh/</code>, no env vars) reaches a working conversation — proves 1-step / 1-time config.</li>
     </ul>
     <div class="loop">
       🔁 <strong>The plan is not complete until every box is checked and every command passes. If for some reason a step is not possible to complete, mark it with [f] and move on if possible.</strong>
@@ -572,12 +576,15 @@ sink   = <span class="tok-k">await</span> node.<span class="tok-f">gossip</span>
   </section>
 
   <!-- ===== AMENDMENTS ===== -->
-  <section id="amendments">
+  <section id="amendments" data-region="amendments" data-managed="cli">
     <h2>Amendments</h2>
+    <div data-amendments-list>
     <details class="amend">
       <summary>—  no amendments yet</summary>
       <p>Running history of post-execution changes will be appended here (newest at the bottom) by the Update Plan / Update References workflows.</p>
     </details>
+  
+    </div>
   </section>
 
 </main>

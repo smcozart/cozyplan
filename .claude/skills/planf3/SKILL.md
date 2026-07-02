@@ -21,6 +21,7 @@ AI_DOCS: `AI_DOCS/`
 APP_DOCS: `APP_DOCS/`
 IDE: `code`
 BROWSER: `chrome`
+PLAN_TOOL: `uv run scripts/plan_tool.py` - the deterministic CLI that owns all structured writes to a plan (status, metadata, references, amendments) plus `validate` and `index`
 
 ## Instructions
 
@@ -37,12 +38,44 @@ BROWSER: `chrome`
 - For every diagram, focus on one or two primary ideas. Keep total words shown under ~10 — boxes, arrows, and short labels only. The goal is diagrams that aid the plan and convey the core information for the section they belong to.
 - Build diagrams for professional software engineers to convey exactly what is going to be built. Be sure to center and space them properly.
 - Embed diagrams via the `{{...IMAGE}}` slots. During Create, leave them as commented placeholders noting the intended subject; the Diagram Generation workflow fills them later
-- Populate the metadata header (`created`, `modified`, `commits`, `agent`, `session`, back/forward references) — these are updatable across the plan's lifecycle. Every metadata field except `CREATED_ISO` is a comma-separated list that must only ever be appended to — never overwrite or remove existing entries
+- Populate the metadata header (`schema`, `id`, `owner`, `status`, `created`, `modified`, `commits`, `agent`, `session`, back/forward references) — these are updatable across the plan's lifecycle. `schema`, `id`, and `created` are write-once; `status` is a single value; `modified`/`commits`/`agent`/`session`/back-refs/forward-refs are append-only comma-separated lists. `schema` is the artifact's structural-contract version (currently `1`) — leave it as the template sets it; `PLAN_TOOL` refuses to write a plan stamped newer than it understands. **Never hand-edit the metadata, status markers, or amendments — route every such write through `PLAN_TOOL` (see `## Managed Writes`).** These regions are marked `data-managed="cli"` in the template
+- **Plan `status`** is a single value from a closed vocabulary: `draft` (authored, not started) → `active` (approved / being built) → `built` (implemented, tests pass); plus `superseded` (replaced — must carry a forward ref to its successor) and `archived` (kept for history). Set it with `PLAN_TOOL meta <plan> --field status --value <state>`. Create sets `draft` (or `active`); Build moves `active`→`built`
+- **`id`** is a short immutable slug set once at Create (references and event logs point at it, so it survives renames). **`owner`** is the role that owns the plan (e.g. `architect`, `engineer-<component>`, `ux`); only the owner edits plan content
 - If `QUESTIONABLE` is true, actively surface open questions/assumptions in the toggleable Q&A section rather than silently deciding
 - Ensure the plan is detailed enough that another developer (or agent) could follow it to implement the solution
 - Include code examples or pseudo-code where appropriate to clarify complex concepts
 - Consider edge cases, error handling, and scalability concerns
 - Save the complete plan to `PLAN_FILE` using a descriptive kebab-case filename
+
+## Managed Writes
+
+The plan HTML is a living artifact. Some regions are **CLI-managed** and must never be hand-edited — always go through `PLAN_TOOL` so writes stay deterministic and well-formed. A `PreToolUse` hook blocks raw edits to these regions and a `PostToolUse` hook lints the file after every write.
+
+| Write | Command |
+| --- | --- |
+| Flip a task/phase status marker | `PLAN_TOOL status <plan> --id <id> --state idle\|wip\|x\|f [--reason "…"]` (`--reason` required for `f`) |
+| Append metadata (modified/commits/agent/session) or set id/owner/status | `PLAN_TOOL meta <plan> --field <field> --value <v>` |
+| Record build commit + agent + session at once | `PLAN_TOOL build-meta <plan> --commit <sha> --agent <name> --session <id>` |
+| Add a bidirectional reference between two plans | `PLAN_TOOL ref --this <plan> --other <plan> --dir back\|forward` |
+| Append an amendment | `PLAN_TOOL amend <plan> --summary "…" --detail "…"` |
+| Cross-role report-back | `PLAN_TOOL report <plan> --role <r> --status <s> --summary "…" [--commits sha,…]` |
+| Lint a plan | `PLAN_TOOL validate <plan>` |
+| Assign data-* anchors to an un-anchored/legacy plan | `PLAN_TOOL init-ids <plan>` |
+| Rebuild the specs catalog | `PLAN_TOOL index` |
+| Build the role manifest + CODEOWNERS from `roles/*.md` | `PLAN_TOOL roles build` |
+| Regenerate the architect status dashboard | `PLAN_TOOL rollup [--role <r>]` |
+
+Every mutating command also appends a one-line JSON event to `specs/<plan>.log.ndjson` (the append-only, merge-friendly multi-writer surface) and updates the human-readable HTML. **Free-form regions** — Purpose, Problem, Solution, Notes, Questionables prose, and diagrams — are edited normally. `roles/_roles.json`, `.github/CODEOWNERS`, `specs/_index.*`, and `specs/_status.*` are **generated** aggregates — never hand-edit them; rerun the command that builds them.
+
+### Roles (project-scoped ownership — OPT-IN)
+
+Role mode is **optional and off by default**. It activates only when the user explicitly runs the `Generate Roles` workflow (or a `roles/` directory already exists in the project) — never enable it on your own initiative. Without it, planf3 is a pure planning tool: plans default `owner` to the value the user gives or leave the convention to them, and the guard's role checks stay dormant (fail-open). Role mode earns its keep on team projects with source control — it ties roles to source-control ownership rules and to each role's planning, executing, and logging docs. Users running a custom agentic approach can simply never turn it on.
+
+When role mode is on, each owner is a **role** with one hand-authored source-of-truth file at `roles/<role>.md` (see `templates/role.md`). `PLAN_TOOL roles build` derives the enforcement manifest `roles/_roles.json` + `.github/CODEOWNERS` from those files, requiring role ownership globs to be disjoint. A plan names its role in the `owner` metadata field. The `Generate Roles` workflow scopes a project into roles.
+
+**`PLANF3_ROLE`** — set this env var to the role you are acting as (e.g. `export PLANF3_ROLE=engineer-api`). The `PreToolUse` guard reads it plus `roles/_roles.json` and denies writes to another role's owned paths (fail-open when unset or no manifest). Pass the same value as `--role` on `PLAN_TOOL` calls so events are attributed.
+
+**Role session bootstrap** — when you assume role `R`, read in this order: (1) this `SKILL.md`; (2) `roles/<R>.md` (your mission, DoD, owned globs, report protocol); (3) set `PLANF3_ROLE=<R>`; (4) `specs/_index.html` filtered to `owner=<R>` and `specs/_status.html --role <R>`, opening only the full plan you will work on; (5) `roles/<R>/memory.md` (your durable notes); (6) tail the relevant `specs/<plan>.log.ndjson` for recent reports/status.
 
 ## Workflow
 
@@ -54,6 +87,7 @@ Based on the `USER_PROMPT`, select the single best-matching workflow below and r
 | Update Plan | The prompt asks to change, extend, or revise the content of an existing plan | `workflows/update-plan.md` |
 | Update References | The prompt asks to refresh plan metadata or back/forward references (created, modified, commits, agent, session) | `workflows/update-references.md` |
 | Build Plan | The prompt asks to implement, execute, or carry out the work described in an existing plan | `workflows/build-plan.md` |
+| Generate Roles | The prompt asks to scope a whole project/team into roles, define ownership, or set up who-owns-what (not a single plan) | `workflows/generate-roles.md` |
 
 ### Subworkflow
 
@@ -79,18 +113,24 @@ Called by other workflows rather than selected directly from the `USER_PROMPT`.
   <!-- ===== HEADER + UPDATABLE METADATA ===== -->
   <header>
     <h1>Plan: {{PLAN_TITLE}}</h1>
-    <details class="meta">
+    <details class="meta" data-region="metadata" data-managed="cli">
       <summary>Metadata</summary>
       <dl>
-        <dt>created</dt>      <dd>{{CREATED_ISO}}</dd>
-        <dt>modified</dt>     <dd>{{MODIFIED_ISO_LIST}}</dd>
-        <dt>commits</dt>      <dd>{{COMMIT_SHA_LIST}}</dd>
-        <dt>agent name</dt>        <dd>{{AGENT_NAME_LIST}}</dd>
-        <dt>session id</dt>      <dd>{{SESSION_ID_LIST}}</dd>
-        <dt>back refs</dt>    <dd>{{BACK_REFERENCES}}</dd>
-        <dt>forward refs</dt> <dd>{{FORWARD_REFERENCES}}</dd>
+        <dt>schema</dt>       <dd data-meta="schema">1</dd>
+        <dt>id</dt>           <dd data-meta="id">{{PLAN_ID}}</dd>
+        <dt>owner</dt>        <dd data-meta="owner">{{OWNER_ROLE}}</dd>
+        <dt>status</dt>       <dd data-meta="status">draft</dd>
+        <dt>created</dt>      <dd data-meta="created">{{CREATED_ISO}}</dd>
+        <dt>modified</dt>     <dd data-meta="modified">{{MODIFIED_ISO_LIST}}</dd>
+        <dt>commits</dt>      <dd data-meta="commits">{{COMMIT_SHA_LIST}}</dd>
+        <dt>agent name</dt>   <dd data-meta="agent">{{AGENT_NAME_LIST}}</dd>
+        <dt>session id</dt>   <dd data-meta="session">{{SESSION_ID_LIST}}</dd>
+        <dt>back refs</dt>    <dd data-meta="back-refs">{{BACK_REFERENCES}}</dd>
+        <dt>forward refs</dt> <dd data-meta="forward-refs">{{FORWARD_REFERENCES}}</dd>
       </dl>
     </details>
+    <!-- Metadata, status markers, and amendments are CLI-managed (data-managed="cli").
+         Never hand-edit them — use PLAN_TOOL (see ## Managed Writes). -->
   </header>
 
   <!-- Hero image — synced to the :root visual identity. Replace with <img> once generated. -->
@@ -144,11 +184,11 @@ Called by other workflows rather than selected directly from the `USER_PROMPT`.
   <section id="phases">
     <h2>Implementation Phases</h2>
     <p><strong>IMPORTANT:</strong> Execute every phase and task step by step, in order, top to bottom.</p>
-    <p>Status markers: <code>[]</code> idle · <code>[wip]</code> in progress · <code>[x]</code> complete · <code>[f]</code> failed. All start as <code>[]</code>; the Build Plan workflow updates them as it works.</p>
+    <p>Status markers: <code>[]</code> idle · <code>[wip]</code> in progress · <code>[x]</code> complete · <code>[f]</code> failed (terminal — requires a one-line reason). All start as <code>[]</code>; the Build Plan workflow flips them via <code>PLAN_TOOL status</code> as it works. The <code>data-status-for</code> / <code>data-phase</code> / <code>data-task</code> ids are the anchors the CLI targets — assign them at Create (or run <code>PLAN_TOOL init-ids</code>), numbering tasks <code>&lt;phase&gt;.&lt;task&gt;</code> and phases <code>phase-&lt;n&gt;</code>.</p>
 
-    <!-- repeat: one .phase block per phase -->
-    <div class="phase">
-      <h3><code class="status">[]</code> Phase {{PHASE_NUMBER}}: {{PHASE_NAME}}</h3>
+    <!-- repeat: one .phase block per phase. data-phase is sequential (1, 2, …) -->
+    <div class="phase" data-phase="{{PHASE_NUMBER}}">
+      <h3><code class="status" data-status-for="phase-{{PHASE_NUMBER}}">[]</code> Phase {{PHASE_NUMBER}}: {{PHASE_NAME}}</h3>
       <p>{{PHASE_DESCRIPTION}}</p>
 
       <!-- Optional focused image for this phase, synced to :root identity -->
@@ -160,8 +200,8 @@ Called by other workflows rather than selected directly from the `USER_PROMPT`.
       <!-- repeat: one <h4> + checklist per task -->
       <h4>{{TASK_NUMBER}}. {{TASK_NAME}}</h4>
       <ul class="checklist">
-        <!-- repeat -->
-        <li><code class="status">[]</code> {{SPECIFIC_ACTION}}</li>
+        <!-- repeat: data-task is <phase>.<task>, e.g. 1.1, 1.2 -->
+        <li data-task="{{PHASE_NUMBER}}.{{TASK_NUMBER}}"><code class="status" data-status-for="{{PHASE_NUMBER}}.{{TASK_NUMBER}}">[]</code> {{SPECIFIC_ACTION}}</li>
       </ul>
 
       <!-- Final task of every phase: Testing Strategy + validation loop -->
@@ -169,11 +209,11 @@ Called by other workflows rather than selected directly from the `USER_PROMPT`.
       <p>{{TESTING_APPROACH: technology used to test/validate, including edge cases}}</p>
       <ul class="checklist">
         <!-- repeat -->
-        <li><code class="status">[]</code> <code>{{VALIDATION_COMMAND}}</code> — {{WHAT_IT_PROVES}}</li>
+        <li data-task="{{PHASE_NUMBER}}.{{LAST_TASK_NUMBER}}"><code class="status" data-status-for="{{PHASE_NUMBER}}.{{LAST_TASK_NUMBER}}">[]</code> <code>{{VALIDATION_COMMAND}}</code> — {{WHAT_IT_PROVES}}</li>
       </ul>
       <div class="loop">
-        🔁 <strong>Do not exit this phase until every box above is checked.</strong>
-        If any command fails, fix the cause and re-run — loop until all pass.
+        🔁 <strong>Do not exit this phase until every box above is <code>[x]</code> or <code>[f]</code>.</strong>
+        If a command fails, fix the cause and re-run; loop until it passes. <code>[f]</code> is terminal — only when a box genuinely cannot be made to pass, mark it <code>[f]</code> (with a one-line reason via <code>PLAN_TOOL status … --state f --reason "…"</code>) and move on.
       </div>
     </div>
   </section>
@@ -183,11 +223,11 @@ Called by other workflows rather than selected directly from the `USER_PROMPT`.
     <h2>Validation Commands</h2>
     <p>Execute these commands to validate the entire plan is complete:</p>
     <ul class="checklist">
-      <!-- repeat -->
-      <li><code class="status">[]</code> <code>{{VALIDATION_COMMAND}}</code> — {{WHAT_IT_PROVES}}</li>
+      <!-- repeat: data-task ids for global checks are g.1, g.2, … -->
+      <li data-task="g.{{CHECK_NUMBER}}"><code class="status" data-status-for="g.{{CHECK_NUMBER}}">[]</code> <code>{{VALIDATION_COMMAND}}</code> — {{WHAT_IT_PROVES}}</li>
     </ul>
     <div class="loop">
-      🔁 <strong>The plan is not complete until every box is checked and every command passes. If for some reason a step is not possible to complete, mark it with [f] and move on if possible.</strong>
+      🔁 <strong>The plan is not complete until every box is <code>[x]</code> or <code>[f]</code> and every command passes. If a step genuinely cannot be completed, mark it <code>[f]</code> (terminal, with a one-line reason) and move on.</strong>
     </div>
   </section>
 
@@ -227,13 +267,12 @@ Called by other workflows rather than selected directly from the `USER_PROMPT`.
   <!-- ===== AMENDMENTS ===== -->
   <!-- Running history of changes made AFTER the plan was first executed. Append-only.
        Populated by the Update Plan and Update References workflows — never edited during Create. -->
-  <section id="amendments">
+  <section id="amendments" data-region="amendments" data-managed="cli">
     <h2>Amendments</h2>
-    <!-- repeat: one entry per amendment, newest at the bottom -->
-    <details>
-      <summary>{{AMEND_ISO}} — {{AMEND_SUMMARY}}</summary>
-      <p>{{AMEND_DETAIL: what changed and why}}</p>
-    </details>
+    <!-- CLI-managed: PLAN_TOOL amend/ref/report append <details> entries into the
+         container below, newest at the bottom. Do not hand-edit. -->
+    <div data-amendments-list>
+    </div>
   </section>
 
 </main>
