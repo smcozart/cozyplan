@@ -1,5 +1,5 @@
 {
-  "generated": "2026-07-02T16:31:25-05:00",
+  "as_of": "2026-07-02T16:29:45-05:00",
   "plans": [
     {
       "file": "pi-iroh-coms-net.html",
@@ -8,6 +8,7 @@
       "status": "built",
       "owner": "architect",
       "created": "2026-06-16T13:39:57-05:00",
+      "modified": "2026-07-02T16:29:45-05:00",
       "image_dir": "pi-iroh-coms-net/",
       "back_refs": [
         "../prompts/pi-iroh-coms.md",
