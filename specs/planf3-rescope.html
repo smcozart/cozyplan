@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plan: planf3 Re-scope: Coherence over Compliance</title>
+<style>
+  :root {
+    --bg:        #12100E; --surface: #1A1713; --surface-2: #221E19; --border: #373027;
+    --text:      #EDE8E1; --muted: #B3A99C; --dim: #7A7060;
+    --copper:    #E09B57; --teal: #56B8A8; --amber: #E5C558; --green: #62D08B; --red: #EF7A6D;
+    --radius:    14px;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1200px 600px at 85% -10%, rgba(224,155,87,0.09), transparent 60%),
+      radial-gradient(1000px 500px at -10% 15%, rgba(86,184,168,0.07), transparent 55%),
+      var(--bg);
+    color: var(--text); font-family: var(--sans); line-height: 1.65; font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 920px; margin: 0 auto; padding: 56px 24px 120px; }
+  header h1 {
+    font-size: clamp(1.9rem, 4vw, 2.6rem); line-height: 1.12; margin: 0 0 6px; letter-spacing: -0.02em;
+    background: linear-gradient(100deg, var(--text) 30%, var(--copper) 70%, var(--teal));
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .tagline { color: var(--muted); font-size: 1.05rem; margin: 0 0 18px; }
+  details.meta { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 16px; margin-bottom: 8px; font-size: 0.86rem; }
+  details.meta summary { cursor: pointer; color: var(--copper); font-weight: 600; font-family: var(--mono); letter-spacing: 0.02em; }
+  details.meta dl { display: grid; grid-template-columns: 130px 1fr; gap: 4px 14px; margin: 12px 0 4px; }
+  details.meta dt { color: var(--dim); font-family: var(--mono); font-size: 0.8rem; }
+  details.meta dd { margin: 0; color: var(--muted); font-family: var(--mono); font-size: 0.8rem; word-break: break-word; }
+  section { margin-top: 52px; scroll-margin-top: 24px; }
+  h2 { font-size: 1.6rem; letter-spacing: -0.01em; margin: 0 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  h2::before { content: "▞ "; color: var(--copper); }
+  h3 { font-size: 1.18rem; margin: 26px 0 10px; color: var(--text); }
+  h4 { font-size: 1rem; margin: 20px 0 8px; color: var(--teal); font-family: var(--mono); }
+  p { color: var(--text); }
+  a { color: var(--teal); }
+  figure { margin: 22px 0; text-align: center; }
+  figure img { max-width: 100%; height: auto; border-radius: var(--radius); border: 1px solid var(--border); box-shadow: 0 10px 40px rgba(0,0,0,0.45); }
+  figcaption { color: var(--dim); font-size: 0.82rem; margin-top: 10px; font-style: italic; }
+  code { font-family: var(--mono); font-size: 0.86em; background: var(--surface-2); color: var(--teal); padding: 1px 6px; border-radius: 6px; border: 1px solid var(--border); }
+  pre { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; overflow-x: auto; font-size: 0.84rem; line-height: 1.55; }
+  pre code { background: none; border: none; padding: 0; color: var(--text); }
+  ul, ol { padding-left: 22px; } li { margin: 5px 0; }
+  ul.checklist { list-style: none; padding-left: 4px; } ul.checklist > li { margin: 7px 0; }
+  .tag { font-family: var(--mono); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); vertical-align: middle; }
+  .tag.existing { color: var(--amber); border-color: rgba(229,197,88,0.4); background: rgba(229,197,88,0.08); }
+  .tag.new { color: var(--green); border-color: rgba(98,208,139,0.4); background: rgba(98,208,139,0.08); }
+  .status { font-weight: 700; color: var(--dim); }
+  .phase { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--copper); border-radius: var(--radius); padding: 4px 22px 22px; margin: 22px 0; }
+  .phase h3 { color: var(--text); } .phase h3 .status { margin-right: 6px; }
+  .loop { margin-top: 16px; padding: 12px 16px; background: rgba(86,184,168,0.06); border: 1px solid rgba(86,184,168,0.3); border-radius: 10px; font-size: 0.9rem; color: var(--text); }
+  .callout { margin: 16px 0; padding: 12px 16px; background: rgba(224,155,87,0.06); border: 1px solid rgba(224,155,87,0.35); border-radius: 10px; font-size: 0.92rem; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 0.9rem; }
+  th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: var(--surface-2); color: var(--copper); font-family: var(--mono); font-size: 0.8rem; letter-spacing: 0.03em; }
+  td { background: var(--surface); color: var(--muted); }
+  td strong, td code, li code, p code { color: var(--teal); }
+  .keep { color: var(--green); font-weight: 600; } .cut { color: var(--red); font-weight: 600; } .fix { color: var(--amber); font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+
+  <!-- ===== HEADER + UPDATABLE METADATA ===== -->
+  <header>
+    <h1>Plan: planf3 Re-scope: Coherence over Compliance</h1>
+    <p class="tagline">Make the tool keep every promise it makes: lean into coherence/visibility (which works), stop selling enforcement the architecture can't deliver in-process. Distilled from a five-run effectiveness campaign.</p>
+    <details class="meta" data-region="metadata" data-managed="cli">
+      <summary>Metadata</summary>
+      <dl>
+        <dt>schema</dt>       <dd data-meta="schema">1</dd>
+        <dt>id</dt>           <dd data-meta="id">planf3-rescope</dd>
+        <dt>kind</dt>         <dd data-meta="kind">plan</dd>
+        <dt>owner</dt>        <dd data-meta="owner">architect</dd>
+        <dt>status</dt>       <dd data-meta="status">draft</dd>
+        <dt>created</dt>      <dd data-meta="created">2026-07-03T16:14:32-05:00</dd>
+        <dt>modified</dt>     <dd data-meta="modified">2026-07-03T16:14:32-05:00</dd>
+        <dt>commits</dt>      <dd data-meta="commits">—</dd>
+        <dt>agent name</dt>   <dd data-meta="agent">—</dd>
+        <dt>session id</dt>   <dd data-meta="session">—</dd>
+        <dt>back refs</dt>    <dd data-meta="back-refs">—</dd>
+        <dt>forward refs</dt> <dd data-meta="forward-refs">—</dd>
+        <dt>provides</dt>     <dd data-meta="provides">—</dd>
+        <dt>consumes</dt>     <dd data-meta="consumes">—</dd>
+      </dl>
+    </details>
+    <!-- Metadata, status markers, and amendments are CLI-managed (data-managed="cli").
+         Never hand-edit them — use PLAN_TOOL (see ## Managed Writes). -->
+  </header>
+
+  <!-- Hero image — synced to the :root visual identity. Replace with <img> once generated. -->
+  <figure>
+    <!-- diagram TODO: two columns — "presents as ENFORCEMENT" (guard/protect/checkpoint/accept, red) vs "actually is COHERENCE" (validate/rollup/seam-visibility/CODEOWNERS, green); an arrow re-labels the survivors and demotes the rest -->
+    <figcaption>The re-scope in one image: keep the parts that make incoherence visible; stop pretending the rest enforces anything.</figcaption>
+  </figure>
+
+  <!-- ===== PURPOSE / PROBLEM / SOLUTION ===== -->
+  <section id="purpose">
+    <h2>Purpose</h2>
+    <p>Re-scope planf3 so it keeps every promise it makes. A five-run effectiveness campaign (two solo lifecycles, two guard red-teams, one full roles lifecycle, plus an accidental concurrency test) found a clean split: the <strong>authoring core and the coherence/visibility layer are strong and load-bearing</strong>, while the <strong>compliance-flavored machinery presents as enforcement but degrades to theater under the exact concurrency and multi-agent conditions it targets</strong>. This plan does not add features — it re-labels, re-defaults, and fixes-or-drops claims so the tool's behavior matches its documentation. It is the deliberate answer to the owner's question, "is this doing too much?": yes, and here is the honest smaller shape. <strong>Planning only — no execution until reviewed and approved.</strong></p>
+  </section>
+
+  <section id="problem">
+    <h2>Problem</h2>
+    <p>The tagline is "coherence, not compliance," yet it is precisely the compliance machinery that fails under real use, while the coherence parts survive. Concretely, five independent runs showed:</p>
+    <ul>
+      <li><strong>The integrity guard is defeatable by a determined agent</strong> and status-independent: two red-teams independently reached the same two root causes — it matches on <em>token substrings</em> of edit strings rather than on document <em>regions</em> (so value-only edits, MultiEdit token-splits, and edits inside the amendments block all pass), and it matches on <em>raw path strings</em> rather than the normalized file the OS opens (so on Windows a capitalized <code>SPECS/</code> or a trailing dot walks past both the integrity and role checks). It also can't see <code>Bash</code> writes at all.</li>
+      <li><strong>Protect-mode role denial never fires under multi-agent-in-one-session</strong> — the guard reads <code>PLANF3_ROLE</code> from the hook process (the session), not the acting agent's subshell — so live enforcement only works if you launch one session per role, the opposite of the multi-agent story it sells.</li>
+      <li><strong>The "verified" checkpoint doesn't bind a plan to its own work.</strong> Under concurrency, <code>build-meta</code> captured a <em>foreign</em> housekeeping commit as a plan's verified HEAD; the check only proves the tree is clean, not that this plan's diff is in that commit. Two agents built the same feature, both marked <code>built</code> + checkpoint-tagged, and <code>index</code> reported "clean, no drift."</li>
+      <li><strong>The acceptance queue, change-requests, and drift duplicate what CODEOWNERS + PR review + <code>git blame</code> already give a small team</strong>, while adding an index→rollup→commit choreography with stale-index and dirty-tree foot-guns.</li>
+    </ul>
+    <p>The danger isn't that these features exist — it's that they <em>present as guarantees they don't keep</em>, which is worse than not offering them, because a user relies on a revert point or a role boundary that isn't really there.</p>
+    <figure>
+      <!-- diagram TODO: "the promise vs the reality" — a guard/lock icon labeled "integrity/enforcement" cracking, with four small callouts: capitalized path, value-edit, foreign-commit checkpoint, PLANF3_ROLE-not-seen -->
+      <figcaption>Each enforcement promise, and the concrete condition under which the campaign broke it.</figcaption>
+    </figure>
+  </section>
+
+  <section id="solution">
+    <h2>Solution</h2>
+    <p>Three moves, in priority order. None removes working code the owner may want at the "3+ projects / real team" trigger — the compliance features are <strong>demoted to off-by-default opt-in and re-labeled as visibility</strong>, not deleted, which is reversible and cheap.</p>
+    <ol>
+      <li><strong>Fix or drop the checkpoint "verified" claim (correctness first).</strong> This is the one that undermines a stated pillar — revertible checkpoints. Either bind a checkpoint to a commit that actually contains the plan's own changes, or stop calling it "verified" and present it honestly as an annotated tag over the current HEAD.</li>
+      <li><strong>Re-label the guard as a coherence/lint layer, and make the two cheap real fixes.</strong> A hook can never be tamper-proof (the <code>Bash</code> gap alone guarantees that), so the only honest framing is "keeps an honest agent honest." Normalize paths with <code>Path.resolve()</code> before matching (kills the Windows case / trailing-dot bypasses) and lower-case role-glob matching — cheap wins that make it keep <em>that</em> honest promise. Do not invest in making it a security boundary.</li>
+      <li><strong>Demote the compliance machinery to opt-in visibility.</strong> Flip protect-enforcement, the acceptance queue, change-requests, and <code>PLANF3_ROLE</code>-based drift to off-by-default, and re-document them as "makes incoherence visible in <code>rollup</code>," not "blocks." Keep the two clear wins always-on: the managed-region integrity guard (now honestly labeled) and roles→CODEOWNERS generation.</li>
+    </ol>
+    <figure>
+      <!-- diagram TODO: three stacked priority bands — (1) checkpoint honesty [correctness], (2) guard re-label + path-resolve [cheap fix], (3) demote compliance to opt-in [re-scope] — feeding a smaller "honest tool" box -->
+      <figcaption>Three moves, priority-ordered: fix the correctness claim, re-label + cheaply fix the guard, demote the rest.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ===== RELEVANT FILES ===== -->
+  <section id="files" class="files">
+    <h2>Relevant Files</h2>
+
+    <h3>Existing Files</h3>
+    <ul>
+      <li><span class="tag existing">existing</span> <code>scripts/plan_tool.py</code> — <code>_checkpoint_core</code> / <code>cmd_build_meta</code> (checkpoint honesty, phase 1); <code>cmd_rollup</code> and the compliance sections it renders (demotion, phase 3)</li>
+      <li><span class="tag existing">existing</span> <code>scripts/hooks/guard_plan_edit.py</code> — <code>is_plan_path</code> + <code>_rel_posix</code> + <code>role_denial</code> (path normalization, phase 2); the deny messages (re-label as coherence, phase 2)</li>
+      <li><span class="tag existing">existing</span> <code>scripts/hooks/lint_plan.py</code> — the PostToolUse validator/logger; its framing shifts from "enforcement backstop" to "coherence signal" (phase 2 docs)</li>
+      <li><span class="tag existing">existing</span> <code>.claude/skills/planf3/SKILL.md</code> — the Managed Writes + Roles sections carry the enforcement language that must be re-framed as visibility (phases 2–3)</li>
+      <li><span class="tag existing">existing</span> <code>tests/test_checkpoint.py</code>, <code>tests/test_guard_hook.py</code>, <code>tests/test_roles.py</code> — the enforcement claims under test; each move needs its tests updated to the new honest contract</li>
+      <li><span class="tag existing">existing</span> <code>roles/_roles.json</code> schema (the <code>mode</code> / <code>acceptance</code> fields) — default flips to the off/visibility end (phase 3)</li>
+    </ul>
+
+    <h3>New Files</h3>
+    <ul>
+      <li><span class="tag new">new</span> <em>(likely none)</em> — this is a re-scope: re-label, re-default, fix-or-drop. New tests may be added inline to existing files; no new modules are anticipated. A <code>docs/</code> note on "what planf3 enforces vs. surfaces" may be worth adding in phase 2.</li>
+    </ul>
+  </section>
+
+  <!-- ===== IMPLEMENTATION PHASES ===== -->
+  <section id="phases">
+    <h2>Implementation Phases</h2>
+    <p><strong>IMPORTANT:</strong> Execute every phase and task step by step, in order, top to bottom.</p>
+    <p>Status markers: <code>[]</code> idle · <code>[wip]</code> in progress · <code>[x]</code> complete · <code>[f]</code> failed (terminal — requires a one-line reason). All start as <code>[]</code>; the Build Plan workflow flips them via <code>PLAN_TOOL status</code> as it works. The <code>data-status-for</code> / <code>data-phase</code> / <code>data-task</code> ids are the anchors the CLI targets — assign them at Create (or run <code>PLAN_TOOL init-ids</code>), numbering tasks <code>&lt;phase&gt;.&lt;task&gt;</code> and phases <code>phase-&lt;n&gt;</code>.</p>
+
+    <div class="phase" data-phase="1">
+      <h3><code class="status" data-status-for="phase-1">[]</code> Phase 1: Checkpoint honesty (correctness first)</h3>
+      <p>The highest-stakes item: it's a correctness bug that undermines the "revertible checkpoints" pillar. Today <code>build-meta</code>/<code>checkpoint</code> verify only that the tree is clean, so under concurrency a plan binds to whatever commit is at HEAD — even a foreign one that contains none of the plan's work. Decide between two honest end states and implement one.</p>
+
+      <figure>
+        <!-- diagram TODO: before = plan box -> arrow to a "foreign HEAD" commit (red); after option A = plan box -> commit that contains its own diff (green); after option B = plan box -> plain annotated tag labeled "not verified, just a marker" -->
+        <figcaption>Two honest end states: bind to a commit that truly contains the plan's work, or drop the "verified" word.</figcaption>
+      </figure>
+
+      <h4>1. Decide and implement the checkpoint contract</h4>
+      <ul class="checklist">
+        <li data-task="1.1"><code class="status" data-status-for="1.1">[]</code> Decide: (A) bind a checkpoint to a commit that provably touches the plan's own paths (e.g. verify the plan file / its component paths appear in the commit, or require the plan's latest content to be committed), or (B) drop "verified" and present <code>checkpoint</code> as an annotated tag over current HEAD with no correctness claim</li>
+        <li data-task="1.2"><code class="status" data-status-for="1.2">[]</code> Implement the chosen contract in <code>_checkpoint_core</code> + <code>cmd_build_meta</code>; update the event details and any "verified" wording in output/logs to match what is actually guaranteed</li>
+        <li data-task="1.3"><code class="status" data-status-for="1.3">[]</code> Update SKILL.md's Checkpoints paragraph so the documented guarantee equals the implemented one</li>
+      </ul>
+
+      <h4>2. Testing Strategy</h4>
+      <p>Reproduce the concurrency finding, then prove the new contract holds under it. A regression test that mimics two-agents-one-repo is the key artifact.</p>
+      <ul class="checklist">
+        <li data-task="1.4"><code class="status" data-status-for="1.4">[]</code> Add a test: a plan whose work is NOT in HEAD (foreign commit at HEAD) — option A refuses / flags it; option B tags but makes no verified claim. Prove the old silent-foreign-bind can't recur</li>
+        <li data-task="1.5"><code class="status" data-status-for="1.5">[]</code> <code>uv run --with pytest pytest tests/ -q</code> — full suite green</li>
+      </ul>
+      <div class="loop">
+        🔁 <strong>Do not exit this phase until every box above is <code>[x]</code> or <code>[f]</code>.</strong>
+        If a command fails, fix the cause and re-run; loop until it passes. <code>[f]</code> is terminal — only when a box genuinely cannot be made to pass, mark it <code>[f]</code> (with a one-line reason via <code>PLAN_TOOL status … --state f --reason "…"</code>) and move on.
+      </div>
+    </div>
+
+    <div class="phase" data-phase="2">
+      <h3><code class="status" data-status-for="phase-2">[]</code> Phase 2: Re-label the guard + two cheap real fixes</h3>
+      <p>Stop presenting the guard as tamper-proof integrity — a hook can't be, given the <code>Bash</code> gap. Re-frame it honestly as a coherence/lint layer ("keeps an honest agent honest, steers CLI-managed writes through <code>plan_tool</code>"), and make the two cheap fixes that let it keep <em>that</em> promise on the owner's platform. Explicitly do NOT chase a security boundary.</p>
+
+      <h4>1. Cheap real fixes</h4>
+      <ul class="checklist">
+        <li data-task="2.1"><code class="status" data-status-for="2.1">[]</code> Normalize the target path with <code>Path.resolve()</code> before <code>is_plan_path</code> and role-glob matching, so <code>SPECS/</code>, <code>plan.html.</code> (trailing dot), and other case/format variants that resolve to the same file are treated identically (kills red-team C1/C2/F6)</li>
+        <li data-task="2.2"><code class="status" data-status-for="2.2">[]</code> Make role-glob matching case-insensitive on case-insensitive filesystems (or resolve real casing) so <code>ux</code> can't reach <code>specs/API-foo.html</code> that its <code>specs/api-*</code> glob "misses" (F7)</li>
+      </ul>
+
+      <h4>2. Honest re-labeling</h4>
+      <ul class="checklist">
+        <li data-task="2.3"><code class="status" data-status-for="2.3">[]</code> Rewrite the guard's deny messages and SKILL.md Managed-Writes framing: it enforces artifact <em>coherence</em> against cooperative edits and steers to <code>plan_tool</code>; it is explicitly NOT a tamper-proof boundary (Bash and out-of-tool writes bypass it by design)</li>
+        <li data-task="2.4"><code class="status" data-status-for="2.4">[]</code> Add a short "what planf3 enforces vs. surfaces" note (README or <code>docs/</code>) so users calibrate trust correctly — managed-region integrity + roles→CODEOWNERS are the real always-on wins; everything else is visibility</li>
+        <li data-task="2.5"><code class="status" data-status-for="2.5">[]</code> Explicitly decide NOT to cover Bash writes in the hook (document it as a known, accepted limitation rather than a gap to plug)</li>
+      </ul>
+
+      <h4>3. Testing Strategy</h4>
+      <p>Turn the red-team's confirmed bypasses into regression tests — the ones the re-label makes into "won't-fix by design" get documented, the two we fix get covered.</p>
+      <ul class="checklist">
+        <li data-task="2.6"><code class="status" data-status-for="2.6">[]</code> Add guard tests: capitalized/ trailing-dot path variants are now DENIED where the canonical form is (C1/C2/F6/F7 closed)</li>
+        <li data-task="2.7"><code class="status" data-status-for="2.7">[]</code> <code>uv run --with pytest pytest tests/ -q</code> — full suite green</li>
+      </ul>
+      <div class="loop">
+        🔁 <strong>Do not exit this phase until every box above is <code>[x]</code> or <code>[f]</code>.</strong>
+        If a command fails, fix the cause and re-run; loop until it passes. <code>[f]</code> is terminal — only when a box genuinely cannot be made to pass, mark it <code>[f]</code> (with a one-line reason via <code>PLAN_TOOL status … --state f --reason "…"</code>) and move on.
+      </div>
+    </div>
+
+    <div class="phase" data-phase="3">
+      <h3><code class="status" data-status-for="phase-3">[]</code> Phase 3: Demote compliance machinery to opt-in visibility</h3>
+      <p>Flip the features that duplicate CODEOWNERS + PR review + <code>git blame</code> to off-by-default, and re-document them as "makes incoherence visible in <code>rollup</code>," not "blocks." <strong>Demote, don't delete</strong> — the code stays for the "3+ projects / real team" trigger, but the defaults and language stop over-promising. Keep the two clear wins always-on.</p>
+
+      <figure>
+        <!-- diagram TODO: a "keep always-on" bucket (integrity guard, roles→CODEOWNERS) and an "opt-in visibility, default off" bucket (protect-enforcement, acceptance queue, change-requests, PLANF3_ROLE drift) -->
+        <figcaption>Two always-on wins; the rest becomes opt-in visibility, default off.</figcaption>
+      </figure>
+
+      <h4>1. Re-default and re-frame</h4>
+      <ul class="checklist">
+        <li data-task="3.1"><code class="status" data-status-for="3.1">[]</code> Default <code>mode</code> to the non-blocking end (visibility, no protect denials) and <code>acceptance</code> so no queue gate exists unless explicitly enabled; document that protect-enforcement is opt-in and, honestly, only fires with one-session-per-role</li>
+        <li data-task="3.2"><code class="status" data-status-for="3.2">[]</code> Re-frame acceptance / change-requests / drift in SKILL.md as <code>rollup</code> visibility signals, not gates; note the lighter-weight equivalent (CODEOWNERS + PR review + <code>git blame</code>) for small teams</li>
+        <li data-task="3.3"><code class="status" data-status-for="3.3">[]</code> Keep always-on and clearly labeled as the real wins: the managed-region integrity guard and <code>roles build</code> → CODEOWNERS</li>
+        <li data-task="3.4"><code class="status" data-status-for="3.4">[]</code> Fix the two rollup freshness foot-guns surfaced in the roles run: <code>rollup</code> reads plan status/seam <code>modified</code> from a possibly-stale <code>_index.json</code> — rebuild (or read live) before reporting so pending-acceptance and seam-change flags reflect reality without a manual re-<code>index</code></li>
+      </ul>
+
+      <h4>2. Testing Strategy</h4>
+      <p>Prove the new defaults don't block, the kept wins still work, and rollup is fresh.</p>
+      <ul class="checklist">
+        <li data-task="3.5"><code class="status" data-status-for="3.5">[]</code> Update <code>test_roles.py</code>/<code>test_rollup.py</code> to the new defaults: out-of-the-box no protect denials; integrity guard + CODEOWNERS still enforced/generated; rollup reflects a just-changed status without a separate <code>index</code> call</li>
+        <li data-task="3.6"><code class="status" data-status-for="3.6">[]</code> <code>uv run --with pytest pytest tests/ -q</code> — full suite green</li>
+      </ul>
+      <div class="loop">
+        🔁 <strong>Do not exit this phase until every box above is <code>[x]</code> or <code>[f]</code>.</strong>
+        If a command fails, fix the cause and re-run; loop until it passes. <code>[f]</code> is terminal — only when a box genuinely cannot be made to pass, mark it <code>[f]</code> (with a one-line reason via <code>PLAN_TOOL status … --state f --reason "…"</code>) and move on.
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== GLOBAL VALIDATION ===== -->
+  <section id="validation">
+    <h2>Validation Commands</h2>
+    <p>Execute these commands to validate the entire plan is complete:</p>
+    <ul class="checklist">
+      <li data-task="g.1"><code class="status" data-status-for="g.1">[]</code> <code>uv run --with pytest pytest tests/ -q</code> — full suite green after all three moves</li>
+      <li data-task="g.2"><code class="status" data-status-for="g.2">[]</code> Docs match behavior: every "verified" / "blocks" / "enforces" claim in SKILL.md + README now equals what the code actually does (the whole point of the re-scope)</li>
+      <li data-task="g.3"><code class="status" data-status-for="g.3">[]</code> Re-run the campaign's key probes: checkpoint can't silently bind a foreign commit; capitalized-path guard bypass is closed; out-of-the-box defaults block nothing but still surface incoherence in <code>rollup</code></li>
+      <li data-task="g.4"><code class="status" data-status-for="g.4">[]</code> <code>uv run scripts/plan_tool.py validate specs/planf3-rescope.html</code> — this plan validates clean</li>
+    </ul>
+    <div class="loop">
+      🔁 <strong>The plan is not complete until every box is <code>[x]</code> or <code>[f]</code> and every command passes. If a step genuinely cannot be completed, mark it <code>[f]</code> (terminal, with a one-line reason) and move on.</strong>
+    </div>
+  </section>
+
+  <!-- ===== NOTES ===== -->
+  <!-- Open canvas — the planning agent runs free here. There is no fixed shape:
+       use whatever HTML best serves the plan (prose, lists, tables, code blocks,
+       diagrams, callouts, decision logs, alternatives considered, open threads,
+       links, anything). Embed as many image slots as the plan benefits from. -->
+  <section id="notes">
+    <h2>Notes</h2>
+
+    <div class="callout">
+      <strong>⏸ Status: draft, awaiting the owner's decision.</strong> This plan encodes <strong>fork B</strong> from the effectiveness campaign. It is not approved for execution. The cheap universal fixes (README, <code>meta</code> status gate, <code>brief</code> Windows crash, checkpoint dirty-tree ergonomics) were already applied separately (commit <code>19c403d</code>) because they're safe under any fork; this plan covers only the identity-level re-scope. The owner explicitly retains the option to revert toward the simpler <code>0e63679</code> era instead — see below for why that's not recommended.
+    </div>
+
+    <h3>The keep / fix / demote decision, in one table</h3>
+    <table>
+      <tr><th>Surface</th><th>Verdict</th><th>Why (campaign evidence)</th></tr>
+      <tr><td>Authoring core (new → author → validate → status → build)</td><td class="keep">KEEP always-on</td><td>Independently called the strongest part; both solo agents shipped real features through it</td></tr>
+      <tr><td>Managed-region integrity guard</td><td class="fix">KEEP, re-labeled + 2 fixes</td><td>Real value live vs. cooperative agents; but it's coherence, not a boundary — path bypasses are cheap to close</td></tr>
+      <tr><td>roles → CODEOWNERS generation</td><td class="keep">KEEP always-on</td><td>Highest-leverage role output; correct translation, real PR-review routing, zero runtime ceremony</td></tr>
+      <tr><td>checkpoint / "verified" commit</td><td class="fix">FIX or drop the claim</td><td>Bound a foreign commit under concurrency; undermines the revertible-checkpoints pillar</td></tr>
+      <tr><td>protect-mode denial</td><td class="cut">DEMOTE to opt-in</td><td>Never fires under multi-agent-in-one-session; CODEOWNERS + PR already says "don't touch my files"</td></tr>
+      <tr><td>acceptance queue / change-requests / drift</td><td class="cut">DEMOTE to opt-in</td><td>Duplicate CODEOWNERS + PR review + <code>git blame</code>; add index/commit choreography + foot-guns</td></tr>
+      <tr><td>seams / provides / consumes / ack</td><td class="keep">KEEP (opt-in)</td><td>Genuine value for a real multi-consumer contract; already opt-in and correct</td></tr>
+    </table>
+
+    <h3>Why not revert to <code>0e63679</code></h3>
+    <p>The simpler era predates two keepers — the integrity guard and roles→CODEOWNERS — both of which the campaign validated as real wins. A wholesale revert throws those away to escape machinery that a re-scope can neutralize far more cheaply by changing defaults and language. The problem was never that the operating layer <em>exists</em>; it's that it was <em>sold as enforcement</em> it can't deliver in-process. Re-scoping fixes the mismatch; reverting overcorrects.</p>
+
+    <h3>Guiding principle for execution</h3>
+    <p>Every change in this plan reduces to one test: <strong>does the documentation now describe what the code actually does?</strong> If a phase can't make a claim true cheaply (checkpoint verification, guard tamper-proofing), it drops the claim rather than faking it. "Coherence, not compliance" becomes literally true: the tool makes incoherence <em>visible</em> and steers cooperative writers; it does not pretend to <em>force</em> anything it can't.</p>
+
+    <h3>Deferred / out of scope</h3>
+    <ul>
+      <li><strong>The plugin flip</strong> (<code>specs/plugin-flip.html</code>) is independent and still gated behind its own triggers; this re-scope should land first so the plugin ships the honest tool.</li>
+      <li><strong>The amendment-region mutability and new-file-poisoning findings</strong> (red-team F3/F5) are accepted as inherent to a cooperative-coherence layer once the guard is honestly re-labeled — worth a one-line "known, by design" note, not a fix.</li>
+      <li><strong>MultiEdit token-split (F4b)</strong> — same disposition; a lint layer doesn't need to defeat a determined adversary.</li>
+    </ul>
+  </section>
+
+  <!-- ===== AMENDMENTS ===== -->
+  <!-- Running history of changes made AFTER the plan was first executed. Append-only.
+       Populated by the Update Plan and Update References workflows — never edited during Create. -->
+  <section id="amendments" data-region="amendments" data-managed="cli">
+    <h2>Amendments</h2>
+    <!-- CLI-managed: PLAN_TOOL amend/ref/report append <details> entries into the
+         container below, newest at the bottom. Do not hand-edit. -->
+    <div data-amendments-list>
+    </div>
+  </section>
+
+</main>
+</body>
+</html>
