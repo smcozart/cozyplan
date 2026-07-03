@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plan: planf3 Plugin Flip: Skill to Distributable Plugin</title>
+<style>
+  :root {
+    /* ── Synced visual identity (shared by CSS + generated diagrams) ── */
+    --bg:        #12100E;   /* warm near-black                   */
+    --surface:   #1A1713;   /* raised panels                     */
+    --surface-2: #221E19;   /* nested panels                     */
+    --border:    #373027;   /* hairline borders                  */
+    --text:      #EDE8E1;   /* primary text                      */
+    --muted:     #B3A99C;   /* secondary text                    */
+    --dim:       #7A7060;   /* tertiary text                     */
+    --copper:    #E09B57;   /* primary accent — packaging/ship   */
+    --teal:      #56B8A8;   /* secondary accent — distribution   */
+    --amber:     #E5C558;   /* highlight / warnings              */
+    --green:     #62D08B;   /* success / complete                */
+    --red:       #EF7A6D;   /* failure                           */
+    --radius:    14px;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1200px 600px at 85% -10%, rgba(224,155,87,0.09), transparent 60%),
+      radial-gradient(1000px 500px at -10% 15%, rgba(86,184,168,0.07), transparent 55%),
+      var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.65;
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 920px; margin: 0 auto; padding: 56px 24px 120px; }
+
+  /* ── Header ── */
+  header h1 {
+    font-size: clamp(1.9rem, 4vw, 2.6rem);
+    line-height: 1.12; margin: 0 0 6px; letter-spacing: -0.02em;
+    background: linear-gradient(100deg, var(--text) 30%, var(--copper) 70%, var(--teal));
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .tagline { color: var(--muted); font-size: 1.05rem; margin: 0 0 18px; }
+
+  details.meta {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 10px 16px; margin-bottom: 8px;
+    font-size: 0.86rem;
+  }
+  details.meta summary {
+    cursor: pointer; color: var(--copper); font-weight: 600;
+    font-family: var(--mono); letter-spacing: 0.02em;
+  }
+  details.meta dl { display: grid; grid-template-columns: 130px 1fr; gap: 4px 14px; margin: 12px 0 4px; }
+  details.meta dt { color: var(--dim); font-family: var(--mono); font-size: 0.8rem; }
+  details.meta dd { margin: 0; color: var(--muted); font-family: var(--mono); font-size: 0.8rem; word-break: break-word; }
+
+  /* ── Sections ── */
+  section { margin-top: 52px; scroll-margin-top: 24px; }
+  h2 {
+    font-size: 1.6rem; letter-spacing: -0.01em; margin: 0 0 14px;
+    padding-bottom: 8px; border-bottom: 1px solid var(--border);
+  }
+  h2::before { content: "▞ "; color: var(--copper); }
+  h3 { font-size: 1.18rem; margin: 26px 0 10px; color: var(--text); }
+  h4 { font-size: 1rem; margin: 20px 0 8px; color: var(--teal); font-family: var(--mono); }
+  p { color: var(--text); }
+  a { color: var(--teal); }
+
+  /* ── Figures / images ── */
+  figure { margin: 22px 0; text-align: center; }
+  figure img {
+    max-width: 100%; height: auto; border-radius: var(--radius);
+    border: 1px solid var(--border); box-shadow: 0 10px 40px rgba(0,0,0,0.45);
+  }
+  figcaption { color: var(--dim); font-size: 0.82rem; margin-top: 10px; font-style: italic; }
+
+  /* ── Code ── */
+  code {
+    font-family: var(--mono); font-size: 0.86em;
+    background: var(--surface-2); color: var(--teal);
+    padding: 1px 6px; border-radius: 6px; border: 1px solid var(--border);
+  }
+  pre {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px 18px; overflow-x: auto;
+    font-size: 0.84rem; line-height: 1.55;
+  }
+  pre code { background: none; border: none; padding: 0; color: var(--text); }
+
+  /* ── Lists ── */
+  ul, ol { padding-left: 22px; }
+  li { margin: 5px 0; }
+  ul.checklist { list-style: none; padding-left: 4px; }
+  ul.checklist > li { margin: 7px 0; }
+
+  /* ── Tags ── */
+  .tag {
+    font-family: var(--mono); font-size: 0.68rem; text-transform: uppercase;
+    letter-spacing: 0.06em; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid var(--border); vertical-align: middle;
+  }
+  .tag.existing { color: var(--amber); border-color: rgba(229,197,88,0.4); background: rgba(229,197,88,0.08); }
+  .tag.new { color: var(--green); border-color: rgba(98,208,139,0.4); background: rgba(98,208,139,0.08); }
+
+  .status { font-weight: 700; color: var(--dim); }
+
+  /* ── Phase blocks ── */
+  .phase {
+    background: var(--surface); border: 1px solid var(--border);
+    border-left: 3px solid var(--copper); border-radius: var(--radius);
+    padding: 4px 22px 22px; margin: 22px 0;
+  }
+  .phase h3 { color: var(--text); }
+  .phase h3 .status { margin-right: 6px; }
+
+  .loop {
+    margin-top: 16px; padding: 12px 16px;
+    background: rgba(86,184,168,0.06); border: 1px solid rgba(86,184,168,0.3);
+    border-radius: 10px; font-size: 0.9rem; color: var(--text);
+  }
+  .callout {
+    margin: 16px 0; padding: 12px 16px;
+    background: rgba(224,155,87,0.06); border: 1px solid rgba(224,155,87,0.35);
+    border-radius: 10px; font-size: 0.92rem;
+  }
+
+  /* ── Tables ── */
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 0.9rem; }
+  th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: var(--surface-2); color: var(--copper); font-family: var(--mono); font-size: 0.8rem; letter-spacing: 0.03em; }
+  td { background: var(--surface); color: var(--muted); }
+  td strong, td code, li code, p code { color: var(--teal); }
+</style>
+</head>
+<body>
+<main>
+
+  <!-- ===== HEADER + UPDATABLE METADATA ===== -->
+  <header>
+    <h1>Plan: planf3 Plugin Flip: Skill to Distributable Plugin</h1>
+    <p class="tagline">One <code>/plugin install</code> replaces three manual steps — machinery ships centrally, plan artifacts stay in each project's repo.</p>
+    <details class="meta" data-region="metadata" data-managed="cli">
+      <summary>Metadata</summary>
+      <dl>
+        <dt>schema</dt>       <dd data-meta="schema">1</dd>
+        <dt>id</dt>           <dd data-meta="id">plugin-flip</dd>
+        <dt>kind</dt>         <dd data-meta="kind">plan</dd>
+        <dt>owner</dt>        <dd data-meta="owner">architect</dd>
+        <dt>status</dt>       <dd data-meta="status">draft</dd>
+        <dt>created</dt>      <dd data-meta="created">2026-07-03T14:47:24-05:00</dd>
+        <dt>modified</dt>     <dd data-meta="modified">2026-07-03T14:47:24-05:00</dd>
+        <dt>commits</dt>      <dd data-meta="commits">—</dd>
+        <dt>agent name</dt>   <dd data-meta="agent">—</dd>
+        <dt>session id</dt>   <dd data-meta="session">—</dd>
+        <dt>back refs</dt>    <dd data-meta="back-refs">—</dd>
+        <dt>forward refs</dt> <dd data-meta="forward-refs">—</dd>
+        <dt>provides</dt>     <dd data-meta="provides">—</dd>
+        <dt>consumes</dt>     <dd data-meta="consumes">—</dd>
+      </dl>
+    </details>
+    <!-- Metadata, status markers, and amendments are CLI-managed (data-managed="cli").
+         Never hand-edit them — use PLAN_TOOL (see ## Managed Writes). -->
+  </header>
+
+  <!-- Hero image — synced to the :root visual identity. Replace with <img> once generated. -->
+  <figure>
+    <!-- {{HERO_IMAGE: the flip at a glance — ".claude/skills + settings merge" box transforming into a "planf3 plugin" box containing skill / commands / hooks / scripts, with an arrow to N project repos holding only specs/ artifacts}} -->
+    <figcaption>The flip at a glance: one installable plugin carries all the machinery; every project keeps only its living artifacts.</figcaption>
+  </figure>
+
+  <!-- ===== PURPOSE / PROBLEM / SOLUTION ===== -->
+  <section id="purpose">
+    <h2>Purpose</h2>
+    <p>Migrate planf3 from a project-local Claude Code Agent Skill (plus a hand-merged hook config) into a single distributable Claude Code <strong>plugin</strong>: skill, slash commands, deterministic CLI, and enforcement hooks all arrive together via <code>/plugin install planf3</code>, update centrally via <code>/plugin update</code>, and operate on any project's <code>specs/</code> unchanged. This plan is authored from the existing packaging design (<em>plugin-path-design.md</em>) and covers the mechanical flip only — <strong>execution is deliberately deferred</strong> until a flip trigger fires (see <a href="#notes">Notes</a>).</p>
+  </section>
+
+  <section id="problem">
+    <h2>Problem</h2>
+    <p>Installing planf3 into a project today takes three manual steps, and the worst one is blocked for agents: copy <code>.claude/skills/planf3</code> into the project, copy <code>scripts/</code>, then hand-merge <code>.claude/settings.json.sample</code> into the live <code>settings.json</code> — agents are permission-blocked from writing live settings, and humans get the merge subtly wrong. Because the machinery is copied per project, there is no central update path: fixes to <code>plan_tool.py</code> or the hooks drift across projects, a team cannot converge on one version, and a hand-copied skill sitting beside a newer copy can double-trigger or diverge. The root cause is that <strong>machinery</strong> (versioned tooling) and <strong>artifacts</strong> (each project's living plans) are tangled in one tree.</p>
+    <figure>
+      <!-- {{PROBLEM_IMAGE: today's install — three manual copy/merge arrows from the planf3 repo into a project, the settings.json merge arrow marked blocked/red}} -->
+      <figcaption>Today's install: three manual steps per project — the settings merge is agent-blocked and error-prone.</figcaption>
+    </figure>
+  </section>
+
+  <section id="solution">
+    <h2>Solution</h2>
+    <p>One load-bearing split drives everything: <strong>machinery ships in the plugin; artifacts stay project-local.</strong> This repo becomes the plugin repo — a <code>.claude-plugin/plugin.json</code> manifest, <code>skills/planf3/</code> (moved verbatim), <code>commands/</code> holding three thin wrappers (<code>/planf3:role</code>, <code>/planf3:rollup</code>, <code>/planf3:index</code>), <code>hooks/hooks.json</code> wiring the existing guard/lint scripts via <code>${CLAUDE_PLUGIN_ROOT}</code>, and <code>scripts/</code> exactly where it already sits. Hooks install <em>with</em> the plugin, so the settings-merge step disappears entirely. Every artifact — <code>specs/*.html</code>, image dirs, <code>*.log.ndjson</code>, <code>specs/_index.*</code>, <code>roles/</code> — stays in each project's repo, resolved from the project root. The planning flow itself <strong>stays a skill</strong> (model-invoked, description-triggered); only deterministic operations become commands.</p>
+    <p>The seams that make this flip mechanical are <strong>already landed on <code>main</code></strong>: <code>plan_tool.py</code> is path-agnostic (every command takes explicit paths), both hook scripts <em>and</em> the CLI's template lookup already resolve via <code>CLAUDE_PLUGIN_ROOT</code> with a <code>cwd/scripts</code> fallback (which also preserves the standalone / non-Claude mode), and every plan carries a write-once <code>schema</code> stamp decoupling artifact structure from plugin version. Net result: <strong>the flip requires zero Python changes</strong> — it is moves, small JSON files, three command wrappers, and a verification pass.</p>
+    <figure>
+      <!-- {{SOLUTION_IMAGE: the machinery-vs-artifacts split — one "planf3 plugin" box (skill, commands, hooks, CLI) with a CLAUDE_PLUGIN_ROOT arrow, fanned out to project repos (specs/, roles/) with a CLAUDE_PROJECT_DIR arrow}} -->
+      <figcaption>The load-bearing split: versioned machinery in the plugin (central updates), living artifacts in each project's git.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ===== RELEVANT FILES ===== -->
+  <section id="files" class="files">
+    <h2>Relevant Files</h2>
+
+    <h3>Existing Files</h3>
+    <ul>
+      <li><span class="tag existing">existing</span> <code>scripts/plan_tool.py</code> — the deterministic CLI; already path-agnostic (every command takes explicit paths, <code>index</code> takes <code>--specs</code>) and its template lookup already prefers <code>CLAUDE_PLUGIN_ROOT</code>; ships in the plugin unchanged</li>
+      <li><span class="tag existing">existing</span> <code>scripts/hooks/guard_plan_edit.py</code> — PreToolUse integrity/role guard; already resolves <code>plan_tool.py</code> via <code>CLAUDE_PLUGIN_ROOT</code> with a <code>cwd/scripts</code> fallback — no code change needed</li>
+      <li><span class="tag existing">existing</span> <code>scripts/hooks/lint_plan.py</code> — PostToolUse auto-validate + activity logging; same resolution seam already landed — no code change needed</li>
+      <li><span class="tag existing">existing</span> <code>.claude/skills/planf3/</code> (SKILL.md, workflows/, templates/) — the skill content; moves verbatim to <code>skills/planf3/</code></li>
+      <li><span class="tag existing">existing</span> <code>.claude/settings.json.sample</code> — the hand-merge pain point; converted to <code>hooks/hooks.json</code>, then deleted</li>
+      <li><span class="tag existing">existing</span> <code>specs/pi-iroh-coms-net.html</code> + <code>specs/pi-iroh-coms-net/</code> + <code>specs/pi-iroh-coms-net.log.ndjson</code> — demo plan; relocates to <code>examples/</code> so the plugin repo's <code>specs/</code> holds only its own live plans</li>
+      <li><span class="tag existing">existing</span> <code>tests/</code> — the 92-test regression suite; must pass unchanged after every move</li>
+      <li><span class="tag existing">existing</span> <code>.gitattributes</code> — <code>merge=union</code> for <code>*.log.ndjson</code>; stays, and the README documents it as per-project setup</li>
+      <li><span class="tag existing">existing</span> <code>README.md</code> — install story rewritten around <code>/plugin marketplace add</code> → <code>/plugin install</code> → <code>/plugin update</code></li>
+    </ul>
+
+    <h3>New Files</h3>
+    <ul>
+      <li><span class="tag new">new</span> <code>.claude-plugin/plugin.json</code> — plugin manifest: name <code>planf3</code>, SemVer version, description, author</li>
+      <li><span class="tag new">new</span> <code>.claude-plugin/marketplace.json</code> — the plugin repo doubles as its own marketplace (<code>/plugin marketplace add &lt;git-url&gt;</code>)</li>
+      <li><span class="tag new">new</span> <code>hooks/hooks.json</code> — PreToolUse guard + PostToolUse lint wired via <code>${CLAUDE_PLUGIN_ROOT}</code>; replaces the settings sample</li>
+      <li><span class="tag new">new</span> <code>commands/index.md</code> — <code>/planf3:index</code>, a one-liner over <code>plan_tool index</code></li>
+      <li><span class="tag new">new</span> <code>commands/rollup.md</code> — <code>/planf3:rollup</code>, regenerates the architect dashboard (<code>plan_tool rollup [--role]</code>)</li>
+      <li><span class="tag new">new</span> <code>commands/role.md</code> — <code>/planf3:role assume|generate|list</code>, the explicit role entry point</li>
+      <li><span class="tag new">new</span> <code>examples/pi-iroh-coms-net/</code> — relocated demo plan kept as reference material</li>
+    </ul>
+  </section>
+
+  <!-- ===== IMPLEMENTATION PHASES ===== -->
+  <section id="phases">
+    <h2>Implementation Phases</h2>
+    <p><strong>IMPORTANT:</strong> Execute every phase and task step by step, in order, top to bottom.</p>
+    <p>Status markers: <code>[]</code> idle · <code>[wip]</code> in progress · <code>[x]</code> complete · <code>[f]</code> failed (terminal — requires a one-line reason). All start as <code>[]</code>; the Build Plan workflow flips them via <code>PLAN_TOOL status</code> as it works. The <code>data-status-for</code> / <code>data-phase</code> / <code>data-task</code> ids are the anchors the CLI targets — assign them at Create (or run <code>PLAN_TOOL init-ids</code>), numbering tasks <code>&lt;phase&gt;.&lt;task&gt;</code> and phases <code>phase-&lt;n&gt;</code>.</p>
+
+    <div class="phase" data-phase="1">
+      <h3><code class="status" data-status-for="phase-1">[]</code> Phase 1: Restructure into plugin form</h3>
+      <p>Pure mechanical moves plus two small JSON files. The skill content, CLI, and hook scripts are reused byte-for-byte — the <code>CLAUDE_PLUGIN_ROOT</code> seams already landed mean <strong>no Python changes at all</strong>. The template lookup in <code>plan_tool.py</code> already lists <code>skills/planf3/templates/plan.html</code> as a candidate, so the skill move is invisible to <code>plan_tool new</code>.</p>
+
+      <figure>
+        <!-- {{PHASE_IMAGE: before/after directory tree — .claude/skills + settings sample on the left, plugin layout (.claude-plugin/, skills/, commands/, hooks/, scripts/) on the right}} -->
+        <figcaption>Before/after repo layout: everything moves into plugin-standard locations; <code>scripts/</code> never moves.</figcaption>
+      </figure>
+
+      <h4>1. Move the skill and add the manifest</h4>
+      <ul class="checklist">
+        <li data-task="1.1"><code class="status" data-status-for="1.1">[]</code> <code>git mv ".claude/skills/planf3" "skills/planf3"</code> — skill content unchanged; the plugin auto-discovers <code>skills/</code></li>
+        <li data-task="1.2"><code class="status" data-status-for="1.2">[]</code> Author <code>.claude-plugin/plugin.json</code>: name <code>planf3</code>, version <code>2.0.0</code>, description, author — SemVer; a future MAJOR bump may raise the minimum supported artifact schema but must ship a migration one schema back</li>
+      </ul>
+
+      <h4>2. Convert the hook config</h4>
+      <ul class="checklist">
+        <li data-task="1.3"><code class="status" data-status-for="1.3">[]</code> Author <code>hooks/hooks.json</code> from <code>.claude/settings.json.sample</code>: same matchers (PreToolUse <code>Edit|MultiEdit|Write</code> → guard; PostToolUse <code>Edit|MultiEdit|Write|Bash</code> → lint), swapping <code>${CLAUDE_PROJECT_DIR}/scripts/…</code> → <code>"${CLAUDE_PLUGIN_ROOT}/scripts/…"</code> — keep the path quoted, plugin roots can contain spaces</li>
+        <li data-task="1.4"><code class="status" data-status-for="1.4">[]</code> <code>git rm .claude/settings.json.sample</code> — the manual-merge path is dead; <code>scripts/</code> stays at plugin root (already the right place)</li>
+      </ul>
+
+      <h4>3. Testing Strategy</h4>
+      <p>The moves must be invisible to the machinery: the full regression suite plus a live CLI op against an existing artifact prove the new layout resolves everything (template lookup, hook-to-CLI resolution) without code edits.</p>
+      <ul class="checklist">
+        <li data-task="1.5"><code class="status" data-status-for="1.5">[]</code> <code>uv run --with pytest pytest tests/ -q</code> — full regression suite passes under the new layout</li>
+        <li data-task="1.6"><code class="status" data-status-for="1.6">[]</code> <code>uv run python -m json.tool .claude-plugin/plugin.json</code> — manifest parses</li>
+        <li data-task="1.7"><code class="status" data-status-for="1.7">[]</code> <code>uv run python -m json.tool hooks/hooks.json</code> — hook config parses</li>
+        <li data-task="1.8"><code class="status" data-status-for="1.8">[]</code> <code>uv run scripts/plan_tool.py validate specs/plugin-flip.html</code> — the CLI still runs clean from the restructured repo</li>
+      </ul>
+      <div class="loop">
+        🔁 <strong>Do not exit this phase until every box above is <code>[x]</code> or <code>[f]</code>.</strong>
+        If a command fails, fix the cause and re-run; loop until it passes. <code>[f]</code> is terminal — only when a box genuinely cannot be made to pass, mark it <code>[f]</code> (with a one-line reason via <code>PLAN_TOOL status … --state f --reason "…"</code>) and move on.
+      </div>
+    </div>
+
+    <div class="phase" data-phase="2">
+      <h3><code class="status" data-status-for="phase-2">[]</code> Phase 2: Slash commands</h3>
+      <p>Thin, explicit, argument-driven wrappers for the deterministic operations a teammate (human or agent) fires directly. The planning flow itself <strong>stays a skill</strong> — converting it to a command would lose the natural-language triggering that is the skill's whole value.</p>
+
+      <h4>1. Author the three command wrappers</h4>
+      <ul class="checklist">
+        <li data-task="2.1"><code class="status" data-status-for="2.1">[]</code> <code>commands/index.md</code> — <code>/planf3:index</code> runs <code>plan_tool index</code> (manual refresh of <code>specs/_index.*</code>; the PostToolUse hook still covers the automatic path)</li>
+        <li data-task="2.2"><code class="status" data-status-for="2.2">[]</code> <code>commands/rollup.md</code> — <code>/planf3:rollup</code> runs <code>plan_tool rollup [--role &lt;r&gt;]</code>; output is generated, never hand-edited</li>
+        <li data-task="2.3"><code class="status" data-status-for="2.3">[]</code> <code>commands/role.md</code> — <code>/planf3:role assume|generate|list</code>: <em>assume</em> sets <code>PLANF3_ROLE</code> and runs the role session bootstrap from SKILL.md; <em>generate</em> routes to the Generate Roles workflow; <em>list</em> reads <code>roles/_roles.json</code></li>
+      </ul>
+
+      <h4>2. Testing Strategy</h4>
+      <p>Dev-install the plugin locally (point Claude Code at the cloned plugin dir) and exercise each command in this repo; verify events land where the managed-write contract says they must.</p>
+      <ul class="checklist">
+        <li data-task="2.4"><code class="status" data-status-for="2.4">[]</code> Run <code>/planf3:index</code>, <code>/planf3:rollup</code>, <code>/planf3:role list</code> — each executes its CLI op and appends the expected NDJSON/activity events</li>
+        <li data-task="2.5"><code class="status" data-status-for="2.5">[]</code> Ask for a plan in natural language — the <code>planf3</code> skill still triggers with the plugin installed (commands don't shadow the skill)</li>
+      </ul>
+      <div class="loop">
+        🔁 <strong>Do not exit this phase until every box above is <code>[x]</code> or <code>[f]</code>.</strong>
+        If a command fails, fix the cause and re-run; loop until it passes. <code>[f]</code> is terminal — only when a box genuinely cannot be made to pass, mark it <code>[f]</code> (with a one-line reason via <code>PLAN_TOOL status … --state f --reason "…"</code>) and move on.
+      </div>
+    </div>
+
+    <div class="phase" data-phase="3">
+      <h3><code class="status" data-status-for="phase-3">[]</code> Phase 3: Repo hygiene and docs</h3>
+      <p>The plugin repo doubles as a planf3 <em>project</em> — this very plan lives in its <code>specs/</code>. Only demo content moves out; live plans stay. The README's install story flips from copy/merge to marketplace/install/update, and any hand-copied skill instance is removed so the plugin is the single source of truth.</p>
+
+      <h4>1. Relocate the demo and rewrite the docs</h4>
+      <ul class="checklist">
+        <li data-task="3.1"><code class="status" data-status-for="3.1">[]</code> <code>git mv</code> the three <code>pi-iroh-coms-net</code> artifacts (html, image dir, log.ndjson) to <code>examples/pi-iroh-coms-net/</code></li>
+        <li data-task="3.2"><code class="status" data-status-for="3.2">[]</code> <code>uv run scripts/plan_tool.py index</code> — rebuild <code>specs/_index.*</code> so the catalog drops the demo and keeps live plans</li>
+        <li data-task="3.3"><code class="status" data-status-for="3.3">[]</code> Rewrite <code>README.md</code>: new install story, machinery-vs-artifacts table, teammate onboarding (install plugin → clone project → assume role), honest non-Claude degradation section</li>
+        <li data-task="3.4"><code class="status" data-status-for="3.4">[]</code> Clean cutover: delete any hand-copied planf3 from <code>~/.claude/skills</code> and other projects' <code>.claude/skills</code> on machines that had it — a plugin copy plus a hand copy double-triggers and diverges</li>
+      </ul>
+
+      <h4>2. Testing Strategy</h4>
+      <p>Grep-level checks that no stale install path survives in the docs, plus the regression suite again after the artifact moves.</p>
+      <ul class="checklist">
+        <li data-task="3.5"><code class="status" data-status-for="3.5">[]</code> <code>grep -rn "settings.json.sample" README.md skills/</code> — zero stale references to the old install story</li>
+        <li data-task="3.6"><code class="status" data-status-for="3.6">[]</code> <code>uv run --with pytest pytest tests/ -q</code> — suite still green after the demo relocation</li>
+      </ul>
+      <div class="loop">
+        🔁 <strong>Do not exit this phase until every box above is <code>[x]</code> or <code>[f]</code>.</strong>
+        If a command fails, fix the cause and re-run; loop until it passes. <code>[f]</code> is terminal — only when a box genuinely cannot be made to pass, mark it <code>[f]</code> (with a one-line reason via <code>PLAN_TOOL status … --state f --reason "…"</code>) and move on.
+      </div>
+    </div>
+
+    <div class="phase" data-phase="4">
+      <h3><code class="status" data-status-for="phase-4">[]</code> Phase 4: Distribution and cross-platform verification</h3>
+      <p>Make the one-step install story real, then burn down the top packaging risk: Windows hook fragility (<code>uv</code> on PATH, <code>${CLAUDE_PLUGIN_ROOT}</code> quoting, spaces in paths — this repo's own path contains one). Hooks are designed fail-open; verify that property survives pluginization.</p>
+
+      <figure>
+        <!-- {{PHASE_IMAGE: distribution fan-out — marketplace repo box with /plugin install arrows to several project boxes, each keeping its own specs/}} -->
+        <figcaption>One marketplace, one install command, every project converges on the same machinery via <code>/plugin update</code>.</figcaption>
+      </figure>
+
+      <h4>1. Publish</h4>
+      <ul class="checklist">
+        <li data-task="4.1"><code class="status" data-status-for="4.1">[]</code> Author <code>.claude-plugin/marketplace.json</code> so this repo is its own marketplace; tag the release (<code>v2.0.0</code>)</li>
+      </ul>
+
+      <h4>2. Testing Strategy</h4>
+      <p>End-to-end verification on a fresh environment and on Windows, covering install, hook enforcement from the plugin root, the no-env-var fallback, and graceful failure modes.</p>
+      <ul class="checklist">
+        <li data-task="4.2"><code class="status" data-status-for="4.2">[]</code> <code>/plugin marketplace add &lt;git-url&gt;</code> → <code>/plugin install planf3</code> — skill, commands, and hooks all arrive with no settings write and no permission prompt</li>
+        <li data-task="4.3"><code class="status" data-status-for="4.3">[]</code> Fresh-project smoke: in an empty repo, invoke the skill → <code>plan_tool new</code> scaffolds <code>specs/</code> project-local; a hand-edit to a managed region is denied by the plugin-rooted guard; the PostToolUse lint validates and logs</li>
+        <li data-task="4.4"><code class="status" data-status-for="4.4">[]</code> Windows pass: plugin root containing spaces — both hooks fire correctly, and a deliberately broken hook invocation fails <em>open</em> (never blocks edits), per design</li>
+        <li data-task="4.5"><code class="status" data-status-for="4.5">[]</code> Fallback pass: with <code>CLAUDE_PLUGIN_ROOT</code> unset and <code>scripts/</code> project-local (plain clone / non-Claude harness), hooks and CLI resolve via <code>cwd/scripts</code> and behave identically</li>
+      </ul>
+      <div class="loop">
+        🔁 <strong>Do not exit this phase until every box above is <code>[x]</code> or <code>[f]</code>.</strong>
+        If a command fails, fix the cause and re-run; loop until it passes. <code>[f]</code> is terminal — only when a box genuinely cannot be made to pass, mark it <code>[f]</code> (with a one-line reason via <code>PLAN_TOOL status … --state f --reason "…"</code>) and move on.
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== GLOBAL VALIDATION ===== -->
+  <section id="validation">
+    <h2>Validation Commands</h2>
+    <p>Execute these commands to validate the entire plan is complete:</p>
+    <ul class="checklist">
+      <li data-task="g.1"><code class="status" data-status-for="g.1">[]</code> <code>uv run --with pytest pytest tests/ -q</code> — full regression suite green in the final plugin layout</li>
+      <li data-task="g.2"><code class="status" data-status-for="g.2">[]</code> <code>uv run scripts/plan_tool.py validate specs/plugin-flip.html</code> — this plan validates with zero failures</li>
+      <li data-task="g.3"><code class="status" data-status-for="g.3">[]</code> <code>uv run scripts/plan_tool.py index</code> — deterministic catalog rebuild, no dangling references</li>
+      <li data-task="g.4"><code class="status" data-status-for="g.4">[]</code> <code>uv run scripts/plan_tool.py checkpoint specs/plugin-flip.html --label "plugin flip complete"</code> — binds the finished flip to a verified commit and an annotated <code>planf3/plugin-flip/&lt;n&gt;</code> tag (requires a clean tree; this is the revert point)</li>
+    </ul>
+    <div class="loop">
+      🔁 <strong>The plan is not complete until every box is <code>[x]</code> or <code>[f]</code> and every command passes. If a step genuinely cannot be completed, mark it <code>[f]</code> (terminal, with a one-line reason) and move on.</strong>
+    </div>
+  </section>
+
+  <!-- ===== NOTES ===== -->
+  <!-- Open canvas — the planning agent runs free here. There is no fixed shape:
+       use whatever HTML best serves the plan (prose, lists, tables, code blocks,
+       diagrams, callouts, decision logs, alternatives considered, open threads,
+       links, anything). Embed as many image slots as the plan benefits from. -->
+  <section id="notes">
+    <h2>Notes</h2>
+
+    <div class="callout">
+      <strong>⏸ Do not execute this plan until a flip trigger fires.</strong> The flip is deliberately deferred; until one of these is true, project-local files plus the settings sample is "what works":
+      <ul>
+        <li><strong>(a) Role pilot proven</strong> — the role system works project-local and iteration on it is done;</li>
+        <li><strong>(b) First teammate</strong> — the moment manual install actually costs something;</li>
+        <li><strong>(c) 3+ projects</strong> — central-update value materializes.</li>
+      </ul>
+    </div>
+
+    <figure>
+      <!-- {{NOTES_IMAGE: flip-trigger timeline — three trigger boxes (role pilot proven, first teammate, 3+ projects) converging on one "flip" arrow}} -->
+      <figcaption>Flip when any one trigger fires — not before.</figcaption>
+    </figure>
+
+    <h3>Why this plan is thinner than the original design</h3>
+    <p>The packaging design (<em>plugin-path-design.md</em>, §2) budgeted one code change: patching both hook scripts to resolve <code>plan_tool.py</code> via <code>CLAUDE_PLUGIN_ROOT</code>. That seam — plus the CLI's own template lookup and the write-once <code>schema</code> stamp — <strong>already landed on <code>main</code></strong> (Tier 1 operating layer). The flip is now zero Python changes: moves, three JSON/markdown surfaces, docs, and verification.</p>
+
+    <h3>Install story, before vs. after</h3>
+    <table>
+      <tr><th></th><th>Today (skill)</th><th>After (plugin)</th></tr>
+      <tr><td><strong>Steps</strong></td><td>3 manual: copy skill, copy <code>scripts/</code>, hand-merge <code>settings.json.sample</code></td><td>1: <code>/plugin install planf3</code></td></tr>
+      <tr><td><strong>Blocked?</strong></td><td>Settings merge is agent-permission-blocked and error-prone</td><td>Nothing blocked — hooks arrive with the plugin, no settings write</td></tr>
+      <tr><td><strong>Updates</strong></td><td>Re-copy per project; versions drift</td><td><code>/plugin update</code> — every project converges centrally</td></tr>
+      <tr><td><strong>Teammate onboarding</strong></td><td>Follow a README of manual steps</td><td>Install plugin → clone project repo → <code>/planf3:role assume &lt;r&gt;</code></td></tr>
+    </table>
+
+    <h3>Versioning — three deliberately decoupled axes</h3>
+    <ul>
+      <li><strong>Artifact schema stamp</strong> (landed): every plan declares its structural contract (<code>schema=1</code>, write-once). The artifact never depends on the plugin version.</li>
+      <li><strong>Plugin SemVer</strong> in <code>plugin.json</code>: the CLI refuses to write a plan stamped newer than it understands ("this plan needs a newer planf3 — <code>/plugin update</code>"), so an old tool never corrupts a newer artifact.</li>
+      <li><strong>Migrations are additive and idempotent</strong>: <code>init-ids</code> (which retrofits anchors onto legacy plans) is the precedent; a future <code>plan_tool migrate</code> generalizes it to ordered N→N+1 transforms. A MAJOR bump may raise the minimum schema but must ship a migration at least one schema back. <em>Not part of this flip — future work.</em></li>
+    </ul>
+
+    <h3>Longevity backstop — protect it</h3>
+    <p>The plan HTML is self-contained (all CSS inline) and renders in any browser with <strong>no plugin at all</strong>; the machinery is needed only for <em>structured writes</em>, never for reading. Even if planf3 is abandoned someday, every plan remains a readable, self-describing document. Rule: <strong>never move rendering or state into external files the plugin owns.</strong></p>
+
+    <h3>Non-Claude harness degradation (keeps the README honest)</h3>
+    <p><strong>Breaks under pluginization:</strong> <code>plugin.json</code>/marketplace, <code>hooks.json</code>, slash commands. <strong>Survives anywhere:</strong> SKILL.md + workflows are plain markdown instructions, and <code>plan_tool.py</code> is a plain <code>uv</code>/Python CLI taking explicit paths that <em>self-validates on every op</em> — enforcement hooks are a safety net, not a correctness requirement. Two cheap rules preserve this: keep the CLI invocable with explicit paths, and keep the <code>CLAUDE_PLUGIN_ROOT</code>-absent fallback in the hook scripts (both already true).</p>
+
+    <h3>Top risks</h3>
+    <table>
+      <tr><th>Risk</th><th>Mitigation</th></tr>
+      <tr><td><strong>Moving target</strong> — the role system is still stabilizing; pluginizing against it burns effort on repackaging</td><td>The flip triggers exist precisely for this: don't flip until roles prove out or distribution need is real</td></tr>
+      <tr><td><strong>Dual source of truth</strong> — an installed plugin beside a hand-copied skill double-triggers / diverges</td><td>Task 3.4 makes cutover explicit: delete every hand-copied instance the moment the plugin installs</td></tr>
+      <tr><td><strong>Windows hook fragility</strong> — <code>uv</code> on PATH, <code>${CLAUDE_PLUGIN_ROOT}</code> quoting, spaces in paths (this repo's path has one)</td><td>Phase 4 runs a real cross-platform pass; hooks are fail-open by design, and task 4.4 verifies a broken hook never blocks edits</td></tr>
+    </table>
+
+    <h3>Design-doc drift, recorded</h3>
+    <p><em>plugin-path-design.md</em> predates the implemented role system: it names <code>.planf3/roles.json</code> as the project-side role manifest, but the landed system uses hand-authored <code>roles/*.md</code> compiled by <code>plan_tool roles build</code> into <code>roles/_roles.json</code> + CODEOWNERS. The plugin split is unaffected — role <em>machinery</em> (generation, enforcement) ships in the plugin; role <em>instances</em> (<code>roles/</code>) stay in each project repo. Where the two documents disagree, the implemented <code>roles/</code> layout wins.</p>
+  </section>
+
+  <!-- ===== AMENDMENTS ===== -->
+  <!-- Running history of changes made AFTER the plan was first executed. Append-only.
+       Populated by the Update Plan and Update References workflows — never edited during Create. -->
+  <section id="amendments" data-region="amendments" data-managed="cli">
+    <h2>Amendments</h2>
+    <!-- CLI-managed: PLAN_TOOL amend/ref/report append <details> entries into the
+         container below, newest at the bottom. Do not hand-edit. -->
+    <div data-amendments-list>
+    </div>
+  </section>
+
+</main>
+</body>
+</html>

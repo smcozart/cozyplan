@@ -1,5 +1,5 @@
 {
-  "as_of": "2026-07-02T16:29:45-05:00",
+  "as_of": "2026-07-03T14:47:24-05:00",
   "plans": [
     {
       "file": "pi-iroh-coms-net.html",
@@ -15,6 +15,21 @@
         "../prompts/pi-iroh-coms.md",
         "github:disler/pi-vs-claude-code (extensions/coms-net.ts + scripts/coms-net-server.ts)"
       ],
+      "forward_refs": [],
+      "provides": [],
+      "consumes": []
+    },
+    {
+      "file": "plugin-flip.html",
+      "id": "plugin-flip",
+      "kind": "plan",
+      "title": "planf3 Plugin Flip: Skill to Distributable Plugin",
+      "status": "draft",
+      "owner": "architect",
+      "created": "2026-07-03T14:47:24-05:00",
+      "modified": "2026-07-03T14:47:24-05:00",
+      "image_dir": "",
+      "back_refs": [],
       "forward_refs": [],
       "provides": [],
       "consumes": []
