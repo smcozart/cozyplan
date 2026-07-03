@@ -37,6 +37,30 @@ def test_checkpoint_refuses_dirty_tree(pt, git_repo, capsys):
     assert "dirty" in err
 
 
+def test_checkpoint_ignores_generated_aggregates(pt, git_repo):
+    # A dirty tree consisting ONLY of derived aggregates must not block a checkpoint
+    # (otherwise running rollup, which writes _status.*, dirties the tree accept gates on).
+    plan = _new_committed(pt, git_repo, "cpg")
+    specs = git_repo / "specs"
+    (specs / "_index.json").write_text('{"plans": []}', encoding="utf-8")
+    (specs / "_status.html").write_text("<html>stale</html>", encoding="utf-8")
+    roles = git_repo / "roles"
+    roles.mkdir(exist_ok=True)
+    (roles / "activity.log.ndjson").write_text('{"x":1}\n', encoding="utf-8")
+    assert git(git_repo, "status", "--porcelain").stdout.strip(), "precondition: tree is dirty"
+    assert pt.main(["checkpoint", str(plan), "--label", "derived only"]) == 0
+
+
+def test_checkpoint_still_refuses_real_dirt_beside_aggregates(pt, git_repo, capsys):
+    plan = _new_committed(pt, git_repo, "cpr")
+    (git_repo / "specs" / "_index.json").write_text('{"plans": []}', encoding="utf-8")
+    (git_repo / "real_source.py").write_text("x = 1\n", encoding="utf-8")  # real dirt
+    capsys.readouterr()
+    code = pt.main(["checkpoint", str(plan)])
+    assert code != 0
+    assert "dirty" in capsys.readouterr().err
+
+
 def test_checkpoint_increments_tag_number(pt, git_repo):
     plan = _new_committed(pt, git_repo, "cpn")
     assert pt.main(["checkpoint", str(plan), "--label", "one"]) == 0

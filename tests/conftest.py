@@ -60,6 +60,23 @@ def new_plan(pt, specs):
     return _make
 
 
+@pytest.fixture
+def filled_plan(pt, new_plan):
+    """A scaffolded plan with every {{}} placeholder stripped, so it validates and
+    may legally leave draft (meta status now gates on leftover placeholders)."""
+    import re as _re
+
+    def _make(name="filled-plan", title="Filled Plan", owner=None):
+        plan = new_plan(name, title, owner)
+        with open(plan, "r", encoding="utf-8", newline="") as f:
+            text = f.read()
+        text = _re.sub(r"\{\{.*?\}\}", "x", text, flags=_re.S)
+        with open(plan, "w", encoding="utf-8", newline="") as f:
+            f.write(text)
+        return plan
+    return _make
+
+
 def git(cwd: Path, *args: str):
     return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True)
 

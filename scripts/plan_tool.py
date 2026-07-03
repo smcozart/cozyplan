@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import html
 import json
 import os
 import re
@@ -217,6 +218,39 @@ def git_info(cwd: Path) -> dict:
 
 def git_commit_exists(cwd: Path, sha: str) -> bool:
     return _git(cwd, "cat-file", "-e", f"{sha}^{{commit}}")[0] == 0
+
+
+# Derived/rebuildable aggregates: byte-deterministic outputs of index/rollup/
+# roles-build. They must NOT count as meaningful working-tree dirt, otherwise
+# running `rollup` to see what to accept dirties the very tree `accept` gates on.
+_GENERATED_SUFFIXES = ("/_index.json", "/_index.html", "/_status.json",
+                       "/_status.html", "/activity.log.ndjson", "/_roles.json",
+                       "/CODEOWNERS")
+
+
+def _is_generated_artifact(porcelain_path: str) -> bool:
+    p = porcelain_path.strip().strip('"').replace("\\", "/")
+    return any(p.endswith(sfx) for sfx in _GENERATED_SUFFIXES)
+
+
+def working_tree_dirty(cwd: Path) -> bool:
+    """Whole-tree dirty check that ignores derived aggregates (see above).
+
+    Uses --untracked-files=all so a wholly-new dir (e.g. a first-time roles/) is
+    listed as its individual files rather than collapsed to the directory — the
+    generated-artifact filter needs the full path to match.
+    """
+    rc, status = _git(cwd, "status", "--porcelain", "--untracked-files=all")
+    if rc != 0:
+        return False
+    for line in status.splitlines():
+        entry = line[3:] if len(line) > 3 else ""
+        # A rename shows as "old -> new"; test the destination path.
+        if " -> " in entry:
+            entry = entry.split(" -> ", 1)[1]
+        if entry and not _is_generated_artifact(entry):
+            return True
+    return False
 
 
 def git_tag_count(cwd: Path, prefix: str) -> int:
@@ -549,6 +583,20 @@ def cmd_meta(args) -> int:
             new, n = append_meta(text, args.field, args.value)
         if n == 0:
             return fail(f"could not locate metadata field {args.field!r}")
+        # Leaving draft is the gate: unfilled {{}} placeholder slots are a warning
+        # while draft but must be gone before the plan goes active/built/etc.
+        # (validate already flips them warn->fail at this boundary; enforce it at the
+        # transition so a plan can't quietly leave draft half-authored). Narrow to
+        # placeholders on purpose — an old plan with an unrelated nit can still be
+        # archived. Transitions INTO draft never gate.
+        if args.field == "status" and args.value != "draft":
+            leftover = re.findall(r"\{\{.*?\}\}", new, re.S)
+            if leftover:
+                return fail(
+                    f"cannot move {path.name} to status={args.value!r}: "
+                    f"{len(leftover)} unfilled {{{{}}}} placeholder slot(s) remain. "
+                    f"Fill every slot (or strip the braces from any intentionally "
+                    f"empty diagram comment) before leaving draft.")
         if args.field != "modified":
             new = stamp_modified(new, now_iso())
         write(path, new)
@@ -763,9 +811,10 @@ def _checkpoint_core(path: Path, args, event_name: str, label: str, extra: dict)
     info = git_info(repo)
     if not info:
         return fail(f"{path.parent} is not a git repository; cannot checkpoint")
-    if info.get("dirty"):
+    if working_tree_dirty(repo):
         return fail("working tree is dirty; commit or stash before a checkpoint "
-                    "(a checkpoint must bind to a real committed state)")
+                    "(a checkpoint must bind to a real committed state). "
+                    "Derived aggregates like specs/_index.* and _status.* are ignored.")
     sha, tree = info["sha"], info["tree"]
     with _PlanLock(path):
         text = read(path)
@@ -1719,7 +1768,7 @@ def _brief_one_line(p: dict) -> str:
     kind = p.get("kind", "plan") or "plan"
     owner = p.get("owner", "") or "-"
     status = p.get("status", "") or "-"
-    return f"{p['file']:<32} [{kind}] {status:<10} {owner:<16} {p.get('title', '')}"
+    return f"{p['file']:<32} [{kind}] {status:<10} {owner:<16} {html.unescape(p.get('title', ''))}"
 
 
 def cmd_brief(args) -> int:
@@ -1750,7 +1799,7 @@ def cmd_brief(args) -> int:
             if d.get("reason"):
                 reasons[d.get("id")] = d["reason"]
 
-    lines = [f"# {extract_title(text) or path.stem}  ({path.name})"]
+    lines = [f"# {html.unescape(extract_title(text)) or path.stem}  ({path.name})"]
     lines.append("")
     for f in ("id", "kind", "owner", "status", "schema"):
         lines.append(f"{f:<10}: {meta.get(f, '') or '-'}")
@@ -1766,7 +1815,7 @@ def cmd_brief(args) -> int:
     for m in re.finditer(
             r'data-status-for="([^"]+)"[^>]*>(\[[^\]]*\])</code>(.*?)(?:</li>|</h3>|</h4>)',
             text, re.S):
-        sid, mark, tail = m.group(1), m.group(2), strip_tags(m.group(3)).strip()
+        sid, mark, tail = m.group(1), m.group(2), html.unescape(strip_tags(m.group(3)).strip())
         lines.append(f"  {mark:<6} {sid:<10} {tail}")
         if mark in ("[wip]", "[f]"):
             r = reasons.get(sid)
@@ -1933,7 +1982,19 @@ def check_role_attribution(args) -> int | None:
     return None
 
 
+def _make_stdio_utf8_safe() -> None:
+    """Plan text carries em-dashes / arrows / entities; a cp1252 console (Windows
+    default) raises UnicodeEncodeError on print. Re-encode stdout/stderr as UTF-8,
+    replacing anything unmappable rather than crashing. No-op where unsupported."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            with contextlib.suppress(Exception):
+                reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv: list[str] | None = None) -> int:
+    _make_stdio_utf8_safe()
     args = build_parser().parse_args(argv)
     rc = check_role_attribution(args)
     if rc is not None:

@@ -14,8 +14,13 @@ def test_tokens_are_warning_while_draft(pt, new_plan, capsys):
 
 def test_tokens_fail_once_not_draft(pt, new_plan, capsys):
     plan = new_plan("val-active")
-    # move off draft while free-form {{}} tokens still remain
-    assert pt.main(["meta", str(plan), "--field", "status", "--value", "active"]) == 0
+    # Force status=active while free-form {{}} tokens remain by editing the HTML
+    # directly — the meta gate now refuses this transition (see test_meta), so we
+    # bypass it to exercise validate's token-severity-by-status branch.
+    text = read(plan).replace('<dd data-meta="status">draft</dd>',
+                              '<dd data-meta="status">active</dd>')
+    with open(plan, "w", encoding="utf-8", newline="") as f:
+        f.write(text)
     capsys.readouterr()
     code = pt.main(["validate", str(plan)])
     out = capsys.readouterr().out

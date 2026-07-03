@@ -78,16 +78,16 @@ def test_change_request_lifecycle(pt, new_plan, specs):
     assert ("cr-plan.html", "open-request") not in _attention(out2)
 
 
-def test_pending_acceptance_listed(pt, new_plan, specs):
-    plan = new_plan("pa")
-    pt.main(["meta", str(plan), "--field", "status", "--value", "built"])
+def test_pending_acceptance_listed(pt, filled_plan, specs):
+    plan = filled_plan("pa")
+    assert pt.main(["meta", str(plan), "--field", "status", "--value", "built"]) == 0
     out = _index_rollup(pt, specs)
     assert "pa.html" in out["pending"]
 
 
-def test_pending_omitted_when_acceptance_auto(pt, new_plan, specs):
-    plan = new_plan("pa2")
-    pt.main(["meta", str(plan), "--field", "status", "--value", "built"])
+def test_pending_omitted_when_acceptance_auto(pt, filled_plan, specs):
+    plan = filled_plan("pa2")
+    assert pt.main(["meta", str(plan), "--field", "status", "--value", "built"]) == 0
     roles = specs.parent / "roles"
     roles.mkdir()
     (roles / "_roles.json").write_text(

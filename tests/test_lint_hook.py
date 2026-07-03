@@ -6,7 +6,7 @@ so CLAUDE_PLUGIN_ROOT points it at the repo copy of plan_tool.py.
 
 import json
 
-from conftest import LINT_HOOK, REPO, run_hook
+from conftest import LINT_HOOK, REPO, read, run_hook
 
 
 def _payload(plan_path, cwd):
@@ -16,8 +16,12 @@ def _payload(plan_path, cwd):
 
 def test_lint_surfaces_problem_on_broken_plan(pt, new_plan, specs, tmp_path):
     plan = new_plan("lint-bad")
-    # non-draft with leftover {{}} tokens -> validate fails
-    assert pt.main(["meta", str(plan), "--field", "status", "--value", "active"]) == 0
+    # non-draft with leftover {{}} tokens -> validate fails. The meta gate now
+    # refuses this transition, so stamp status=active directly in the HTML.
+    text = read(plan).replace('<dd data-meta="status">draft</dd>',
+                              '<dd data-meta="status">active</dd>')
+    with open(plan, "w", encoding="utf-8", newline="") as f:
+        f.write(text)
     result = run_hook(LINT_HOOK, _payload(plan, tmp_path),
                       env={"CLAUDE_PLUGIN_ROOT": str(REPO)})
     assert result.stdout.strip(), "expected additionalContext output"

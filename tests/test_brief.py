@@ -15,6 +15,17 @@ def test_brief_shows_metadata_and_task_state(pt, new_plan, capsys):
     assert "<" not in out
 
 
+def test_brief_decodes_html_entities(pt, new_plan, capsys):
+    # `new` escapes the title (& -> &amp;) into the HTML; brief is a plain-text
+    # extract, so it must decode entities back rather than print raw &amp;.
+    plan = new_plan("bent", title="Ingest & Render <fast>")
+    capsys.readouterr()
+    assert pt.main(["brief", str(plan)]) == 0
+    out = capsys.readouterr().out
+    assert "Ingest & Render <fast>" in out
+    assert "&amp;" not in out and "&lt;" not in out
+
+
 def test_brief_open_failure_shows_reason(pt, new_plan, capsys):
     plan = new_plan("br2")
     pt.main(["status", str(plan), "--id", "1.1", "--state", "f", "--reason", "upstream gone"])

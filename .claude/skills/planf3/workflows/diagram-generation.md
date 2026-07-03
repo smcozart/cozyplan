@@ -17,7 +17,7 @@ cd ~/.claude/skills/excalidraw-diagram-skill/references && uv run python render_
 
 The render writes a `.png` next to the `.excalidraw` file. The `.excalidraw` source is the editable artifact — the user can open and tweak it in the **Excalidraw VS Code extension** (`pomdtr.excalidraw-editor`), then re-render.
 
-**If the skill is not installed** (`~/.claude/skills/excalidraw-diagram-skill/` absent): do not improvise a renderer. Leave every `{{...IMAGE}}` slot as a commented placeholder naming the intended subject, keep the authored `<figcaption>`, report the missing dependency to the user, and note that the plan must stay `draft` until the diagrams are generated (leftover `{{}}` tokens fail validation outside `draft`).
+**If the skill is not installed** (`~/.claude/skills/excalidraw-diagram-skill/` absent): do not improvise a renderer. For each `{{...IMAGE: subject}}` slot, **strip the `{{ }}` braces** and leave a plain descriptive comment (e.g. `<!-- diagram TODO: <subject> -->`), keep the authored `<figcaption>`, and report the missing dependency to the user. Stripping the braces matters: a leftover `{{...}}` token is a validation *warning* while `draft` but a *failure* outside it, and `PLAN_TOOL meta … --field status` refuses to move a plan off `draft` while any `{{}}` slot remains — so de-tokenizing the comment is what lets an otherwise-complete plan leave `draft` before the diagrams exist. Diagrams can be generated later by re-running this sub-workflow once the skill is installed.
 
 ## Shared rules for every diagram
 

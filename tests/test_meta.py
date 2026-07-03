@@ -43,8 +43,30 @@ def test_meta_status_vocabulary_enforced(pt, new_plan, capsys):
     err = capsys.readouterr().err
     assert bad != 0
     assert "status must be one of" in err
-    ok = pt.main(["meta", str(plan), "--field", "status", "--value", "active"])
-    assert ok == 0
+
+
+def test_meta_status_gate_refuses_leaving_draft_with_placeholders(pt, new_plan, capsys):
+    plan = new_plan("meta-gate")
+    capsys.readouterr()
+    # a fresh scaffold is full of {{}} slots -> cannot go active
+    code = pt.main(["meta", str(plan), "--field", "status", "--value", "active"])
+    err = capsys.readouterr().err
+    assert code != 0
+    assert "placeholder slot" in err
+    assert pt.parse_meta(read(plan))["status"] == "draft"  # unchanged
+
+
+def test_meta_status_gate_allows_transition_into_draft(pt, filled_plan):
+    # transitions INTO draft never gate (they're the authoring direction)
+    plan = filled_plan("meta-todraft")
+    assert pt.main(["meta", str(plan), "--field", "status", "--value", "active"]) == 0
+    assert pt.main(["meta", str(plan), "--field", "status", "--value", "draft"]) == 0
+    assert pt.parse_meta(read(plan))["status"] == "draft"
+
+
+def test_meta_status_allowed_when_filled(pt, filled_plan):
+    plan = filled_plan("meta-status-ok")
+    assert pt.main(["meta", str(plan), "--field", "status", "--value", "active"]) == 0
     assert pt.parse_meta(read(plan))["status"] == "active"
 
 

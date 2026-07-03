@@ -36,19 +36,39 @@ The skill moves as a unit — `SKILL.md`, the four `workflows/` + one subworkflo
 
 **Prereqs:** [`claude`](https://docs.claude.com/en/docs/claude-code) (or [`pi`](https://pi.dev/) / Codex / opencode), [`uv`](https://docs.astral.sh/uv/) (runs `plan_tool.py` and the diagram renderer), and the globally-installed `excalidraw-diagram` skill (invoked by the [Diagram Generation subworkflow](.claude/skills/planf3/workflows/diagram-generation.md)) for local, key-free diagram rendering. No API keys — diagrams are rendered locally.
 
+planf3 has **two parts that must both be present** in the project you plan in:
+the **skill** (the workflow prose, model-invoked) and the **`scripts/` CLI +
+hooks** (`plan_tool.py` and `scripts/hooks/`, invoked as `uv run
+scripts/plan_tool.py` and resolved by the hooks from the project root). Copying
+only the skill is the most common install mistake — the skill will trigger but
+every `plan_tool` call and both hooks fail with file-not-found.
+
 ```bash
-# 1. Use it project-local (already here), or install globally:
-cp -r .claude/skills/planf3 ~/.claude/skills/planf3   # /planf3 everywhere
+# 1. Put the SKILL where your agent finds it — project-local (already here under
+#    .claude/skills/planf3) or global for every project:
+cp -r .claude/skills/planf3 ~/.claude/skills/planf3        # /planf3 everywhere
 
-# 2. (Optional) Activate the consistency hooks — merge the sample into your live settings:
-#    copy .claude/settings.json.sample into .claude/settings.json (or merge the "hooks" block).
-#    These run commands, so they're intentionally NOT enabled automatically.
+# 2. Put the CLI + hooks at your PROJECT ROOT (required — the skill and hooks
+#    both invoke uv run scripts/plan_tool.py relative to the project):
+cp -r scripts /path/to/your-project/scripts
+cp .gitattributes /path/to/your-project/.gitattributes     # merge=union for *.log.ndjson
 
-# 3. Run it
-#    /planf3 "<what you want planned>" [questionable]
+# 3. (Optional) Activate the consistency hooks — merge the sample into live settings:
+#    copy .claude/settings.json.sample into .claude/settings.json (or merge the
+#    "hooks" block). They run commands, so they're intentionally NOT auto-enabled.
+
+# 4. Run it
+#    /planf3 "<what you want planned>"
 ```
 
-`questionable` defaults to `false`. Set it to `true` to make the agent surface open decisions in a toggleable Q&A section instead of silently deciding.
+> The scripts are **path-agnostic** — every command takes explicit paths — so one
+> copy of `scripts/` at the project root serves every plan in that project's
+> `specs/`. (This copy-in-two-places friction is exactly what the planned
+> skill→plugin migration removes: `/plugin install` ships the skill, CLI, and
+> hooks together.)
+
+To surface open decisions in a toggleable Q&A section instead of silently
+deciding, ask for it in the prompt (e.g. "…and flag the open questions").
 
 ---
 
