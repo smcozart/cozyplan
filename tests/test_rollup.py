@@ -53,3 +53,18 @@ def test_rollup_emits_artifacts(pt, new_plan, specs):
     assert pt.main(["rollup", "--specs", str(specs)]) == 0
     assert (specs / "_status.json").exists()
     assert (specs / "_status.html").exists()
+
+
+def test_rollup_embeds_team_map_only_when_present(pt, new_plan, specs):
+    new_plan("roll-f", title="F")
+    pt.main(["rollup", "--specs", str(specs)])
+    assert "team-map.png" not in read(specs / "_status.html")
+
+    roles_dir = specs.parent / "roles"
+    roles_dir.mkdir(exist_ok=True)
+    (roles_dir / "team-map.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    pt.main(["rollup", "--specs", str(specs)])
+    html = read(specs / "_status.html")
+    assert '<img src="../roles/team-map.png"' in html
+    out = json.loads(read(specs / "_status.json"))
+    assert out["team_map"] == "../roles/team-map.png"

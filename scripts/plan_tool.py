@@ -1323,6 +1323,14 @@ def render_status_html(out: dict) -> str:
         f'<li><code>{esc_(s["plan"])}</code> — {esc_(s["reason"])}</li>' for s in out["stale"])
     stale = f'<div class="stale"><strong>Stale</strong><ul>{stale_rows}</ul></div>' if stale_rows else ""
 
+    # Team map — embedded only when generate-roles has authored roles/team-map.png
+    # (out["team_map"] carries the src relative to the specs dir).
+    team_map = ""
+    if out.get("team_map"):
+        team_map = (f'<figure><img src="{esc_(out["team_map"])}" alt="Team map — roles, '
+                    f'reporting lines, and seams" style="max-width:100%">'
+                    f'<figcaption>Team map (regenerate via Generate Roles when roles change)</figcaption></figure>')
+
     # Pending acceptance — omitted entirely (out["pending"] is None) when acceptance=auto.
     pending = ""
     if out.get("pending") is not None:
@@ -1381,6 +1389,7 @@ def render_status_html(out: dict) -> str:
 </style></head>
 <body><main>
   <h1>Project Status{rf}</h1>
+  {team_map}
   {attention}
   {stale}
   {pending}
@@ -1577,9 +1586,11 @@ def cmd_rollup(args) -> int:
             stale.append({"plan": pf,
                           "reason": f"last report {ts.date().isoformat()} (>{STALE_DAYS}d ago)"})
 
+    team_map_png = specs.parent / "roles" / "team-map.png"
     out = {"as_of": as_of, "role_filter": role_filter, "attention": attention,
            "components": components, "accomplishments": done, "stale": stale,
-           "pending": pending, "drift": drift, "checkpoints": ckpts}
+           "pending": pending, "drift": drift, "checkpoints": ckpts,
+           "team_map": "../roles/team-map.png" if team_map_png.exists() else None}
     (specs / "_status.json").write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
     (specs / "_status.html").write_text(render_status_html(out), encoding="utf-8")
 
