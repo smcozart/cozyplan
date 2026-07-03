@@ -53,28 +53,49 @@ The plan HTML is a living artifact. Some regions are **CLI-managed** and must ne
 
 | Write | Command |
 | --- | --- |
-| Scaffold a fresh plan (all `data-*` anchors + metadata stamped, `status=draft`) | `PLAN_TOOL new <kebab-name> --title "…" [--owner <role>] [--specs specs]` |
+| Scaffold a fresh plan (all `data-*` anchors + metadata stamped, `status=draft`) | `PLAN_TOOL new <kebab-name> --title "…" [--owner <role>] [--kind plan\|contract] [--specs specs]` |
 | Flip a task/phase status marker | `PLAN_TOOL status <plan> --id <id> --state idle\|wip\|x\|f [--reason "…"]` (`--reason` required for `f`) |
-| Append metadata (modified/commits/agent/session) or set id/owner/status | `PLAN_TOOL meta <plan> --field <field> --value <v>` |
-| Record build commit + agent + session at once | `PLAN_TOOL build-meta <plan> --commit <sha> --agent <name> --session <id>` |
-| Add a bidirectional reference between two plans | `PLAN_TOOL ref --this <plan> --other <plan> --dir back\|forward` |
+| Append metadata (modified/commits/agent/session) or set id/owner/status/kind | `PLAN_TOOL meta <plan> --field <field> --value <v>` |
+| Record build commit + agent + session at once (auto-captures + verifies HEAD) | `PLAN_TOOL build-meta <plan> [--commit <sha>] --agent <name> --session <id>` |
+| Add a reference between two plans (typed) | `PLAN_TOOL ref --this <plan> --other <plan> --type back\|forward\|provides\|consumes` |
 | Append an amendment | `PLAN_TOOL amend <plan> --summary "…" --detail "…"` |
-| Cross-role report-back | `PLAN_TOOL report <plan> --role <r> --status <s> --summary "…" [--commits sha,…]` |
+| Cross-role report-back (incl. change-request lifecycle: `request` / `request-closed`) | `PLAN_TOOL report <plan> --role <r> --status <s> --summary "…" [--commits sha,…]` |
+| Bind plan state to a verified commit + annotated git tag (clean tree only) | `PLAN_TOOL checkpoint <plan> [--label "…"]` |
+| Architect: record acceptance + create a checkpoint tag | `PLAN_TOOL accept <plan> [--notes "…"]` |
+| Acknowledge the current state of a seam a consumer depends on | `PLAN_TOOL ack <consumer-plan> --seam <seam-plan>` |
+| Compact plain-text extract of a plan (or `--all` for a one-liner index) | `PLAN_TOOL brief <plan>` · `PLAN_TOOL brief --all --specs specs` |
 | Lint a plan | `PLAN_TOOL validate <plan>` |
 | Assign data-* anchors to an un-anchored/legacy plan | `PLAN_TOOL init-ids <plan>` |
 | Rebuild the specs catalog | `PLAN_TOOL index` |
 | Build the role manifest + CODEOWNERS from `roles/*.md` | `PLAN_TOOL roles build` |
 | Regenerate the architect status dashboard | `PLAN_TOOL rollup [--role <r>]` |
 
-Every mutating command also appends a one-line JSON event to `specs/<plan>.log.ndjson` (the append-only, merge-friendly multi-writer surface) and updates the human-readable HTML. **Free-form regions** — Purpose, Problem, Solution, Notes, Questionables prose, and diagrams — are edited normally. `roles/_roles.json`, `.github/CODEOWNERS`, `specs/_index.*`, and `specs/_status.*` are **generated** aggregates — never hand-edit them; rerun the command that builds them.
+Every mutating command also appends a one-line JSON event to `specs/<plan>.log.ndjson` (the append-only, merge-friendly multi-writer surface) and updates the human-readable HTML. Each read-modify-write op takes an exclusive `<plan>.lock` so concurrent writers to the same plan never lose data. **Free-form regions** — Purpose, Problem, Solution, Notes, Questionables prose, and diagrams — are edited normally. `roles/_roles.json`, `.github/CODEOWNERS`, `roles/activity.log.ndjson`, `specs/_index.*`, and `specs/_status.*` are **generated / append-only** aggregates — never hand-edit them; rerun the command that builds them.
+
+**Attribution.** When acting as a role, set `PLANF3_ROLE` and pass the same value as `--role`; if the two disagree, `PLAN_TOOL` refuses the write (pass `--force-role` to override). This keeps the event log honest about who did what.
+
+**Kinds & seams.** A plan's `kind` is `plan` (default) or `contract` — a **seam** describing the interface where two components meet. A consumer `--type consumes` a seam; the provider `--type provides` it (one command wires both sides via the `provides`/`consumes` metadata lists). When a seam changes, each consumer runs `PLAN_TOOL ack` to acknowledge the new state; `rollup` flags any consumer whose ack predates the seam's latest change. Legacy `--dir back|forward` still works.
+
+**Checkpoints.** `checkpoint`/`accept` bind a plan to a **verified** git commit (HEAD sha + tree, refusing a dirty tree) and create an annotated tag `planf3/<plan-id>/<n>` — a real, git-native revert point `rollup` surfaces. `build-meta` auto-captures and verifies HEAD instead of trusting a hand-typed `--commit`.
 
 ### Roles (project-scoped ownership — OPT-IN)
 
 Role mode is **optional and off by default**. It activates only when the user explicitly runs the `Generate Roles` workflow (or a `roles/` directory already exists in the project) — never enable it on your own initiative. Without it, planf3 is a pure planning tool: plans default `owner` to the value the user gives or leave the convention to them, and the guard's role checks stay dormant (fail-open). Role mode earns its keep on team projects with source control — it ties roles to source-control ownership rules and to each role's planning, executing, and logging docs. Users running a custom agentic approach can simply never turn it on.
 
-When role mode is on, each owner is a **role** with one hand-authored source-of-truth file at `roles/<role>.md` (see `templates/role.md`). `PLAN_TOOL roles build` derives the enforcement manifest `roles/_roles.json` + `.github/CODEOWNERS` from those files, requiring role ownership globs to be disjoint. A plan names its role in the `owner` metadata field. The `Generate Roles` workflow scopes a project into roles.
+When role mode is on, each owner is a **role** with one hand-authored source-of-truth file at `roles/<role>.md` (see `templates/role.md`). `PLAN_TOOL roles build` derives the enforcement manifest `roles/_roles.json` + `.github/CODEOWNERS` from those files, requiring each role's `source_of_truth` + `code` globs to be disjoint across roles (`supporting` globs may overlap — they drive logging/attribution only). CODEOWNERS uses each role's `github:` identity (`@user` / `@org/team`); a role without one has its lines emitted **commented-out** rather than as an unusable `@<role-slug>`. A plan names its role in the `owner` metadata field. The `Generate Roles` workflow scopes a project into roles.
 
-**`PLANF3_ROLE`** — set this env var to the role you are acting as (e.g. `export PLANF3_ROLE=engineer-api`). The `PreToolUse` guard reads it plus `roles/_roles.json` and denies writes to another role's owned paths (fail-open when unset or no manifest). Pass the same value as `--role` on `PLAN_TOOL` calls so events are attributed.
+**Coherence, not compliance.** Only two kinds of write are ever *blocked*: (1) hand-edits to a plan's CLI-managed regions (the integrity layer, always on), and (2) in `protect` mode, a role writing **another role's `source_of_truth`**. Everything else — code paths, supporting docs, unowned files, roleless sessions, the architect — is **allowed and logged, never blocked**. The system makes incoherence visible (drift, unacknowledged seams, open requests surface in `rollup`); it does not force anyone to obey a plan.
+
+**Mode** (project-wide, from the architect role's frontmatter, compiled into `_roles.json`):
+- `off` — role layer dormant; only the managed-region integrity guard runs.
+- `track` (default) — no denies at all; impactful writes are logged to `roles/activity.log.ndjson` (the `PostToolUse` hook appends `{ts, path, tool, role, session, owner}` per impactful write; plan_tool-routed writes are recorded in the plan sidecar instead, so there's no double count). `rollup` reads this for **ownership drift** — a role's owned path written by someone else.
+- `protect` — as `track`, plus the guard denies a role writing another role's `source_of_truth`. The architect is never denied.
+
+**Acceptance** (project-wide): `manual` (default) means a `built` plan awaits an architect `accept` — `rollup` lists **pending acceptance**; `auto` treats `built` as accepted and omits that section.
+
+**`PLANF3_ROLE`** — set this env var to the role you are acting as (e.g. `export PLANF3_ROLE=engineer-api`). The `PreToolUse` guard reads it plus `roles/_roles.json` (fail-open when unset, no manifest, or mode `off`). Pass the same value as `--role` on `PLAN_TOOL` calls so events are attributed (a mismatch is refused — see Attribution above).
+
+**Seam contracts.** For a boundary between two components, author a `kind=contract` plan (a **seam**) owned by one role or the architect; consumers wire to it with `ref --type consumes` and re-`ack` it when it changes. This gives coherence teeth — a changed seam that a consumer hasn't acknowledged is impossible to miss in `rollup` — with zero compliance rigidity.
 
 **Role session bootstrap** — when you assume role `R`, read in this order: (1) this `SKILL.md`; (2) `roles/<R>.md` (your mission, DoD, owned globs, report protocol); (3) set `PLANF3_ROLE=<R>`; (4) `specs/_index.html` filtered to `owner=<R>` and `specs/_status.html --role <R>`, opening only the full plan you will work on; (5) `roles/<R>/memory.md` (your durable notes); (6) tail the relevant `specs/<plan>.log.ndjson` for recent reports/status.
 

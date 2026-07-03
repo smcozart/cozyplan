@@ -4,6 +4,7 @@
     {
       "file": "pi-iroh-coms-net.html",
       "id": "pi-iroh-coms-net",
+      "kind": "plan",
       "title": "coms-net on iroh — Serverless P2P Agent Mesh",
       "status": "built",
       "owner": "architect",
@@ -14,7 +15,9 @@
         "../prompts/pi-iroh-coms.md",
         "github:disler/pi-vs-claude-code (extensions/coms-net.ts + scripts/coms-net-server.ts)"
       ],
-      "forward_refs": []
+      "forward_refs": [],
+      "provides": [],
+      "consumes": []
     }
   ],
   "dangling": []

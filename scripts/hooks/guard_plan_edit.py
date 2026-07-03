@@ -3,24 +3,35 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-"""PreToolUse guard: role-ownership + CLI-managed-region enforcement.
+"""PreToolUse guard: managed-region integrity + role-ownership (mode-driven).
 
 Reads the Claude Code hook payload from stdin. Two composed checks on
 Edit/MultiEdit/Write:
 
-  1. Role ownership (any path). If PLANF3_ROLE is set and roles/_roles.json exists
-     in the project cwd, deny writes to a path matching ANOTHER role's owned globs
-     (deny-JSON names the owning role + escalation). Own-lane and unowned paths pass.
-     Fail-open when PLANF3_ROLE is unset or the manifest is absent.
-  2. Managed region (specs/*.html only). Allow Write to a new plan (Create
-     authoring); deny Write over an existing plan; deny Edit/MultiEdit whose text
-     touches a managed token (data-managed, data-meta=, class="status", amendments,
-     or a bare status bracket), steering to plan_tool. Prose/diagram edits pass.
+  1. Managed region (specs/*.html only) — the INTEGRITY layer, always on for
+     everyone regardless of roles. Allow Write to a new plan (Create authoring);
+     deny Write over an existing plan; deny Edit/MultiEdit whose text touches a
+     managed token (data-managed, data-meta=, class="status", amendments, or a
+     bare status bracket), steering to plan_tool. Prose/diagram edits pass.
+
+  2. Role ownership (any path) — driven by roles/_roles.json `mode`:
+       off / no manifest / no roles dir : fail-open, no role logic.
+       track                            : no denies (impact is logged post-write).
+       protect                          : deny ONLY when the acting role (PLANF3_ROLE)
+                                          is set, is not `architect`, and the target
+                                          matches ANOTHER role's source_of_truth globs.
+     Everything else — code paths, supporting, unowned, roleless sessions, the
+     architect — is allowed. This is "coherence, not compliance": only integrity
+     and cross-role source-of-truth writes are ever blocked.
+
+The role matcher is plan_tool.glob_match — the SAME function roles-build uses for
+disjointness — so build time and enforce time never disagree. If plan_tool cannot
+be located the role layer fails open.
 
 Fail-open: any unexpected error exits 0 so the hook never hard-blocks the agent.
 """
 
-import fnmatch
+import importlib.util
 import json
 import os
 import re
@@ -42,7 +53,7 @@ CLI_HINT = (
     "or amendments). Use plan_tool instead:\n"
     "  status:    uv run scripts/plan_tool.py status <plan> --id <id> --state wip|x|f\n"
     "  metadata:  uv run scripts/plan_tool.py meta <plan> --field <field> --value <v>\n"
-    "  reference: uv run scripts/plan_tool.py ref --this <plan> --other <plan> --dir back|forward\n"
+    "  reference: uv run scripts/plan_tool.py ref --this <plan> --other <plan> --type back|forward|provides|consumes\n"
     "  amendment: uv run scripts/plan_tool.py amend <plan> --summary \"…\" --detail \"…\"\n"
     "Free-form prose (Purpose/Problem/Solution/Notes) and diagrams may be edited normally."
 )
@@ -55,10 +66,26 @@ def is_plan_path(fp: str) -> bool:
     return p.suffix.lower() == ".html" and "specs" in p.parts
 
 
-def _glob_match(rel: str, glob: str) -> bool:
-    # Normalize `**` to `*`; fnmatch's `*` already spans `/`, giving prefix ownership.
-    g = glob.replace("\\", "/").replace("/**", "/*").replace("**", "*")
-    return fnmatch.fnmatch(rel, g)
+def _load_glob_match(cwd: Path):
+    """Return plan_tool.glob_match (the single shared matcher), or None if unlocatable."""
+    candidates = []
+    pr = os.environ.get("CLAUDE_PLUGIN_ROOT")
+    if pr:
+        candidates.append(Path(pr) / "scripts" / "plan_tool.py")
+    candidates.append(cwd / "scripts" / "plan_tool.py")
+    candidates.append(Path(__file__).resolve().parent.parent / "plan_tool.py")
+    for c in candidates:
+        if not c.exists():
+            continue
+        try:
+            sys.dont_write_bytecode = True
+            spec = importlib.util.spec_from_file_location("_planf3_plan_tool_guard", c)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return mod.glob_match
+        except Exception:
+            continue
+    return None
 
 
 def _rel_posix(fp: str, cwd: Path) -> str:
@@ -73,32 +100,44 @@ def role_denial(payload: dict, fp: str):
     """Return (owning_role, matched_glob) if the acting role may not touch fp, else None."""
     acting = os.environ.get("PLANF3_ROLE")
     if not acting:
-        return None  # fail-open: roles not in use this session
+        return None  # roleless session -> allow (logged post-write)
     cwd = Path(payload.get("cwd") or ".")
-    manifest = cwd / "roles" / "_roles.json"
-    if not manifest.exists():
-        return None  # fail-open: no manifest
+    roles_dir = cwd / "roles"
+    manifest = roles_dir / "_roles.json"
+    if not roles_dir.exists() or not manifest.exists():
+        return None  # fail-open: roles not in use
     try:
-        roles = json.loads(manifest.read_text(encoding="utf-8")).get("roles", {})
+        data = json.loads(manifest.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return None
+    mode = data.get("mode", "track")
+    if mode != "protect":
+        return None  # off / track -> no denies
+    if acting == "architect":
+        return None  # architect is never denied by the role layer
+    glob_match = _load_glob_match(cwd)
+    if glob_match is None:
+        return None  # cannot enforce without the shared matcher -> fail-open
+    roles = data.get("roles", {})
     rel = _rel_posix(fp, cwd)
-    if any(_glob_match(rel, g) for g in roles.get(acting, {}).get("owns", [])):
-        return None  # in the acting role's own lane
+    # Deny only on ANOTHER role's source-of-truth. Disjointness (build-time) means
+    # this cannot also be the acting role's own SoT/code, so no self-conflict.
     for role, info in roles.items():
         if role == acting:
             continue
-        for g in info.get("owns", []):
-            if _glob_match(rel, g):
+        for g in info.get("source_of_truth", []):
+            if glob_match(rel, g):
                 return role, g
     return None
 
 
 def role_msg(owner: str, glob: str) -> str:
     acting = os.environ.get("PLANF3_ROLE")
-    return (f"Role boundary: '{acting}' may not edit this path — it is owned by role "
-            f"'{owner}' (matches its glob '{glob}'). Do not edit another role's lane. "
-            f"Escalate to the architect, or ask '{owner}' to make the change.")
+    return (f"Role boundary: '{acting}' may not edit this path — it is the source of truth "
+            f"owned by role '{owner}' (matches its glob '{glob}'). Do not edit another role's "
+            f"source of truth. File a change request: "
+            f"uv run scripts/plan_tool.py report <{owner}'s plan> --status request "
+            f"--summary \"…\", or escalate to the architect.")
 
 
 def touches_managed(text: str) -> bool:
@@ -138,7 +177,7 @@ def main() -> int:
         if denial:
             deny(role_msg(*denial))
 
-    # 2. Managed-region check — specs/*.html only.
+    # 2. Managed-region check — specs/*.html only (integrity layer, always on).
     if not is_plan_path(fp):
         return 0
 

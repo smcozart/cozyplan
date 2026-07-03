@@ -14,3 +14,6 @@
 # Append-only plan event logs: union-merge so concurrent appends from different
 # writers/roles combine cleanly instead of conflicting.
 specs/*.log.ndjson merge=union
+
+# Append-only role activity log (impact tracking): same union-merge treatment.
+roles/activity.log.ndjson merge=union

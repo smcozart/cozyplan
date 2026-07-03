@@ -30,6 +30,7 @@ append-only, merge-friendly multi-writer surface) and updates the human-readable
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -41,10 +42,12 @@ from pathlib import Path
 STATUS_MARKERS = {"idle": "[]", "wip": "[wip]", "x": "[x]", "f": "[f]"}
 VALID_MARKERS = set(STATUS_MARKERS.values())
 STATUS_VOCAB = {"draft", "active", "built", "superseded", "archived"}
-LIST_FIELDS = {"modified", "commits", "agent", "session", "back-refs", "forward-refs"}
-SINGLE_FIELDS = {"id", "created", "status", "owner", "schema"}
+LIST_FIELDS = {"modified", "commits", "agent", "session", "back-refs", "forward-refs",
+               "provides", "consumes"}
+SINGLE_FIELDS = {"id", "created", "status", "owner", "schema", "kind"}
 ALL_FIELDS = LIST_FIELDS | SINGLE_FIELDS
 WRITE_ONCE = {"id", "created", "schema"}
+KIND_VOCAB = {"plan", "contract"}
 
 # Artifact structural-contract version. The tool declares the schema range it
 # understands and refuses structured writes to a plan stamped newer than MAX, so an
@@ -109,6 +112,189 @@ def split_list(v: str) -> list[str]:
 def fail(msg: str) -> int:
     print(f"error: {msg}", file=sys.stderr)
     return 1
+
+
+# ── glob engine (ONE matcher shared by roles-build disjointness AND the guard) ─
+# Semantics, documented once and relied on by both consumers:
+#   **   spans directory boundaries (zero or more path segments)
+#   *    matches within a single segment (never crosses '/')
+#   ?    matches one non-'/' character
+#   [..] a character class (passed through to the regex)
+# Separators are normalized ('\\' -> '/') before matching. The guard imports
+# `glob_match`; `roles build` disjointness uses `glob_overlap`, which is defined
+# purely in terms of `glob_match`, so build-time and enforce-time never disagree.
+_GLOB_CACHE: dict[str, re.Pattern] = {}
+
+
+def _compile_glob(glob: str) -> re.Pattern:
+    cached = _GLOB_CACHE.get(glob)
+    if cached is not None:
+        return cached
+    g = glob.replace("\\", "/")
+    out: list[str] = []
+    i, n = 0, len(g)
+    while i < n:
+        if g[i:i + 3] == "**/":
+            out.append("(?:[^/]+/)*")  # zero or more whole directory segments
+            i += 3
+        elif g[i:i + 2] == "**":
+            out.append(".*")            # trailing/!bare ** -> spans everything
+            i += 2
+        elif g[i] == "*":
+            out.append("[^/]*")
+            i += 1
+        elif g[i] == "?":
+            out.append("[^/]")
+            i += 1
+        elif g[i] == "[":
+            j = g.find("]", i + 1)
+            if j == -1:
+                out.append(re.escape("["))
+                i += 1
+            else:
+                out.append(g[i:j + 1])
+                i = j + 1
+        else:
+            out.append(re.escape(g[i]))
+            i += 1
+    pat = re.compile("".join(out) + r"\Z")
+    _GLOB_CACHE[glob] = pat
+    return pat
+
+
+def glob_match(rel: str, glob: str) -> bool:
+    """True if the relative POSIX path `rel` matches ownership glob `glob`."""
+    return _compile_glob(glob).match(rel.replace("\\", "/")) is not None
+
+
+def _glob_witness(glob: str) -> str:
+    """A concrete path a glob matches — wildcards resolved to sentinel segments.
+
+    Used only to probe overlap through `glob_match`; the sentinels are arbitrary
+    tokens unlikely to collide with real literal segments in another glob.
+    """
+    g = glob.replace("\\", "/")
+    parts = []
+    for seg in g.split("/"):
+        if seg == "**":
+            parts.append("_w_")
+        else:
+            s = re.sub(r"\[.*?\]", "w", seg).replace("**", "w").replace("*", "w").replace("?", "y")
+            parts.append(s if s else "w")
+    return "/".join(p for p in parts if p != "")
+
+
+def glob_overlap(g1: str, g2: str) -> bool:
+    """True if some path could be owned by both globs — expressed via `glob_match`.
+
+    Symmetric probe: a witness path generated from each glob is tested against the
+    other. Correct for the prefix/segment ownership patterns roles use in practice.
+    """
+    return glob_match(_glob_witness(g1), g2) or glob_match(_glob_witness(g2), g1)
+
+
+# ── git awareness (subprocess; graceful when not a repo) ──────────────────────
+def _git(cwd: Path, *args: str) -> tuple[int, str]:
+    import subprocess
+    try:
+        r = subprocess.run(["git", *args], cwd=str(cwd), capture_output=True,
+                           text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return 1, ""
+    return r.returncode, r.stdout.strip()
+
+
+def git_info(cwd: Path) -> dict:
+    """Return {sha, tree, dirty} for HEAD, or {} when cwd is not a git repo."""
+    rc, _ = _git(cwd, "rev-parse", "--is-inside-work-tree")
+    if rc != 0:
+        return {}
+    _, sha = _git(cwd, "rev-parse", "HEAD")
+    _, tree = _git(cwd, "rev-parse", "HEAD^{tree}")
+    rc_s, status = _git(cwd, "status", "--porcelain")
+    return {"sha": sha, "tree": tree, "dirty": bool(status.strip())}
+
+
+def git_commit_exists(cwd: Path, sha: str) -> bool:
+    return _git(cwd, "cat-file", "-e", f"{sha}^{{commit}}")[0] == 0
+
+
+def git_tag_count(cwd: Path, prefix: str) -> int:
+    rc, out = _git(cwd, "tag", "--list", f"{prefix}*")
+    if rc != 0 or not out:
+        return 0
+    return len([ln for ln in out.splitlines() if ln.strip()])
+
+
+def git_create_tag(cwd: Path, name: str, message: str) -> bool:
+    return _git(cwd, "tag", "-a", name, "-m", message or name)[0] == 0
+
+
+# ── plan write lock (exclusive, sibling <plan>.lock; Windows-safe) ────────────
+LOCK_STALE_SECONDS = 60
+
+
+class _PlanLock:
+    """Exclusive advisory lock for a plan's read-modify-write cycle.
+
+    Created via O_CREAT|O_EXCL (atomic on Windows too). Retries for ~2s; a lock
+    older than LOCK_STALE_SECONDS is treated as abandoned, broken with a warning,
+    and retried. Always released in __exit__.
+    """
+
+    def __init__(self, target: Path):
+        self.path = Path(target).with_suffix(".lock")
+        self.acquired = False
+
+    def acquire(self) -> None:
+        import time
+        deadline = time.monotonic() + 2.0
+        while True:
+            try:
+                fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.write(fd, f"{os.getpid()} {now_iso()}".encode("utf-8"))
+                os.close(fd)
+                self.acquired = True
+                return
+            except FileExistsError:
+                try:
+                    age = time.time() - self.path.stat().st_mtime
+                except OSError:
+                    age = 0
+                if age > LOCK_STALE_SECONDS:
+                    print(f"  warn: breaking stale lock {self.path.name} "
+                          f"(age {int(age)}s > {LOCK_STALE_SECONDS}s)", file=sys.stderr)
+                    try:
+                        self.path.unlink()
+                    except OSError:
+                        pass
+                    continue
+                if time.monotonic() >= deadline:
+                    print(f"  warn: lock {self.path.name} busy; proceeding without it",
+                          file=sys.stderr)
+                    return  # fail-open: never hard-block a mutation on a busy lock
+                time.sleep(0.05)
+
+    def release(self) -> None:
+        if self.acquired:
+            try:
+                self.path.unlink()
+            except OSError:
+                pass
+            self.acquired = False
+
+    def __enter__(self):
+        self.acquire()
+        return self
+
+    def __exit__(self, *exc):
+        self.release()
+        return False
+
+
+def _sorted_locks(paths: list[Path]) -> list[_PlanLock]:
+    # Deterministic acquire order across two-plan ops avoids lock-order deadlock.
+    return [_PlanLock(p) for p in sorted(dict.fromkeys(Path(p) for p in paths), key=str)]
 
 
 # ── metadata parsing / mutation ───────────────────────────────────────────────
@@ -316,20 +502,21 @@ def cmd_status(args) -> int:
         return fail(f"state must be one of {sorted(STATUS_MARKERS)}")
     if args.state == "f" and not args.reason:
         return fail("state 'f' (failed) requires --reason (one-line explanation)")
-    text = read(path)
-    if not schema_ok(path, text):
-        return 1
-    marker = STATUS_MARKERS[args.state]
-    pat = re.compile(r'(data-status-for="' + re.escape(args.id) + r'"[^>]*>)\[[^\]]*\]')
-    new, n = pat.subn(lambda m: m.group(1) + marker, text, count=1)
-    if n == 0:
-        return fail(f"no status anchor data-status-for={args.id!r} found (run init-ids?)")
-    nl = detect_nl(new)
-    new = stamp_modified(new, now_iso())
-    if args.state == "f":
-        new = append_amendment(new, nl, now_iso(), f"task {args.id} marked failed", args.reason)
-    write(path, new)
-    log_event(path, "status", args, {"id": args.id, "state": args.state, "reason": args.reason})
+    with _PlanLock(path):
+        text = read(path)
+        if not schema_ok(path, text):
+            return 1
+        marker = STATUS_MARKERS[args.state]
+        pat = re.compile(r'(data-status-for="' + re.escape(args.id) + r'"[^>]*>)\[[^\]]*\]')
+        new, n = pat.subn(lambda m: m.group(1) + marker, text, count=1)
+        if n == 0:
+            return fail(f"no status anchor data-status-for={args.id!r} found (run init-ids?)")
+        nl = detect_nl(new)
+        new = stamp_modified(new, now_iso())
+        if args.state == "f":
+            new = append_amendment(new, nl, now_iso(), f"task {args.id} marked failed", args.reason)
+        write(path, new)
+        log_event(path, "status", args, {"id": args.id, "state": args.state, "reason": args.reason})
     print(f"status {args.id} -> {marker} in {path.name}")
     self_validate(path, new)
     return 0
@@ -341,29 +528,31 @@ def cmd_meta(args) -> int:
         return fail(f"plan not found: {path}")
     if args.field not in ALL_FIELDS:
         return fail(f"unknown field {args.field!r}; valid: {sorted(ALL_FIELDS)}")
-    text = read(path)
-    if not _require_anchored(path, text):
-        return 1
-    if not schema_ok(path, text):
-        return 1
     if args.field == "status" and args.value not in STATUS_VOCAB:
         return fail(f"status must be one of {sorted(STATUS_VOCAB)}")
-
-    if args.field in SINGLE_FIELDS:
-        cur = get_meta_raw(text, args.field)
-        if cur is None:
-            return fail(f"no data-meta anchor for {args.field!r} (run init-ids?)")
-        if args.field in WRITE_ONCE and not is_empty_value(cur) and not args.force:
-            return fail(f"{args.field!r} is write-once (currently {strip_tags(cur)!r}); use --force to override")
-        new, n = set_meta(text, args.field, esc(args.value))
-    else:
-        new, n = append_meta(text, args.field, args.value)
-    if n == 0:
-        return fail(f"could not locate metadata field {args.field!r}")
-    if args.field != "modified":
-        new = stamp_modified(new, now_iso())
-    write(path, new)
-    log_event(path, "meta", args, {"field": args.field, "value": args.value})
+    if args.field == "kind" and args.value not in KIND_VOCAB:
+        return fail(f"kind must be one of {sorted(KIND_VOCAB)}")
+    with _PlanLock(path):
+        text = read(path)
+        if not _require_anchored(path, text):
+            return 1
+        if not schema_ok(path, text):
+            return 1
+        if args.field in SINGLE_FIELDS:
+            cur = get_meta_raw(text, args.field)
+            if cur is None:
+                return fail(f"no data-meta anchor for {args.field!r} (run init-ids?)")
+            if args.field in WRITE_ONCE and not is_empty_value(cur) and not args.force:
+                return fail(f"{args.field!r} is write-once (currently {strip_tags(cur)!r}); use --force to override")
+            new, n = set_meta(text, args.field, esc(args.value))
+        else:
+            new, n = append_meta(text, args.field, args.value)
+        if n == 0:
+            return fail(f"could not locate metadata field {args.field!r}")
+        if args.field != "modified":
+            new = stamp_modified(new, now_iso())
+        write(path, new)
+        log_event(path, "meta", args, {"field": args.field, "value": args.value})
     print(f"meta {args.field} <- {args.value!r} in {path.name}")
     self_validate(path, new)
     return 0
@@ -373,20 +562,31 @@ def cmd_build_meta(args) -> int:
     path = Path(args.plan)
     if not path.exists():
         return fail(f"plan not found: {path}")
-    text = read(path)
-    if not _require_anchored(path, text):
-        return 1
-    if not schema_ok(path, text):
-        return 1
-    applied = []
-    for field, value in (("commits", args.commit), ("agent", args.agent), ("session", args.session)):
-        if value:
-            text, n = append_meta(text, field, value)
+    # Verified checkpoint: auto-capture HEAD/tree so the record binds to a real
+    # committed state. A hand-typed --commit is verified to exist before use.
+    info = git_info(path.parent)
+    if args.commit and info and not git_commit_exists(path.parent, args.commit):
+        return fail(f"--commit {args.commit!r} does not exist in the repo at {path.parent}")
+    with _PlanLock(path):
+        text = read(path)
+        if not _require_anchored(path, text):
+            return 1
+        if not schema_ok(path, text):
+            return 1
+        applied = []
+        for field, value in (("commits", args.commit), ("agent", args.agent), ("session", args.session)):
+            if value:
+                text, n = append_meta(text, field, value)
+                if n:
+                    applied.append(f"{field}={value}")
+        if info.get("sha") and not args.commit:
+            text, n = append_meta(text, "commits", info["sha"])
             if n:
-                applied.append(f"{field}={value}")
-    text = stamp_modified(text, now_iso())
-    write(path, text)
-    log_event(path, "build-meta", args, {"applied": applied})
+                applied.append(f"commits={info['sha']} (verified HEAD)")
+        text = stamp_modified(text, now_iso())
+        write(path, text)
+        log_event(path, "build-meta", args,
+                  {"applied": applied, "head": info or None})
     print(f"build-meta applied [{', '.join(applied) or 'nothing'}] in {path.name}")
     self_validate(path, text)
     return 0
@@ -410,19 +610,20 @@ def cmd_amend(args) -> int:
     path = Path(args.plan)
     if not path.exists():
         return fail(f"plan not found: {path}")
-    text = read(path)
-    if not _require_anchored(path, text):
-        return 1
-    if not schema_ok(path, text):
-        return 1
-    if "data-amendments-list" not in text:
-        return fail("no data-amendments-list container (run init-ids?)")
-    nl = detect_nl(text)
-    iso = args.iso or now_iso()
-    text = append_amendment(text, nl, iso, args.summary, args.detail)
-    text = stamp_modified(text, now_iso())
-    write(path, text)
-    log_event(path, "amend", args, {"summary": args.summary})
+    with _PlanLock(path):
+        text = read(path)
+        if not _require_anchored(path, text):
+            return 1
+        if not schema_ok(path, text):
+            return 1
+        if "data-amendments-list" not in text:
+            return fail("no data-amendments-list container (run init-ids?)")
+        nl = detect_nl(text)
+        iso = args.iso or now_iso()
+        text = append_amendment(text, nl, iso, args.summary, args.detail)
+        text = stamp_modified(text, now_iso())
+        write(path, text)
+        log_event(path, "amend", args, {"summary": args.summary})
     print(f"amend appended to {path.name}")
     self_validate(path, text)
     return 0
@@ -431,71 +632,195 @@ def cmd_amend(args) -> int:
 def cmd_ref(args) -> int:
     this_path = Path(args.this)
     other_path = Path(args.other)
+    # `--type` supersedes the legacy `--dir` (back/forward kept for compatibility).
+    rtype = getattr(args, "type", None) or getattr(args, "dir", None)
+    if rtype is None:
+        return fail("ref requires --type back|forward|provides|consumes (or legacy --dir)")
     for p in (this_path, other_path):
         if not p.exists():
             return fail(f"plan not found: {p}")
-    this_text = read(this_path)
-    other_text = read(other_path)
-    if 'data-meta="' not in this_text:
-        return fail(f"{this_path.name} lacks anchors — run: plan_tool init-ids {this_path}")
-    if 'data-meta="' not in other_text:
-        return fail(f"{other_path.name} lacks anchors — run: plan_tool init-ids {other_path}")
-    if not schema_ok(this_path, this_text) or not schema_ok(other_path, other_text):
-        return 1
 
-    this_field = "back-refs" if args.dir == "back" else "forward-refs"
-    other_field = "forward-refs" if args.dir == "back" else "back-refs"
-    this_val = other_path.name
-    other_val = this_path.name
-    iso = now_iso()
+    with contextlib.ExitStack() as stack:
+        for lk in _sorted_locks([this_path, other_path]):
+            stack.enter_context(lk)
+        this_text = read(this_path)
+        other_text = read(other_path)
+        if 'data-meta="' not in this_text:
+            return fail(f"{this_path.name} lacks anchors — run: plan_tool init-ids {this_path}")
+        if 'data-meta="' not in other_text:
+            return fail(f"{other_path.name} lacks anchors — run: plan_tool init-ids {other_path}")
+        if not schema_ok(this_path, this_text) or not schema_ok(other_path, other_text):
+            return 1
+        iso = now_iso()
 
-    this_text, n1 = append_meta(this_text, this_field, this_val)
-    other_text, n2 = append_meta(other_text, other_field, other_val)
-    if not n1 or not n2:
-        return fail("could not locate a reference field on one of the plans")
+        if rtype in ("provides", "consumes"):
+            # Typed seam link. Result is always: consumer.consumes += seam,
+            # seam.provides += consumer — one command wires both directions.
+            if rtype == "consumes":
+                consumer_p, consumer_t, seam_p, seam_t = this_path, this_text, other_path, other_text
+            else:  # provides: --this is the provider/seam
+                seam_p, seam_t, consumer_p, consumer_t = this_path, this_text, other_path, other_text
+            consumer_t, n1 = append_meta(consumer_t, "consumes", seam_p.name)
+            seam_t, n2 = append_meta(seam_t, "provides", consumer_p.name)
+            if not n1 or not n2:
+                return fail("could not locate provides/consumes field on one of the plans "
+                            "(run init-ids?)")
+            ncl, nsl = detect_nl(consumer_t), detect_nl(seam_t)
+            consumer_t = stamp_modified(consumer_t, iso)
+            seam_t = stamp_modified(seam_t, iso)
+            consumer_t = append_amendment(consumer_t, ncl, iso, f"consumes += {seam_p.name}",
+                                          f"Consumes seam {seam_p.name}.")
+            seam_t = append_amendment(seam_t, nsl, iso, f"provides += {consumer_p.name}",
+                                      f"Provides seam to {consumer_p.name}.")
+            write(consumer_p, consumer_t)
+            write(seam_p, seam_t)
+            log_event(consumer_p, "ref", args,
+                      {"field": "consumes", "other": seam_p.name, "type": rtype})
+            log_event(seam_p, "ref", args,
+                      {"field": "provides", "other": consumer_p.name, "type": rtype})
+            print(f"ref: {consumer_p.name} [consumes] <-> {seam_p.name} [provides]")
+            self_validate(consumer_p, consumer_t)
+            self_validate(seam_p, seam_t)
+            return 0
 
-    nl1, nl2 = detect_nl(this_text), detect_nl(other_text)
-    this_text = stamp_modified(this_text, iso)
-    other_text = stamp_modified(other_text, iso)
-    this_text = append_amendment(this_text, nl1, iso, f"{this_field} += {this_val}",
-                                 f"Linked to {other_path.name} ({args.dir} reference).")
-    other_text = append_amendment(other_text, nl2, iso, f"{other_field} += {other_val}",
-                                  f"Reciprocal link from {this_path.name}.")
-    write(this_path, this_text)
-    write(other_path, other_text)
-    log_event(this_path, "ref", args, {"field": this_field, "other": this_val, "dir": args.dir})
-    log_event(other_path, "ref", args, {"field": other_field, "other": other_val, "dir": args.dir})
-    print(f"ref: {this_path.name} [{this_field}] <-> {other_path.name} [{other_field}]")
-    self_validate(this_path, this_text)
-    self_validate(other_path, other_text)
-    return 0
+        this_field = "back-refs" if rtype == "back" else "forward-refs"
+        other_field = "forward-refs" if rtype == "back" else "back-refs"
+        this_val = other_path.name
+        other_val = this_path.name
+
+        this_text, n1 = append_meta(this_text, this_field, this_val)
+        other_text, n2 = append_meta(other_text, other_field, other_val)
+        if not n1 or not n2:
+            return fail("could not locate a reference field on one of the plans")
+
+        nl1, nl2 = detect_nl(this_text), detect_nl(other_text)
+        this_text = stamp_modified(this_text, iso)
+        other_text = stamp_modified(other_text, iso)
+        this_text = append_amendment(this_text, nl1, iso, f"{this_field} += {this_val}",
+                                     f"Linked to {other_path.name} ({rtype} reference).")
+        other_text = append_amendment(other_text, nl2, iso, f"{other_field} += {other_val}",
+                                      f"Reciprocal link from {this_path.name}.")
+        write(this_path, this_text)
+        write(other_path, other_text)
+        log_event(this_path, "ref", args, {"field": this_field, "other": this_val, "type": rtype})
+        log_event(other_path, "ref", args, {"field": other_field, "other": other_val, "type": rtype})
+        print(f"ref: {this_path.name} [{this_field}] <-> {other_path.name} [{other_field}]")
+        self_validate(this_path, this_text)
+        self_validate(other_path, other_text)
+        return 0
 
 
 def cmd_report(args) -> int:
     path = Path(args.plan)
     if not path.exists():
         return fail(f"plan not found: {path}")
-    text = read(path)
-    if not schema_ok(path, text):
-        return 1
-    commits = [c.strip() for c in (args.commits or "").split(",") if c.strip()]
-    details = {
-        "plan": path.name,
-        "report_status": args.status,
-        "summary": args.summary,
-        "commits": commits,
-    }
-    log_event(path, "report", args, details)
-    # HTML snapshot: append-only amendment so the report is visible in the readable artifact.
-    if "data-amendments-list" in text:
-        nl = detect_nl(text)
-        iso = now_iso()
-        who = args.role or args.agent or "role"
-        text = append_amendment(text, nl, iso, f"report-back ({who}): {args.status}", args.summary)
-        write(path, text)
-    else:
-        print("  warn: no amendments container; report recorded in event log only")
+    with _PlanLock(path):
+        text = read(path)
+        if not schema_ok(path, text):
+            return 1
+        commits = [c.strip() for c in (args.commits or "").split(",") if c.strip()]
+        details = {
+            "plan": path.name,
+            "report_status": args.status,
+            "summary": args.summary,
+            "commits": commits,
+        }
+        # `request` / `request-closed` are a change-request lifecycle: rollup pairs
+        # them per plan by order (an open request has no later request-closed).
+        log_event(path, "report", args, details)
+        # HTML snapshot: append-only amendment so the report is visible in the readable artifact.
+        if "data-amendments-list" in text:
+            nl = detect_nl(text)
+            iso = now_iso()
+            who = args.role or args.agent or "role"
+            text = append_amendment(text, nl, iso, f"report-back ({who}): {args.status}", args.summary)
+            write(path, text)
+        else:
+            print("  warn: no amendments container; report recorded in event log only")
     print(f"report ({args.role or 'role'}) status={args.status} on {path.name}")
+    return 0
+
+
+# ── checkpoints + verified commits (git-native revert points) ─────────────────
+def _plan_id(text: str, path: Path) -> str:
+    pid = strip_tags(get_meta_raw(text, "id") or "")
+    return pid or path.stem
+
+
+def _latest_modified(text: str) -> str:
+    return (split_list(get_meta_raw(text, "modified") or "") or [""])[-1]
+
+
+def _checkpoint_core(path: Path, args, event_name: str, label: str, extra: dict) -> int:
+    """Bind a plan's state to a real committed repo state and tag it.
+
+    Refuses on a dirty tree (a checkpoint must point at a committed state) or when
+    the plan is not inside a git repo. Writes an event carrying the verified
+    sha/tree, appends the sha to the plan's commits metadata, and creates an
+    annotated tag `planf3/<plan-id>/<n>`.
+    """
+    repo = path.parent
+    info = git_info(repo)
+    if not info:
+        return fail(f"{path.parent} is not a git repository; cannot checkpoint")
+    if info.get("dirty"):
+        return fail("working tree is dirty; commit or stash before a checkpoint "
+                    "(a checkpoint must bind to a real committed state)")
+    sha, tree = info["sha"], info["tree"]
+    with _PlanLock(path):
+        text = read(path)
+        if not schema_ok(path, text):
+            return 1
+        pid = _plan_id(text, path)
+        prefix = f"planf3/{pid}/"
+        n = git_tag_count(repo, prefix) + 1
+        tag = f"{prefix}{n}"
+        if not git_create_tag(repo, tag, label):
+            return fail(f"failed to create git tag {tag}")
+        text, _ = append_meta(text, "commits", sha)
+        text = stamp_modified(text, now_iso())
+        write(path, text)
+        details = {"plan": path.name, "plan_id": pid, "label": label,
+                   "sha": sha, "tree": tree, "tag": tag}
+        details.update(extra)
+        log_event(path, event_name, args, details)
+    print(f"{event_name}: {path.name} @ {sha[:12]} -> tag {tag}"
+          + (f' "{label}"' if label else ""))
+    return 0
+
+
+def cmd_checkpoint(args) -> int:
+    path = Path(args.plan)
+    if not path.exists():
+        return fail(f"plan not found: {path}")
+    return _checkpoint_core(path, args, "checkpoint", args.label or "", {})
+
+
+def cmd_accept(args) -> int:
+    path = Path(args.plan)
+    if not path.exists():
+        return fail(f"plan not found: {path}")
+    # Architect acceptance: an accepted event that also creates a checkpoint tag.
+    return _checkpoint_core(path, args, "accepted", args.notes or "accepted",
+                            {"notes": args.notes or ""})
+
+
+def cmd_ack(args) -> int:
+    """Acknowledge the current state of a seam a consumer plan depends on."""
+    consumer = Path(args.plan)
+    if not consumer.exists():
+        return fail(f"plan not found: {consumer}")
+    seam_path = Path(args.seam)
+    if not seam_path.is_absolute() and not seam_path.exists():
+        seam_path = consumer.parent / args.seam
+    if not seam_path.exists():
+        return fail(f"seam plan not found: {args.seam}")
+    seam_text = read(seam_path)
+    seam_ts = _latest_modified(seam_text)
+    with _PlanLock(consumer):
+        log_event(consumer, "ack", args,
+                  {"seam": seam_path.name, "seam_modified_ts_at_ack": seam_ts})
+    print(f"ack: {consumer.name} acknowledged seam {seam_path.name} @ {seam_ts or '(no ts)'}")
     return 0
 
 
@@ -533,7 +858,9 @@ def _ensure_new_fields(text: str, nl: str) -> str:
     if not m:
         return text
     additions = ""
-    for field, default in (("id", ""), ("owner", ""), ("status", "draft"), ("schema", str(MIN_SCHEMA))):
+    for field, default in (("id", ""), ("owner", ""), ("kind", "plan"),
+                           ("status", "draft"), ("schema", str(MIN_SCHEMA)),
+                           ("provides", "—"), ("consumes", "—")):
         if f'data-meta="{field}"' not in text:
             additions += f'{nl}        <dt>{field}</dt> <dd data-meta="{field}">{default}</dd>'
     if not additions:
@@ -719,6 +1046,7 @@ def cmd_index(args) -> int:
         plans.append({
             "file": hp.name,
             "id": meta.get("id", ""),
+            "kind": meta.get("kind", "") or "plan",
             "title": extract_title(text),
             "status": meta.get("status", ""),
             "owner": meta.get("owner", ""),
@@ -727,6 +1055,8 @@ def cmd_index(args) -> int:
             "image_dir": hp.stem + "/" if (specs / hp.stem).is_dir() else "",
             "back_refs": split_list(meta.get("back-refs", "")),
             "forward_refs": split_list(meta.get("forward-refs", "")),
+            "provides": split_list(meta.get("provides", "")),
+            "consumes": split_list(meta.get("consumes", "")),
         })
 
     dangling = []
@@ -769,15 +1099,17 @@ def cmd_index(args) -> int:
 def parse_role_frontmatter(md_text: str) -> dict | None:
     """Parse the flat-ish YAML frontmatter of a role file (no PyYAML).
 
-    Extracts `role`, `reports_to`, and the nested `owns.{source_of_truth,code,supporting}`
-    lists — the only fields `roles build` needs. Tolerates the richer nested blocks
-    (definition_of_done, report_back) by ignoring them.
+    Extracts `role`, `reports_to`, `github`, the architect-only `mode`/`acceptance`,
+    and the nested `owns.{source_of_truth,code,supporting}` lists — the fields
+    `roles build` needs. Tolerates the richer nested blocks (definition_of_done,
+    report_back) by ignoring them.
     """
     m = re.match(r"^﻿?---\s*\n(.*?)\n---\s*\n?", md_text, re.S)
     if not m:
         return None
     lines = m.group(1).split("\n")
-    out = {"role": None, "reports_to": None,
+    out = {"role": None, "reports_to": None, "github": None,
+           "mode": None, "acceptance": None,
            "owns": {"source_of_truth": [], "code": [], "supporting": []}}
 
     def _unquote(s: str) -> str:
@@ -790,6 +1122,10 @@ def parse_role_frontmatter(md_text: str) -> dict | None:
         mr = re.match(r"^reports_to:\s*(.+)$", ln)
         if mr:
             out["reports_to"] = _unquote(mr.group(1))
+        for key in ("github", "mode", "acceptance"):
+            mk = re.match(rf"^{key}:\s*(.+)$", ln)
+            if mk:
+                out[key] = _unquote(mk.group(1))
 
     owns_idx = next((k for k, ln in enumerate(lines) if re.match(r"^owns:\s*$", ln)), None)
     if owns_idx is not None:
@@ -815,27 +1151,21 @@ def parse_role_frontmatter(md_text: str) -> dict | None:
     return out
 
 
-def _glob_prefix(g: str) -> str:
-    g = g.replace("\\", "/")
-    idx = len(g)
-    for ch in "*?[":
-        j = g.find(ch)
-        if j != -1:
-            idx = min(idx, j)
-    return g[:idx]
-
-
 def check_disjoint(role_globs: dict[str, list[str]]) -> list[tuple[str, str, str, str]]:
-    """Return (role1, glob1, role2, glob2) pairs whose ownership prefixes overlap."""
-    flat = [(role, g, _glob_prefix(g)) for role, globs in role_globs.items() for g in globs]
+    """Return (role1, glob1, role2, glob2) pairs that could own a common path.
+
+    Uses `glob_overlap` — the exact same matcher the guard enforces with — so a
+    role set that builds clean here cannot surprise the guard at enforce time.
+    """
+    flat = [(role, g) for role, globs in role_globs.items() for g in globs]
     conflicts = []
     for i in range(len(flat)):
         for j in range(i + 1, len(flat)):
-            r1, g1, p1 = flat[i]
-            r2, g2, p2 = flat[j]
-            if r1 == r2 or not p1 or not p2:
+            r1, g1 = flat[i]
+            r2, g2 = flat[j]
+            if r1 == r2:
                 continue
-            if p1.startswith(p2) or p2.startswith(p1):
+            if glob_overlap(g1, g2):
                 conflicts.append((r1, g1, r2, g2))
     return conflicts
 
@@ -847,17 +1177,30 @@ def _glob_to_codeowners(g: str) -> str:
     return g.replace("/**/", "/").replace("**", "*")
 
 
-def render_codeowners(roles_out: dict) -> str:
+def render_codeowners(roles_out: dict) -> tuple[str, list[str]]:
+    """Render CODEOWNERS from the role manifest, plus a list of unmapped roles.
+
+    A role with a `github` identity gets live ownership lines. A role WITHOUT one
+    is emitted commented-out (never a bare `@<role-slug>`, which GitHub cannot
+    resolve) with a trailing note, and its slug is returned so the caller warns.
+    """
     lines = [
         "# GENERATED by plan_tool roles build - do not hand-edit. Source: roles/*.md",
         "",
     ]
+    unmapped = []
     for role, info in roles_out.items():
+        gh = info.get("github")
         lines.append(f"# {role}")
-        for g in info["owns"]:
-            lines.append(f"{_glob_to_codeowners(g)}  @{role}")
+        if gh:
+            for g in info["owns"]:
+                lines.append(f"{_glob_to_codeowners(g)}  {gh}")
+        else:
+            unmapped.append(role)
+            for g in info["owns"]:
+                lines.append(f"# {_glob_to_codeowners(g)}  # no github identity mapped for role {role}")
         lines.append("")
-    return "\n".join(lines) + "\n"
+    return "\n".join(lines) + "\n", unmapped
 
 
 def cmd_roles(args) -> int:
@@ -878,6 +1221,9 @@ def cmd_roles(args) -> int:
     if not parsed:
         return fail("no roles parsed from roles/*.md")
 
+    # Disjointness on source_of_truth + code (unchanged scope), using the SAME
+    # glob semantics the guard enforces (glob_overlap). `supporting` may overlap
+    # freely — it drives logging/attribution only, never a guard deny.
     sot_code = {r: (d["owns"].get("source_of_truth", []) + d["owns"].get("code", []))
                 for r, d in parsed.items()}
     conflicts = check_disjoint(sot_code)
@@ -887,23 +1233,46 @@ def cmd_roles(args) -> int:
             print(f"  - {r1} {g1!r} overlaps {r2} {g2!r}")
         return 1
 
+    # Project-level mode + acceptance come from the architect role (default when
+    # unset: track / manual). mode drives the guard; acceptance drives rollup.
+    arch = next((d for d in parsed.values() if d["role"] == "architect"), None)
+    mode = (arch or {}).get("mode") or "track"
+    acceptance = (arch or {}).get("acceptance") or "manual"
+    if mode not in ("off", "track", "protect"):
+        return fail(f"architect mode {mode!r} must be one of off/track/protect")
+    if acceptance not in ("manual", "auto"):
+        return fail(f"architect acceptance {acceptance!r} must be manual or auto")
+
     roles_out = {}
     for r, d in parsed.items():
         owns = d["owns"]
-        union = list(dict.fromkeys(
-            owns.get("source_of_truth", []) + owns.get("code", []) + owns.get("supporting", [])))
-        roles_out[r] = {"owns": union, "reports_to": d.get("reports_to")}
+        sot = list(dict.fromkeys(owns.get("source_of_truth", [])))
+        code = list(dict.fromkeys(owns.get("code", [])))
+        supporting = list(dict.fromkeys(owns.get("supporting", [])))
+        roles_out[r] = {
+            "source_of_truth": sot,
+            "code": code,
+            "supporting": supporting,
+            "owns": list(dict.fromkeys(sot + code + supporting)),  # CODEOWNERS union
+            "reports_to": d.get("reports_to"),
+            "github": d.get("github"),
+        }
 
-    manifest = {"roles": roles_out}
+    manifest = {"mode": mode, "acceptance": acceptance, "roles": roles_out}
     (roles_dir / "_roles.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     gh = Path(args.codeowners) if args.codeowners else Path(".github") / "CODEOWNERS"
     gh.parent.mkdir(parents=True, exist_ok=True)
-    gh.write_text(render_codeowners(roles_out), encoding="utf-8")
+    co_text, unmapped = render_codeowners(roles_out)
+    gh.write_text(co_text, encoding="utf-8")
 
-    print(f"roles build: {len(roles_out)} role(s) -> {roles_dir}/_roles.json, {gh}")
+    print(f"roles build: {len(roles_out)} role(s) [mode={mode}, acceptance={acceptance}] "
+          f"-> {roles_dir}/_roles.json, {gh}")
     for r, info in roles_out.items():
         print(f"  {r}: {len(info['owns'])} owned glob(s)")
+    for r in unmapped:
+        print(f"  warn: no github identity mapped for role {r!r}; its CODEOWNERS lines "
+              f"are commented out (add `github: \"@org/team\"` to roles/{r}.md)")
     return 0
 
 
@@ -954,6 +1323,31 @@ def render_status_html(out: dict) -> str:
         f'<li><code>{esc_(s["plan"])}</code> — {esc_(s["reason"])}</li>' for s in out["stale"])
     stale = f'<div class="stale"><strong>Stale</strong><ul>{stale_rows}</ul></div>' if stale_rows else ""
 
+    # Pending acceptance — omitted entirely (out["pending"] is None) when acceptance=auto.
+    pending = ""
+    if out.get("pending") is not None:
+        prows = "".join(f'<li><code>{esc_(p)}</code></li>' for p in out["pending"])
+        pending = ("<h2>Pending acceptance</h2>"
+                   + (f"<ul>{prows}</ul>" if prows else "<p>None — all built plans accepted.</p>"))
+
+    ckpt_rows = ""
+    for pf, c in sorted(out.get("checkpoints", {}).items()):
+        ckpt_rows += (f'<tr><td><code>{esc_(pf)}</code></td><td>{esc_(c["tag"])}</td>'
+                      f'<td><code>{esc_(c["sha"][:12])}</code></td>'
+                      f'<td class="dim">{esc_(_ymd(c["ts"]))}</td></tr>')
+    checkpoints = (f'<h2>Checkpoints</h2><table><tr><th>plan</th><th>tag</th><th>sha</th>'
+                   f'<th>when</th></tr>{ckpt_rows}</table>' if ckpt_rows else "")
+
+    drift_rows = ""
+    for owner, hits in sorted(out.get("drift", {}).items()):
+        drift_rows += f'<h3>{esc_(owner)}</h3><table><tr><th>path</th><th>by</th><th>session</th><th>when</th></tr>'
+        for h in hits:
+            drift_rows += (f'<tr><td><code>{esc_(h["path"])}</code></td><td>{esc_(h["actor"])}</td>'
+                           f'<td class="dim">{esc_(h["session"])}</td>'
+                           f'<td class="dim">{esc_(h["date"])}</td></tr>')
+        drift_rows += "</table>"
+    drift = f'<h2>Ownership drift</h2>{drift_rows}' if drift_rows else ""
+
     rf = f' (role: {esc_(out["role_filter"])})' if out.get("role_filter") else ""
     return f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8">
@@ -989,8 +1383,11 @@ def render_status_html(out: dict) -> str:
   <h1>Project Status{rf}</h1>
   {attention}
   {stale}
+  {pending}
   <h2>By component</h2>
   {comp_rows or "<p>No plans found.</p>"}
+  {checkpoints}
+  {drift}
   {accomplishments}
   <footer>Generated by plan_tool rollup{f" (events as of {esc_(out.get('as_of', ''))})" if out.get("as_of") else ""}. Derived artifact — do not hand-edit.</footer>
 </main></body></html>
@@ -1011,8 +1408,22 @@ def cmd_rollup(args) -> int:
         except (json.JSONDecodeError, OSError):
             pass
 
+    # acceptance mode is a project-level knob from the role manifest (default manual).
+    roles_dir = specs.parent / "roles"
+    acceptance = "manual"
+    manifest_path = roles_dir / "_roles.json"
+    if manifest_path.exists():
+        try:
+            acceptance = json.loads(read(manifest_path)).get("acceptance", "manual")
+        except (json.JSONDecodeError, OSError):
+            pass
+
     reports = []
-    as_of = ""  # newest event ts across all logs — deterministic output stamp
+    accepted_plans = set()
+    checkpoints = {}                # plan -> latest {ts, sha, tag, label}
+    acks = {}                       # consumer plan -> {seam filename -> {ts, at_ack}}
+    requests_by_plan = {}           # plan -> ordered [(status, ts, summary)]
+    as_of = ""                      # newest event ts across all logs — deterministic stamp
     for logf in sorted(specs.glob("*.log.ndjson")):
         plan_file = logf.name[: -len(".log.ndjson")] + ".html"
         for line in read(logf).splitlines():
@@ -1023,19 +1434,33 @@ def cmd_rollup(args) -> int:
                 rec = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            as_of = max(as_of, rec.get("ts", ""))
-            if rec.get("event") != "report":
-                continue
+            ts = rec.get("ts", "")
+            as_of = max(as_of, ts)
+            ev = rec.get("event")
             det = rec.get("details", {}) or {}
-            reports.append({
-                "plan": plan_file,
-                "ts": rec.get("ts", ""),
-                "role": rec.get("role") or "",
-                "agent": rec.get("agent") or "",
-                "status": det.get("report_status", ""),
-                "summary": det.get("summary", ""),
-                "commits": det.get("commits", []),
-            })
+            if ev == "report":
+                st = det.get("report_status", "")
+                reports.append({
+                    "plan": plan_file, "ts": ts,
+                    "role": rec.get("role") or "", "agent": rec.get("agent") or "",
+                    "status": st, "summary": det.get("summary", ""),
+                    "commits": det.get("commits", []),
+                })
+                if st in ("request", "request-closed"):
+                    requests_by_plan.setdefault(plan_file, []).append((st, ts, det.get("summary", "")))
+            elif ev in ("checkpoint", "accepted"):
+                if ev == "accepted":
+                    accepted_plans.add(plan_file)
+                prev = checkpoints.get(plan_file)
+                if prev is None or ts >= prev["ts"]:
+                    checkpoints[plan_file] = {"ts": ts, "sha": det.get("sha", ""),
+                                             "tag": det.get("tag", ""), "label": det.get("label", "")}
+            elif ev == "ack":
+                seam = det.get("seam", "")
+                slot = acks.setdefault(plan_file, {})
+                prev = slot.get(seam)
+                if prev is None or ts >= prev["ts"]:
+                    slot[seam] = {"ts": ts, "at_ack": det.get("seam_modified_ts_at_ack", "")}
     reports.sort(key=lambda r: r["ts"])
 
     latest = {}
@@ -1043,7 +1468,7 @@ def cmd_rollup(args) -> int:
         latest[r["plan"]] = r  # ascending sort -> last write wins
 
     role_filter = getattr(args, "role", None)
-    all_plans = set(plan_meta) | {r["plan"] for r in reports}
+    all_plans = set(plan_meta) | {r["plan"] for r in reports} | set(checkpoints) | accepted_plans
 
     def owner_of(pf):
         return (plan_meta.get(pf, {}) or {}).get("owner", "") or "(unassigned)"
@@ -1064,6 +1489,35 @@ def cmd_rollup(args) -> int:
                 attention.append({"plan": pf, "kind": "failed-tasks",
                                   "detail": f"{ftasks} task(s) marked [f]", "ts": ""})
 
+    # Open change requests — a `request` with no later `request-closed` (paired by order).
+    for pf in sorted(requests_by_plan):
+        if pf not in all_plans:
+            continue
+        open_stack = []
+        for st, ts, summary in requests_by_plan[pf]:
+            if st == "request":
+                open_stack.append((ts, summary))
+            elif open_stack:
+                open_stack.pop(0)
+        for ts, summary in open_stack:
+            attention.append({"plan": pf, "kind": "open-request", "detail": summary, "ts": ts})
+
+    # Unacknowledged seam changes — for each contract plan, each consumer whose ack
+    # predates (or is missing for) the seam's latest modification.
+    for pf in sorted(all_plans):
+        meta = plan_meta.get(pf, {}) or {}
+        if meta.get("kind") != "contract":
+            continue
+        seam_modified = meta.get("modified", "")
+        for consumer in meta.get("provides", []) or []:
+            ackrec = acks.get(consumer, {}).get(pf)
+            if ackrec is None:
+                attention.append({"plan": consumer, "kind": "unacked-seam",
+                                  "detail": f"never acknowledged seam {pf}", "ts": ""})
+            elif seam_modified and ackrec["at_ack"] < seam_modified:
+                attention.append({"plan": consumer, "kind": "unacked-seam",
+                                  "detail": f"seam {pf} changed since last ack", "ts": seam_modified})
+
     components = {}
     for pf in sorted(all_plans):
         meta = plan_meta.get(pf, {}) or {}
@@ -1075,6 +1529,39 @@ def cmd_rollup(args) -> int:
     done = [r for r in reversed(reports) if r["status"].lower() == "done"]
     if role_filter:
         done = [r for r in done if r["plan"] in all_plans]
+
+    # Pending acceptance — built plans with no `accepted` event. Omitted (None) when
+    # acceptance=auto, where a `built` status is itself treated as accepted.
+    pending = None
+    if acceptance != "auto":
+        pending = [pf for pf in sorted(all_plans)
+                   if (plan_meta.get(pf, {}) or {}).get("status") == "built"
+                   and pf not in accepted_plans]
+
+    # Ownership drift — owned paths written by someone other than the owning role.
+    drift = {}
+    activity_path = roles_dir / "activity.log.ndjson"
+    if activity_path.exists():
+        try:
+            for line in read(activity_path).splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                rec = json.loads(line)
+                as_of = max(as_of, rec.get("ts", ""))
+                owner = rec.get("owner")
+                actor = rec.get("role")
+                if owner and actor != owner:
+                    if role_filter and owner != role_filter:
+                        continue
+                    drift.setdefault(owner, []).append({
+                        "path": rec.get("path", ""), "session": rec.get("session") or "",
+                        "actor": actor or "(unattributed)", "date": _ymd(rec.get("ts", "")),
+                    })
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    ckpts = {pf: c for pf, c in checkpoints.items() if pf in all_plans}
 
     now = datetime.now().astimezone()
     stale = []
@@ -1091,7 +1578,8 @@ def cmd_rollup(args) -> int:
                           "reason": f"last report {ts.date().isoformat()} (>{STALE_DAYS}d ago)"})
 
     out = {"as_of": as_of, "role_filter": role_filter, "attention": attention,
-           "components": components, "accomplishments": done, "stale": stale}
+           "components": components, "accomplishments": done, "stale": stale,
+           "pending": pending, "drift": drift, "checkpoints": ckpts}
     (specs / "_status.json").write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
     (specs / "_status.html").write_text(render_status_html(out), encoding="utf-8")
 
@@ -1099,6 +1587,10 @@ def cmd_rollup(args) -> int:
           + f" -> {specs}/_status.json, {specs}/_status.html")
     if attention:
         print(f"  attention: {len(attention)} item(s)")
+    if pending:
+        print(f"  pending acceptance: {len(pending)} plan(s)")
+    if drift:
+        print(f"  ownership drift: {sum(len(v) for v in drift.values())} event(s)")
     if stale:
         print(f"  stale: {len(stale)} plan(s)")
     return 0
@@ -1146,6 +1638,7 @@ def _new_substitutions(name: str, args, created: str) -> dict[str, str]:
     return {
         "PLAN_TITLE": esc(args.title),
         "PLAN_ID": esc(name),
+        "PLAN_KIND": esc(getattr(args, "kind", None) or "plan"),
         "OWNER_ROLE": esc(args.owner or ""),
         "CREATED_ISO": esc(created),
         "MODIFIED_ISO_LIST": esc(created),
@@ -1154,6 +1647,8 @@ def _new_substitutions(name: str, args, created: str) -> dict[str, str]:
         "SESSION_ID_LIST": esc(args.session) if args.session else "—",
         "BACK_REFERENCES": "—",
         "FORWARD_REFERENCES": "—",
+        "PROVIDES_LIST": "—",
+        "CONSUMES_LIST": "—",
         "PHASE_NUMBER": "1",
         "TASK_NUMBER": "1",
         "LAST_TASK_NUMBER": "2",
@@ -1165,6 +1660,8 @@ def cmd_new(args) -> int:
     name = args.name
     if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name):
         return fail(f"plan name must be kebab-case (lowercase letters, digits, hyphens): {name!r}")
+    if getattr(args, "kind", "plan") not in KIND_VOCAB:
+        return fail(f"kind must be one of {sorted(KIND_VOCAB)}")
     specs = Path(args.specs)
     path = specs / f"{name}.html"
     if path.exists():
@@ -1182,9 +1679,112 @@ def cmd_new(args) -> int:
     specs.mkdir(parents=True, exist_ok=True)
     write(path, text)
     log_event(path, "created", args,
-              {"id": name, "title": args.title, "owner": args.owner or "", "file": path.name})
-    print(f"new: created {path} (id={name}, status=draft) from {tmpl}")
+              {"id": name, "title": args.title, "owner": args.owner or "",
+               "kind": getattr(args, "kind", None) or "plan", "file": path.name})
+    print(f"new: created {path} (id={name}, kind={getattr(args, 'kind', None) or 'plan'}, "
+          f"status=draft) from {tmpl}")
     self_validate(path, text)
+    return 0
+
+
+# ── brief (compact plain-text extract; cuts build/bootstrap read cost) ────────
+def _read_events(plan_path: Path) -> list[dict]:
+    sc = sidecar_path(plan_path)
+    if not sc.exists():
+        return []
+    out = []
+    for line in read(sc).splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            out.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return out
+
+
+def _brief_one_line(p: dict) -> str:
+    kind = p.get("kind", "plan") or "plan"
+    owner = p.get("owner", "") or "-"
+    status = p.get("status", "") or "-"
+    return f"{p['file']:<32} [{kind}] {status:<10} {owner:<16} {p.get('title', '')}"
+
+
+def cmd_brief(args) -> int:
+    if getattr(args, "all", False):
+        specs = Path(args.specs)
+        idx = specs / "_index.json"
+        if not idx.exists():
+            return fail(f"no _index.json in {specs}; run: plan_tool index --specs {specs}")
+        plans = json.loads(read(idx)).get("plans", [])
+        for p in sorted(plans, key=lambda x: x["file"]):
+            print(_brief_one_line(p))
+        return 0
+
+    if not args.plan:
+        return fail("brief requires a plan path (or --all --specs <dir>)")
+    path = Path(args.plan)
+    if not path.exists():
+        return fail(f"plan not found: {path}")
+    text = read(path)
+    meta = parse_meta(text)
+    events = _read_events(path)
+
+    # latest failure/wip reason per status id, from status events
+    reasons = {}
+    for e in events:
+        if e.get("event") == "status":
+            d = e.get("details", {}) or {}
+            if d.get("reason"):
+                reasons[d.get("id")] = d["reason"]
+
+    lines = [f"# {extract_title(text) or path.stem}  ({path.name})"]
+    lines.append("")
+    for f in ("id", "kind", "owner", "status", "schema"):
+        lines.append(f"{f:<10}: {meta.get(f, '') or '-'}")
+    for f, label in (("back-refs", "back"), ("forward-refs", "forward"),
+                     ("provides", "provides"), ("consumes", "consumes")):
+        vals = split_list(meta.get(f, ""))
+        if vals:
+            lines.append(f"{label:<10}: {', '.join(vals)}")
+
+    lines.append("")
+    lines.append("Phases / tasks:")
+    open_items = []
+    for m in re.finditer(
+            r'data-status-for="([^"]+)"[^>]*>(\[[^\]]*\])</code>(.*?)(?:</li>|</h3>|</h4>)',
+            text, re.S):
+        sid, mark, tail = m.group(1), m.group(2), strip_tags(m.group(3)).strip()
+        lines.append(f"  {mark:<6} {sid:<10} {tail}")
+        if mark in ("[wip]", "[f]"):
+            r = reasons.get(sid)
+            open_items.append(f"  {mark} {sid} {tail}" + (f"  — {r}" if r else ""))
+
+    if open_items:
+        lines.append("")
+        lines.append("Open items:")
+        lines.extend(open_items)
+
+    ckpt = None
+    for e in events:
+        if e.get("event") in ("checkpoint", "accepted"):
+            ckpt = e
+    if ckpt:
+        d = ckpt.get("details", {}) or {}
+        lines.append("")
+        lines.append(f"Latest checkpoint: {d.get('tag', '')} @ {(d.get('sha', '') or '')[:12]} "
+                     f"({ckpt.get('ts', '')[:10]})")
+
+    lines.append("")
+    lines.append("Recent events:")
+    for e in events[-5:]:
+        d = e.get("details", {}) or {}
+        summary = d.get("summary") or d.get("field") or d.get("id") or d.get("label") or ""
+        lines.append(f"  {e.get('ts', '')[:19]}  {e.get('event', ''):<11} "
+                     f"{e.get('role') or '-':<14} {summary}")
+
+    print("\n".join(lines))
     return 0
 
 
@@ -1194,6 +1794,8 @@ def build_parser() -> argparse.ArgumentParser:
     parent.add_argument("--role", help="acting role (architect / engineer-<c> / ux) for the event log")
     parent.add_argument("--agent", help="acting agent name (also appended by build-meta)")
     parent.add_argument("--session", help="acting session id (also appended by build-meta)")
+    parent.add_argument("--force-role", action="store_true",
+                        help="allow --role to differ from the PLANF3_ROLE env var")
 
     p = argparse.ArgumentParser(prog="plan_tool", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -1203,6 +1805,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("name", help="kebab-case plan name (also the immutable id and filename stem)")
     sp.add_argument("--title", required=True, help="human-readable plan title")
     sp.add_argument("--owner", help="owning role (metadata owner field); empty if omitted")
+    sp.add_argument("--kind", choices=sorted(KIND_VOCAB), default="plan",
+                    help="artifact kind: plan (default) or contract (a seam between components)")
     sp.add_argument("--specs", default="specs", help="specs directory (default: specs)")
     sp.set_defaults(func=cmd_new)
 
@@ -1235,7 +1839,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("ref", parents=[parent], help="add a bidirectional reference between two plans")
     sp.add_argument("--this", required=True)
     sp.add_argument("--other", required=True)
-    sp.add_argument("--dir", required=True, choices=["back", "forward"])
+    sp.add_argument("--dir", choices=["back", "forward"],
+                    help="legacy: back|forward reference direction (kept for compatibility)")
+    sp.add_argument("--type", choices=["back", "forward", "provides", "consumes"],
+                    help="reference type; provides/consumes wire a typed seam contract")
     sp.set_defaults(func=cmd_ref)
 
     sp = sub.add_parser("report", parents=[parent], help="append a cross-role report-back event")
@@ -1269,11 +1876,57 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--specs", default="specs", help="specs directory (default: specs)")
     sp.set_defaults(func=cmd_rollup)
 
+    sp = sub.add_parser("checkpoint", parents=[parent],
+                        help="bind plan state to a verified commit + annotated git tag")
+    sp.add_argument("plan")
+    sp.add_argument("--label", help="annotation for the checkpoint tag")
+    sp.set_defaults(func=cmd_checkpoint)
+
+    sp = sub.add_parser("accept", parents=[parent],
+                        help="architect: record acceptance + create a checkpoint tag")
+    sp.add_argument("plan")
+    sp.add_argument("--notes", help="acceptance notes")
+    sp.set_defaults(func=cmd_accept)
+
+    sp = sub.add_parser("ack", parents=[parent],
+                        help="acknowledge the current state of a seam a consumer depends on")
+    sp.add_argument("plan", help="the consumer plan doing the acknowledging")
+    sp.add_argument("--seam", required=True, help="the seam plan (filename or path) being acknowledged")
+    sp.set_defaults(func=cmd_ack)
+
+    sp = sub.add_parser("brief", parents=[parent],
+                        help="compact plain-text extract of a plan (or --all for a one-liner index)")
+    sp.add_argument("plan", nargs="?", help="plan path (omit with --all)")
+    sp.add_argument("--all", action="store_true", help="one line per plan from _index.json")
+    sp.add_argument("--specs", default="specs", help="specs directory (for --all; default: specs)")
+    sp.set_defaults(func=cmd_brief)
+
     return p
+
+
+def check_role_attribution(args) -> int | None:
+    """Refuse a --role that disagrees with PLANF3_ROLE unless --force-role is set.
+
+    Attribution must be honest: an agent acting as role X cannot log events as role
+    Y by accident. The env var is the authenticated identity; --role is the label.
+    """
+    # rollup repurposes --role as a component *filter* (architect viewing one role's
+    # board), not an attribution claim, so it is exempt from the identity check.
+    if getattr(args, "cmd", None) == "rollup":
+        return None
+    env_role = os.environ.get("PLANF3_ROLE")
+    role = getattr(args, "role", None)
+    if env_role and role and role != env_role and not getattr(args, "force_role", False):
+        return fail(f"--role {role!r} disagrees with PLANF3_ROLE {env_role!r}; "
+                    f"they must match (or pass --force-role to override)")
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    rc = check_role_attribution(args)
+    if rc is not None:
+        return rc
     return args.func(args)
 
 

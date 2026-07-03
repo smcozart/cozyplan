@@ -2,6 +2,13 @@
 role: {{ROLE_ID}}                        # stable id; matches plan `owner` + event-log `role`
 mission: {{ONE_LINE_MISSION}}
 reports_to: {{REPORTS_TO}}                # role that receives this role's report-backs
+github: {{GITHUB_IDENTITY}}              # @user or @org/team for CODEOWNERS; omit and this role's
+                                         #   lines are emitted commented-out (never a bare @role slug)
+# --- architect role ONLY: project-wide knobs compiled into roles/_roles.json ---
+# mode: track                            # off | track | protect  — guard enforcement level:
+#                                        #   off = dormant; track = log impact, no denies;
+#                                        #   protect = deny cross-role source-of-truth writes
+# acceptance: manual                     # manual | auto — does a `built` plan need an accept step?
 owns:
   source_of_truth:                       # docs/plans THIS role authors and no one else edits
     - {{SOT_GLOB}}

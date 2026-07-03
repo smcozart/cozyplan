@@ -60,6 +60,25 @@ def new_plan(pt, specs):
     return _make
 
 
+def git(cwd: Path, *args: str):
+    return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True)
+
+
+@pytest.fixture
+def git_repo(tmp_path):
+    """A tmp git repo with one commit; skips the test if git is unavailable."""
+    r = git(tmp_path, "init")
+    if r.returncode != 0:
+        pytest.skip("git not available")
+    git(tmp_path, "config", "user.email", "t@example.com")
+    git(tmp_path, "config", "user.name", "Test")
+    git(tmp_path, "config", "commit.gpgsign", "false")
+    (tmp_path / "README.md").write_text("seed\n", encoding="utf-8")
+    git(tmp_path, "add", "-A")
+    git(tmp_path, "commit", "-m", "init")
+    return tmp_path
+
+
 def read(path: Path) -> str:
     with open(path, "r", encoding="utf-8", newline="") as f:
         return f.read()
