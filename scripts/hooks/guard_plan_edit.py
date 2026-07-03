@@ -14,6 +14,16 @@ Edit/MultiEdit/Write:
      managed token (data-managed, data-meta=, class="status", amendments, or a
      bare status bracket), steering to plan_tool. Prose/diagram edits pass.
 
+     Draft authoring window: while the plan's status is `draft` (the state
+     `plan_tool new` stamps), STRUCTURAL authoring is allowed — duplicating /
+     renumbering phase/task blocks with their anchors (data-phase, data-task,
+     data-status-for, class="status") and status markers — because the Create
+     workflow requires it (and each phase's loop prose legitimately contains
+     [x]/[f] literals a substring heuristic cannot tell apart from markers).
+     Marker values carry no meaning until Build, which requires leaving draft.
+     Metadata (data-meta=) and the amendments region stay CLI-only in EVERY
+     status; once the plan leaves draft, full strictness resumes.
+
   2. Role ownership (any path) — driven by roles/_roles.json `mode`:
        off / no manifest / no roles dir : fail-open, no role logic.
        track                            : no denies (impact is logged post-write).
@@ -47,6 +57,17 @@ MANAGED_TOKENS = (
     'id="amendments"',
 )
 STATUS_BRACKET = re.compile(r"\[(?:|wip|x|f)\]")
+
+# Tokens that stay CLI-only even while a plan is in draft: metadata and the
+# amendments region. Structure (anchors, markers) is authorable during the
+# Create workflow's draft window — marker values carry no meaning until Build,
+# which requires the plan to have left draft.
+DRAFT_HARD_TOKENS = (
+    'data-managed=',
+    'data-meta=',
+    'data-amendments-list',
+    'id="amendments"',
+)
 
 CLI_HINT = (
     "This edit touches a CLI-managed region of the plan (status markers, metadata, "
@@ -148,6 +169,25 @@ def touches_managed(text: str) -> bool:
     return bool(STATUS_BRACKET.search(text))
 
 
+def plan_is_draft(fp: str) -> bool:
+    try:
+        text = Path(fp).read_text(encoding="utf-8")
+    except OSError:
+        return False
+    m = re.search(r'data-meta="status"[^>]*>\s*([A-Za-z-]+)', text)
+    return bool(m) and m.group(1).lower() == "draft"
+
+
+def draft_structural_ok(text: str) -> bool:
+    """Draft-window authoring may add/renumber phase/task anchors and markers
+    (phase loop prose legitimately contains [x]/[f] literals, so bracket forms
+    cannot be distinguished from prose here); metadata and the amendments
+    region stay CLI-only in every status."""
+    if not text:
+        return True
+    return not any(tok in text for tok in DRAFT_HARD_TOKENS)
+
+
 def deny(reason: str) -> None:
     print(json.dumps({
         "hookSpecificOutput": {
@@ -198,6 +238,10 @@ def main() -> int:
             blobs.append(e.get("new_string", ""))
 
     if any(touches_managed(b) for b in blobs):
+        # Draft authoring window: the Create workflow duplicates phase/task
+        # blocks (anchors + idle [] markers) on the `new` scaffold via Edit.
+        if plan_is_draft(fp) and all(draft_structural_ok(b) for b in blobs):
+            return 0
         deny(CLI_HINT)
     return 0
 

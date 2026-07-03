@@ -54,6 +54,76 @@ def test_allow_new_file_write(tmp_path):
     assert hook_decision(run_hook(GUARD_HOOK, payload)) is None
 
 
+# ── draft authoring window (Create workflow on a `new` scaffold) ──────────────
+def _draft_plan(tmp_path, status="draft"):
+    fp = _specs_html(tmp_path, "draft.html")
+    fp.write_text(
+        '<html><body><main>\n'
+        '<dl><dt>status</dt> <dd data-meta="status">' + status + '</dd></dl>\n'
+        '<div class="phase" data-phase="1">\n'
+        '<h3><code class="status" data-status-for="phase-1">[]</code> Phase 1: X</h3>\n'
+        '<li data-task="1.1"><code class="status" data-status-for="1.1">[]</code> a</li>\n'
+        '</div>\n'
+        '<section id="amendments" data-region="amendments" data-managed="cli">\n'
+        '<div data-amendments-list></div></section>\n'
+        '</main></body></html>', encoding="utf-8")
+    return fp
+
+
+_STRUCTURAL_OLD = '<li data-task="1.1"><code class="status" data-status-for="1.1">[]</code> a</li>'
+_STRUCTURAL_NEW = (_STRUCTURAL_OLD +
+                   '\n<li data-task="1.2"><code class="status" data-status-for="1.2">[]</code> b</li>')
+
+
+def test_draft_allows_structural_authoring(tmp_path):
+    fp = _draft_plan(tmp_path)
+    payload = _payload("Edit", fp, tmp_path,
+                       old_string=_STRUCTURAL_OLD, new_string=_STRUCTURAL_NEW)
+    assert hook_decision(run_hook(GUARD_HOOK, payload)) is None
+
+
+def test_nondraft_denies_structural_authoring(tmp_path):
+    fp = _draft_plan(tmp_path, status="active")
+    payload = _payload("Edit", fp, tmp_path,
+                       old_string=_STRUCTURAL_OLD, new_string=_STRUCTURAL_NEW)
+    assert _is_deny(run_hook(GUARD_HOOK, payload))
+
+
+def test_draft_allows_marker_text(tmp_path):
+    # Marker values are meaningless until Build (which requires leaving draft),
+    # and phase loop prose contains literal [x]/[f] — so draft edits may carry
+    # bracket forms. Post-draft, test_deny_edit_touching_status_marker applies.
+    fp = _draft_plan(tmp_path)
+    payload = _payload("Edit", fp, tmp_path,
+                       old_string='data-status-for="1.1">[]',
+                       new_string='data-status-for="1.1">[x]')
+    assert hook_decision(run_hook(GUARD_HOOK, payload)) is None
+
+
+def test_nondraft_denies_marker_flip(tmp_path):
+    fp = _draft_plan(tmp_path, status="built")
+    payload = _payload("Edit", fp, tmp_path,
+                       old_string='data-status-for="1.1">[]',
+                       new_string='data-status-for="1.1">[x]')
+    assert _is_deny(run_hook(GUARD_HOOK, payload))
+
+
+def test_draft_denies_metadata_edit(tmp_path):
+    fp = _draft_plan(tmp_path)
+    payload = _payload("Edit", fp, tmp_path,
+                       old_string='<dd data-meta="status">draft</dd>',
+                       new_string='<dd data-meta="status">active</dd>')
+    assert _is_deny(run_hook(GUARD_HOOK, payload))
+
+
+def test_draft_denies_amendments_edit(tmp_path):
+    fp = _draft_plan(tmp_path)
+    payload = _payload("Edit", fp, tmp_path,
+                       old_string='<div data-amendments-list></div>',
+                       new_string='<div data-amendments-list><details>x</details></div>')
+    assert _is_deny(run_hook(GUARD_HOOK, payload))
+
+
 # ── role-ownership checks (any path, mode-driven) ─────────────────────────────
 def _manifest(tmp_path, mode="protect"):
     rd = tmp_path / "roles"

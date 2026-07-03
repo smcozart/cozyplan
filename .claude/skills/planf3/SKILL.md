@@ -1,7 +1,7 @@
 ---
 name: planf3
 description: Creates a concise engineering implementation plan based on user requirements and saves it to specs directory
-argument-hint: "[user-prompt] [questionable]"
+argument-hint: "[user-prompt]"
 ---
 
 # Plan F3
@@ -12,8 +12,8 @@ Create a detailed, **HTML-first** implementation plan based on the `USER_PROMPT`
 
 ## Variables
 
-USER_PROMPT: $1
-QUESTIONABLE: $2 - default false
+USER_PROMPT: $ARGUMENTS
+QUESTIONABLE: default false — true when the `USER_PROMPT` explicitly asks to surface open questions, assumptions, or risks
 PLAN_OUTPUT_DIRECTORY: `specs/`
 PLAN_FILE: `PLAN_OUTPUT_DIRECTORY/<descriptive-kebab-name>.html`
 IMAGES_OUTPUT_DIR: `PLAN_OUTPUT_DIRECTORY/<plan-name>/`
@@ -50,6 +50,8 @@ PLAN_TOOL: `uv run scripts/plan_tool.py` - the deterministic CLI that owns all s
 ## Managed Writes
 
 The plan HTML is a living artifact. Some regions are **CLI-managed** and must never be hand-edited — always go through `PLAN_TOOL` so writes stay deterministic and well-formed. A `PreToolUse` hook blocks raw edits to these regions and a `PostToolUse` hook lints the file after every write.
+
+**Draft authoring window.** While a plan's `status` is `draft` (the state `new` stamps), the guard permits *structural* authoring via Edit — duplicating and renumbering phase/task blocks together with their `data-*` anchors and status markers — because the Create workflow requires it. Metadata (`data-meta=`) and the amendments region stay CLI-only in every status. Once the plan leaves `draft`, all managed tokens (anchors, markers, metadata, amendments) are CLI-only again.
 
 | Write | Command |
 | --- | --- |

@@ -17,6 +17,8 @@ cd ~/.claude/skills/excalidraw-diagram-skill/references && uv run python render_
 
 The render writes a `.png` next to the `.excalidraw` file. The `.excalidraw` source is the editable artifact — the user can open and tweak it in the **Excalidraw VS Code extension** (`pomdtr.excalidraw-editor`), then re-render.
 
+**If the skill is not installed** (`~/.claude/skills/excalidraw-diagram-skill/` absent): do not improvise a renderer. Leave every `{{...IMAGE}}` slot as a commented placeholder naming the intended subject, keep the authored `<figcaption>`, report the missing dependency to the user, and note that the plan must stay `draft` until the diagrams are generated (leftover `{{}}` tokens fail validation outside `draft`).
+
 ## Shared rules for every diagram
 
 - Keep it **simple and straightforward**: one or two core ideas per diagram, boxes + arrows + short labels. Default to the `excalidraw-diagram` skill's Simple/Conceptual mode, not the comprehensive/evidence-artifact mode.
