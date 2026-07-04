@@ -34,6 +34,7 @@ Fail-open: any unexpected error exits 0 so the hook never hard-blocks the agent.
 """
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -59,13 +60,23 @@ DRAFT_HARD_TOKENS = (
     'id="amendments"',
 )
 
+# The hint must point at a plan_tool that actually exists where the agent runs:
+# the plugin-bundled copy when installed via CLAUDE_PLUGIN_ROOT, else the
+# project-local scripts/ copy (plain clone / standalone mode).
+_PLUGIN_ROOT = os.environ.get("CLAUDE_PLUGIN_ROOT", "").rstrip("/\\")
+_TOOL = (
+    f'uv run "{_PLUGIN_ROOT}/scripts/plan_tool.py"'
+    if _PLUGIN_ROOT
+    else "uv run scripts/plan_tool.py"
+)
+
 CLI_HINT = (
     "This edit touches a CLI-managed region of the plan (status markers, metadata, "
     "or amendments). Use plan_tool instead:\n"
-    "  status:    uv run scripts/plan_tool.py status <plan> --id <id> --state wip|x|f\n"
-    "  metadata:  uv run scripts/plan_tool.py meta <plan> --field <field> --value <v>\n"
-    "  reference: uv run scripts/plan_tool.py ref --this <plan> --other <plan> --type back|forward\n"
-    "  amendment: uv run scripts/plan_tool.py amend <plan> --summary \"…\" --detail \"…\"\n"
+    f"  status:    {_TOOL} status <plan> --id <id> --state wip|x|f\n"
+    f"  metadata:  {_TOOL} meta <plan> --field <field> --value <v>\n"
+    f"  reference: {_TOOL} ref --this <plan> --other <plan> --type back|forward\n"
+    f"  amendment: {_TOOL} amend <plan> --summary \"…\" --detail \"…\"\n"
     "Free-form prose (Purpose/Problem/Solution/Notes) and diagrams may be edited normally."
 )
 

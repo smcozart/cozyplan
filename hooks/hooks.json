@@ -1,0 +1,27 @@
+{
+  "description": "planf3 plan-write hardening. PreToolUse guard steers raw Edit/Write of CLI-managed plan regions (status/metadata/amendments) to plan_tool. PostToolUse lint runs plan_tool validate after any write to specs/*.html and reports failures back to the agent. Both fail open — if uv is missing, enforcement silently disappears.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/guard_plan_edit.py\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/lint_plan.py\""
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "planf3",
+  "owner": {
+    "name": "Sean Cozart"
+  },
+  "plugins": [
+    {
+      "name": "planf3",
+      "source": "./",
+      "description": "HTML-first engineering plans with a discuss phase and living context artifacts — plan well, record why, understand the system."
+    }
+  ]
+}
