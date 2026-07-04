@@ -1,36 +1,19 @@
 {
-  "as_of": "2026-07-04T16:20:35-05:00",
+  "as_of": "2026-07-04T17:22:27-05:00",
   "plans": [
     {
       "file": "context-aware-planning.html",
       "id": "context-aware-planning",
       "kind": "plan",
       "title": "Context-Aware Solution Building: Discuss Phase + Stack Layer",
-      "status": "draft",
+      "status": "active",
       "owner": "architect",
       "created": "2026-07-04T16:15:30-05:00",
-      "modified": "2026-07-04T16:20:35-05:00",
+      "modified": "2026-07-04T17:22:27-05:00",
       "image_dir": "",
       "back_refs": [
-        "planf3-rescope.html"
-      ],
-      "forward_refs": [],
-      "provides": [],
-      "consumes": []
-    },
-    {
-      "file": "pi-iroh-coms-net.html",
-      "id": "pi-iroh-coms-net",
-      "kind": "plan",
-      "title": "coms-net on iroh — Serverless P2P Agent Mesh",
-      "status": "built",
-      "owner": "architect",
-      "created": "2026-06-16T13:39:57-05:00",
-      "modified": "2026-07-02T16:29:45-05:00",
-      "image_dir": "pi-iroh-coms-net/",
-      "back_refs": [
-        "../prompts/pi-iroh-coms.md",
-        "github:disler/pi-vs-claude-code (extensions/coms-net.ts + scripts/coms-net-server.ts)"
+        "planf3-rescope.html",
+        "plugin-flip.html"
       ],
       "forward_refs": [],
       "provides": [],
@@ -58,13 +41,15 @@
       "id": "plugin-flip",
       "kind": "plan",
       "title": "planf3 Plugin Flip: Skill to Distributable Plugin",
-      "status": "draft",
+      "status": "active",
       "owner": "architect",
       "created": "2026-07-03T14:47:24-05:00",
-      "modified": "2026-07-03T14:47:24-05:00",
+      "modified": "2026-07-04T17:22:26-05:00",
       "image_dir": "",
       "back_refs": [],
-      "forward_refs": [],
+      "forward_refs": [
+        "context-aware-planning.html"
+      ],
       "provides": [],
       "consumes": []
     }

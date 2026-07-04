@@ -1,1 +1,4 @@
 {"ts": "2026-07-03T14:47:24-05:00", "event": "created", "role": null, "agent": null, "session": null, "details": {"id": "plugin-flip", "title": "planf3 Plugin Flip: Skill to Distributable Plugin", "owner": "architect", "kind": "plan", "file": "plugin-flip.html"}}
+{"ts": "2026-07-04T17:17:25-05:00", "event": "amend", "role": null, "agent": "claude-fable-5", "session": null, "details": {"summary": "Rescope-alignment amendment: lean surface + Path 2 sequencing"}}
+{"ts": "2026-07-04T17:17:25-05:00", "event": "meta", "role": null, "agent": "claude-fable-5", "session": null, "details": {"field": "status", "value": "active"}}
+{"ts": "2026-07-04T17:22:26-05:00", "event": "ref", "role": null, "agent": "claude-fable-5", "session": null, "details": {"field": "forward-refs", "other": "context-aware-planning.html", "type": "back"}}

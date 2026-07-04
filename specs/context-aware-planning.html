@@ -81,13 +81,13 @@
         <dt>id</dt>           <dd data-meta="id">context-aware-planning</dd>
         <dt>kind</dt>         <dd data-meta="kind">plan</dd>
         <dt>owner</dt>        <dd data-meta="owner">architect</dd>
-        <dt>status</dt>       <dd data-meta="status">draft</dd>
+        <dt>status</dt>       <dd data-meta="status">active</dd>
         <dt>created</dt>      <dd data-meta="created">2026-07-04T16:15:30-05:00</dd>
-        <dt>modified</dt>     <dd data-meta="modified">2026-07-04T16:15:30-05:00, 2026-07-04T16:20:35-05:00</dd>
+        <dt>modified</dt>     <dd data-meta="modified">2026-07-04T16:15:30-05:00, 2026-07-04T16:20:35-05:00, 2026-07-04T17:22:26-05:00, 2026-07-04T17:22:27-05:00</dd>
         <dt>commits</dt>      <dd data-meta="commits">—</dd>
         <dt>agent name</dt>   <dd data-meta="agent">claude-fable-5</dd>
         <dt>session id</dt>   <dd data-meta="session">—</dd>
-        <dt>back refs</dt>    <dd data-meta="back-refs">planf3-rescope.html</dd>
+        <dt>back refs</dt>    <dd data-meta="back-refs">planf3-rescope.html, plugin-flip.html</dd>
         <dt>forward refs</dt> <dd data-meta="forward-refs">—</dd>
         <dt>provides</dt>     <dd data-meta="provides">—</dd>
         <dt>consumes</dt>     <dd data-meta="consumes">—</dd>
@@ -106,7 +106,7 @@
   <!-- ===== PURPOSE / PROBLEM / SOLUTION ===== -->
   <section id="purpose">
     <h2>Purpose</h2>
-    <p>Make planf3's plan authoring <strong>context-aware</strong>. Two additions, both pure markdown authoring — zero changes to <code>plan_tool.py</code>, the hooks, or the tests: <strong>(1) a Discuss Plan workflow</strong> — a self-contained, depth-scaled interview that runs by default before a new plan is authored, capturing decisions as ADRs, vocabulary as a glossary, and stack deviations in place; <strong>(2) a stack-context layer</strong> — a per-repo <code>STACK.md</code> of technology defaults written as <em>default + when-to-use lane + escape hatch</em>, seeded from a generic template, an org seed, or a first-run interview. The goal is cultural, not mechanical: engineers (and agents) slow down, interrogate the idea, and own their process — and the "why" survives in living artifacts instead of evaporating into chat history.</p>
+    <p>Make planf3's plan authoring <strong>context-aware</strong>. Three additions, all pure markdown authoring — zero changes to <code>plan_tool.py</code>, the hooks, or the tests: <strong>(1) a <code>discuss</code> sibling skill</strong> — a self-contained, depth-scaled interview that runs by default before a new plan is authored, capturing decisions as ADRs, vocabulary as a glossary, and stack deviations in place; <strong>(2) a stack-context layer</strong> — a per-repo <code>STACK.md</code> of technology defaults written as <em>default + when-to-use lane + escape hatch</em>, seeded from a generic template, an org seed, or a first-run interview; <strong>(3) an understanding layer</strong> — a nodes-only <code>SYSTEM.md</code> component map plus an on-demand <strong>Orient</strong> walkthrough, so both the architect designing new work and the engineer arriving in eighteen months can truly understand the system in all its components. The goal is cultural, not mechanical: engineers (and agents) slow down, interrogate the idea, and own their process — and the "why" survives in living artifacts instead of evaporating into chat history.</p>
   </section>
 
   <section id="problem">
@@ -120,7 +120,7 @@
 
   <section id="solution">
     <h2>Solution</h2>
-    <p>Bake the composition into planf3 itself so it ships with every project. A new <code>workflows/discuss-plan.md</code> carries the full interview discipline <strong>in its own text</strong> — no dependency on any personally-installed skill: one question at a time with a recommended answer, dependencies resolved first, answers taken from the codebase instead of the user wherever possible (the brownfield route), and inline capture rules — ADRs behind a three-gate test in <code>docs/adr/</code>, glossary terms in <code>CONTEXT.md</code>, deviations in <code>STACK.md</code>. Create Plan's documented first step becomes the discuss pass, skippable only when the requester explicitly says so; depth scales with stakes (short pass for small features, full relentless interview for new systems). Update Plan offers a grill for structural revisions only. <code>templates/stack.md</code> ships a generic scaffold; <code>templates/stack.cozy.md</code> carries the org's Microsoft stack as a copy-in seed; when neither fits, the workflow interviews the user and writes <code>STACK.md</code> from the answers. Everything added is context, interrogation, and records — enforcement, gating, and revert stay with git, exactly per the re-scope.</p>
+    <p>Ship the composition as a <strong>sibling skill in the planf3 plugin</strong> so it reaches every engineer with one <code>/plugin install</code>. A new <code>skills/discuss/</code> skill carries the full interview discipline <strong>in its own text</strong> — no dependency on any personally-installed skill: one question at a time with a recommended answer, dependencies resolved first, answers taken from the codebase instead of the user wherever possible (the brownfield route), and inline capture rules — ADRs behind a three-gate test in <code>docs/adr/</code>, glossary terms in <code>CONTEXT.md</code>, deviations in <code>STACK.md</code>, and component roster changes in a nodes-only <code>SYSTEM.md</code> map. The skill is independently invocable ("grill me on this idea") <em>and</em> planf3's Create Plan invokes it as documented step 1, skippable only when the requester explicitly says so; depth scales with stakes (short pass for small features, full relentless interview for new systems). Update Plan offers a grill for structural revisions only. The skill's read-side, <strong>Orient</strong>, walks a reader through how the system runs <em>today</em> — components from the map, wiring derived fresh from the code (never stored, so never stale), whys from the ADRs. <code>templates/stack.md</code> ships a generic scaffold; <code>templates/stack.cozy.md</code> carries the org's Microsoft stack as a copy-in seed; when neither fits, the skill interviews the user and writes <code>STACK.md</code> from the answers. Everything added is context, interrogation, and records — enforcement, gating, and revert stay with git, exactly per the re-scope.</p>
     <figure>
       <!-- diagram TODO: a "discuss" diamond between prompt and plan; side outputs ADR / glossary / stack deviation; two entry arrows labeled greenfield and brownfield -->
       <figcaption>The discuss pass sits between prompt and plan — greenfield and brownfield entries, records as side outputs.</figcaption>
@@ -133,18 +133,23 @@
 
     <h3>Existing Files</h3>
     <ul>
-      <li><span class="tag existing">existing</span> <code>.claude/skills/planf3/SKILL.md</code> — gains a Discuss Plan row in the workflow table and a compact Context Layer section (STACK.md / CONTEXT.md / docs-adr conventions and linkage)</li>
-      <li><span class="tag existing">existing</span> <code>.claude/skills/planf3/workflows/create-plan.md</code> — the discuss pass becomes documented step 1 for new plans, with an explicit-skip escape</li>
-      <li><span class="tag existing">existing</span> <code>.claude/skills/planf3/workflows/update-plan.md</code> — offers a grill for structural revisions only (never status flips or wording)</li>
-      <li><span class="tag existing">existing</span> <code>README.md</code> — consumer-facing description of the discuss phase and the stack-context layer</li>
+      <li><span class="tag existing">existing</span> <code>skills/planf3/SKILL.md</code> (post-flip location) — description tightened to name all five branches, plus a compact Context Layer section (STACK.md / CONTEXT.md / SYSTEM.md / docs-adr conventions and linkage)</li>
+      <li><span class="tag existing">existing</span> <code>skills/planf3/workflows/create-plan.md</code> — step 1 becomes "invoke the discuss skill" for new plans, with an explicit-skip escape</li>
+      <li><span class="tag existing">existing</span> <code>skills/planf3/workflows/update-plan.md</code> — offers a discuss pass for structural revisions only (never status flips or wording)</li>
+      <li><span class="tag existing">existing</span> <code>skills/planf3/workflows/build-plan.md</code> — close step gains the one-line SYSTEM.md map-update rule (component added/removed/renamed/re-owned → update its line)</li>
+      <li><span class="tag existing">existing</span> <code>README.md</code> — consumer-facing description of the discuss skill, the context layer, and Orient</li>
     </ul>
 
     <h3>New Files</h3>
     <ul>
-      <li><span class="tag new">new</span> <code>.claude/skills/planf3/workflows/discuss-plan.md</code> — the load-bearing interview workflow: self-contained interview core, depth rubric, capture rules, stack seeding, exit routes</li>
-      <li><span class="tag new">new</span> <code>.claude/skills/planf3/templates/stack.md</code> — generic stack scaffold: section skeleton, the default + lane + escape-hatch entry format, one worked example, Deviations section</li>
-      <li><span class="tag new">new</span> <code>.claude/skills/planf3/templates/stack.cozy.md</code> — org seed: the Microsoft stack (Azure · Functions · Power Apps · React · Dataverse · Fabric) with lanes and escape hatches filled in</li>
-      <li><span class="tag new">new</span> <code>STACK.md</code> + <code>docs/adr/0001-*.md</code> (this repo) — produced by the Phase 4 dogfood run via the interview-fallback path, proving the workflow end-to-end</li>
+      <li><span class="tag new">new</span> <code>skills/discuss/SKILL.md</code> — the sibling skill: description with the grill/discuss/orient trigger vocabulary (disjoint from planf3's plan/spec/build), workflow routing table, context-artifact table, scope guard, exit routes</li>
+      <li><span class="tag new">new</span> <code>skills/discuss/workflows/interview.md</code> — the load-bearing interview core: depth rubric, one-question-at-a-time with recommended answers, answer-from-codebase, stack-fit challenges, inline capture rules (three-gate ADRs, glossary, deviations, map lines)</li>
+      <li><span class="tag new">new</span> <code>skills/discuss/workflows/seed-stack.md</code> — first-run STACK.md creation: org seed → generic template → environment interview</li>
+      <li><span class="tag new">new</span> <code>skills/discuss/workflows/orient.md</code> — the read-side: map + glossary + stack + ADRs, then the actual code, walked live; never written to a file</li>
+      <li><span class="tag new">new</span> <code>skills/discuss/templates/stack.md</code> — generic stack scaffold: section skeleton, the default + lane + escape-hatch entry format, one worked example, Deviations section</li>
+      <li><span class="tag new">new</span> <code>skills/discuss/templates/stack.cozy.md</code> — org seed: the Microsoft stack (Azure · Functions · Power Apps · React · Dataverse · Fabric) with lanes and escape hatches filled in; Identity &amp; CI/CD marked PROPOSED</li>
+      <li><span class="tag new">new</span> <code>skills/discuss/templates/system.md</code> — the nodes-only component-map template: honesty-contract header, entry format (name · responsibility · owner · why-links), "store nodes, synthesize edges" rule</li>
+      <li><span class="tag new">new</span> <code>STACK.md</code> + <code>SYSTEM.md</code> + <code>docs/adr/0001-*.md</code> (this repo) — produced by the Phase 4 dogfood run via the interview-fallback path, proving the skill end-to-end</li>
     </ul>
   </section>
 
@@ -160,7 +165,7 @@
 
       <h4>1. Author the generic scaffold — <code>templates/stack.md</code></h4>
       <ul class="checklist">
-        <li data-task="1.1"><code class="status" data-status-for="1.1">[]</code> Create <code>templates/stack.md</code> with the section skeleton — Hosting, Business Logic, Frontend, Data, Identity &amp; Access, CI/CD, Observability, Deviations — and a short header stating living-file semantics: sessions update this file as the system evolves; it describes defaults, it does not enforce them.</li>
+        <li data-task="1.1"><code class="status" data-status-for="1.1">[]</code> Create <code>skills/discuss/templates/stack.md</code> with the section skeleton — Hosting, Business Logic, Frontend, Data, Identity &amp; Access, CI/CD, Observability, Deviations — and a short header stating living-file semantics: sessions update this file as the system evolves; it describes defaults, it does not enforce them.</li>
         <li data-task="1.2"><code class="status" data-status-for="1.2">[]</code> Document the entry format with one fully worked example (e.g. "Azure Functions — default for event-driven/API business logic; reach for Container Apps when a process is long-running") and the Deviations rule: a deviation that clears the ADR three-gate test (hard to reverse + surprising without context + real trade-off) gets an ADR, linked from its Deviations line.</li>
       </ul>
 
@@ -172,7 +177,7 @@
       <h4>3. Testing Strategy</h4>
       <p>Structural review — these are markdown conventions, so validation is shape-checking plus a critical read against the anti-inventory rule.</p>
       <ul class="checklist">
-        <li data-task="1.4"><code class="status" data-status-for="1.4">[]</code> <code>grep -c "^## " .claude/skills/planf3/templates/stack.md .claude/skills/planf3/templates/stack.cozy.md</code> — both files carry the identical section skeleton</li>
+        <li data-task="1.4"><code class="status" data-status-for="1.4">[]</code> <code>grep -c "^## " skills/discuss/templates/stack.md skills/discuss/templates/stack.cozy.md</code> — both files carry the identical section skeleton</li>
         <li data-task="1.5"><code class="status" data-status-for="1.5">[]</code> Manual read: every entry in both files follows default + lane + escape hatch; zero bare inventory lines; PROPOSED markers present on unconfirmed org entries</li>
       </ul>
       <div class="loop">
@@ -182,35 +187,40 @@
     </div>
 
     <div class="phase" data-phase="2">
-      <h3><code class="status" data-status-for="phase-2">[]</code> Phase 2: The Discuss Plan Workflow</h3>
-      <p><strong>This is the load-bearing artifact of the whole iteration.</strong> A weak interview script produces ceremony — questions engineers answer on autopilot — instead of thinking. Spend the authoring care here, and keep the file fully self-contained: it must not reference the owner's personal global skills (<code>grilling</code>, <code>domain-modeling</code>, <code>grill-with-docs</code>), because project machines don't have them.</p>
+      <h3><code class="status" data-status-for="phase-2">[]</code> Phase 2: The discuss Skill</h3>
+      <p><strong>This is the load-bearing artifact of the whole iteration.</strong> A weak interview script produces ceremony — questions engineers answer on autopilot — instead of thinking. Spend the authoring care here, and keep the skill fully self-contained: it must not reference the owner's personal global skills (<code>grilling</code>, <code>domain-modeling</code>, <code>grill-with-docs</code>), because project machines don't have them — this skill <em>replaces</em> them as the single source of truth. It ships as a sibling skill (<code>skills/discuss/</code>) in the plugin, independently invocable on its own grill/discuss/orient trigger vocabulary, kept disjoint from planf3's plan/spec/build vocabulary.</p>
 
-      <h4>1. Context load + stack seeding front-matter</h4>
+      <h4>1. SKILL.md + context load + stack seeding</h4>
       <ul class="checklist">
-        <li data-task="2.1"><code class="status" data-status-for="2.1">[]</code> Author the session-start read order: <code>STACK.md</code> → <code>CONTEXT.md</code> → <code>docs/adr/</code> → <code>specs/_index.html</code> → (brownfield) the relevant code. Then the first-run branch: if no <code>STACK.md</code> exists, copy in an org seed when one is provided; else offer the generic template; else interview the user about their environment section-by-section and write <code>STACK.md</code> from the answers.</li>
+        <li data-task="2.1"><code class="status" data-status-for="2.1">[]</code> Author <code>skills/discuss/SKILL.md</code> (description with grill/stress-test/poke-holes/orient triggers; workflow routing table in planf3's style; the four-context-artifact table; scope guard; exit routes) and the session-start read order: <code>STACK.md</code> → <code>CONTEXT.md</code> → <code>docs/adr/</code> → <code>specs/_index.html</code> → (brownfield) the relevant code. Author <code>workflows/seed-stack.md</code> as the first-run branch: copy an org seed when provided; else instantiate the generic template; else interview the user about their environment section-by-section and write <code>STACK.md</code> from the answers.</li>
       </ul>
 
-      <h4>2. Interview core</h4>
+      <h4>2. Interview core — <code>workflows/interview.md</code></h4>
       <ul class="checklist">
-        <li data-task="2.2"><code class="status" data-status-for="2.2">[]</code> Distill the interview discipline into the file's own text: one question at a time, each with a recommended answer and brief reasoning; prerequisite questions resolved first (call the dependency out); answer from the codebase instead of asking whenever the code can answer; challenge stack fit explicitly against <code>STACK.md</code> lanes ("this is customer-facing — why Power Apps?").</li>
+        <li data-task="2.2"><code class="status" data-status-for="2.2">[]</code> Distill the interview discipline into the workflow's own text: one question at a time, each with a recommended answer and brief reasoning; prerequisite questions resolved first (call the dependency out); answer from the codebase instead of asking whenever the code can answer; challenge stack fit explicitly against <code>STACK.md</code> lanes ("this is customer-facing — why Power Apps?").</li>
         <li data-task="2.3"><code class="status" data-status-for="2.3">[]</code> Write the depth rubric: <strong>short pass</strong> (goal, stack fit, edge cases — a handful of questions) for small features; <strong>full relentless interview</strong> (every branch of the decision tree) for new systems or architectural changes. New plans get the discuss pass by default — skipping requires the requester explicitly saying so. Structural revisions to existing plans get an <em>offer</em>; status flips and wording changes get nothing.</li>
       </ul>
 
       <h4>3. Capture rules</h4>
       <ul class="checklist">
-        <li data-task="2.4"><code class="status" data-status-for="2.4">[]</code> Inline the record disciplines: ADRs only when all three gates pass (hard to reverse + surprising without context + real trade-off), written to <code>docs/adr/NNNN-title.md</code> as decisions crystallize; <code>CONTEXT.md</code> is a glossary and nothing else (update inline as terms resolve; zero implementation detail); stack deviations update <code>STACK.md</code>'s Deviations section; plans link ADRs inline in phase/task rationale — no CLI involvement anywhere.</li>
+        <li data-task="2.4"><code class="status" data-status-for="2.4">[]</code> Inline the record disciplines: ADRs only when all three gates pass (hard to reverse + surprising without context + real trade-off), written to <code>docs/adr/NNNN-title.md</code> as decisions crystallize; <code>CONTEXT.md</code> is a glossary and nothing else (update inline as terms resolve; zero implementation detail); stack deviations update <code>STACK.md</code>'s Deviations section; a component added, removed, renamed, or re-owned updates its one line in <code>SYSTEM.md</code>; plans link ADRs inline in phase/task rationale — no CLI involvement anywhere.</li>
       </ul>
 
       <h4>4. Exit routes</h4>
       <ul class="checklist">
-        <li data-task="2.5"><code class="status" data-status-for="2.5">[]</code> Close the workflow by handing the interview's resolved decisions to the next workflow as locked inputs — greenfield → Create Plan, brownfield structural revision → Update Plan — mirroring how this very plan was authored from a collaborate session's locked decisions.</li>
+        <li data-task="2.5"><code class="status" data-status-for="2.5">[]</code> Close the interview by handing the resolved decisions to the planf3 skill as locked inputs — greenfield → Create Plan, brownfield structural revision → Update Plan — mirroring how this very plan was authored from a collaborate session's locked decisions.</li>
       </ul>
 
-      <h4>5. Testing Strategy</h4>
+      <h4>5. Orient + the component map</h4>
+      <ul class="checklist">
+        <li data-task="2.6"><code class="status" data-status-for="2.6">[]</code> Author <code>workflows/orient.md</code> (read <code>SYSTEM.md</code> + glossary + stack + ADR titles, then the actual code of in-scope components; walk the reader through how the system runs <em>today</em>; hard rule: never write the walkthrough to a file — stored current-state prose drifts every commit) and <code>templates/system.md</code> (nodes-only map: honesty-contract header; entry = name · one-line responsibility · owner · why-links; "store nodes, synthesize edges" — dependency edges, protocols, and data flow are out; ~30 lines with one worked example).</li>
+      </ul>
+
+      <h4>6. Testing Strategy</h4>
       <p>Self-containedness is greppable; interview quality is only provable by use (Phase 4 owns that).</p>
       <ul class="checklist">
-        <li data-task="2.6"><code class="status" data-status-for="2.6">[]</code> <code>grep -inE "grill-with-docs|domain-modeling|/grilling" .claude/skills/planf3/workflows/discuss-plan.md</code> — returns nothing: no dependency on personally-installed skills</li>
-        <li data-task="2.7"><code class="status" data-status-for="2.7">[]</code> Scope-guard read-through: the file contains no enforcement, gating, or revert language — it interviews, records, and hands off; nothing more</li>
+        <li data-task="2.7"><code class="status" data-status-for="2.7">[]</code> <code>grep -rinE "grill-with-docs|domain-modeling|/grilling" skills/discuss/</code> — returns nothing: no dependency on personally-installed skills</li>
+        <li data-task="2.8"><code class="status" data-status-for="2.8">[]</code> Scope-guard read-through: the skill contains no enforcement, gating, or revert language — it interviews, records, orients, and hands off; nothing more</li>
       </ul>
       <div class="loop">
         🔁 <strong>Do not exit this phase until every box above is <code>[x]</code> or <code>[f]</code>.</strong>
@@ -222,24 +232,25 @@
       <h3><code class="status" data-status-for="phase-3">[]</code> Phase 3: Surface Integration</h3>
       <p>Wire the new pieces into the documented surface so the default path — not enforcement — teaches the behavior. Every touched doc must describe the <em>same</em> trigger-and-intensity rules; divergence here is how "encouraged" quietly becomes "optional and forgotten".</p>
 
-      <h4>1. SKILL.md</h4>
+      <h4>1. planf3 SKILL.md</h4>
       <ul class="checklist">
-        <li data-task="3.1"><code class="status" data-status-for="3.1">[]</code> Add the Discuss Plan row to the workflow table — when: the prompt asks to think through, stress-test, or discuss an idea before planning, or a Create Plan run starts on a new plan; file: <code>workflows/discuss-plan.md</code>.</li>
-        <li data-task="3.2"><code class="status" data-status-for="3.2">[]</code> Add a compact <strong>Context Layer</strong> section: <code>STACK.md</code> (root; defaults + lanes + escape hatches + Deviations; living file), <code>CONTEXT.md</code> (root; glossary only), <code>docs/adr/</code> (three-gate ADRs); linkage is plain inline links — plans → ADRs in rationale, Deviations → ADRs; explicitly note <code>PLAN_TOOL</code> has no role here.</li>
+        <li data-task="3.1"><code class="status" data-status-for="3.1">[]</code> Tighten the skill description to name all five branches (create, update, build, references, roles) per the skill-boundary audit, keeping its trigger vocabulary (plan/spec/design/build) strictly disjoint from discuss's (grill/stress-test/poke-holes/orient) — no grill words in planf3's description, no author/scaffold words in discuss's.</li>
+        <li data-task="3.2"><code class="status" data-status-for="3.2">[]</code> Add a compact <strong>Context Layer</strong> section: <code>STACK.md</code> (root; defaults + lanes + escape hatches + Deviations; living file), <code>CONTEXT.md</code> (root; glossary only), <code>SYSTEM.md</code> (root; nodes-only component map — run the discuss skill's Orient workflow for current wiring), <code>docs/adr/</code> (three-gate ADRs); linkage is plain inline links — plans → ADRs in rationale, Deviations → ADRs; explicitly note <code>PLAN_TOOL</code> has no role here and these are authored by the <code>discuss</code> skill.</li>
       </ul>
 
       <h4>2. Workflow docs + README</h4>
       <ul class="checklist">
-        <li data-task="3.3"><code class="status" data-status-for="3.3">[]</code> <code>workflows/create-plan.md</code> — insert the discuss pass as documented step 1 for new plans, with the explicit-skip escape ("requester must say to skip") and a pointer to the depth rubric.</li>
-        <li data-task="3.4"><code class="status" data-status-for="3.4">[]</code> <code>workflows/update-plan.md</code> — offer a grill when the revision is structural (new phases, changed approach); never for status flips or wording.</li>
-        <li data-task="3.5"><code class="status" data-status-for="3.5">[]</code> <code>README.md</code> — brief consumer-facing description of the discuss phase and stack layer, including how a project seeds <code>STACK.md</code> (org seed / generic template / interview).</li>
+        <li data-task="3.3"><code class="status" data-status-for="3.3">[]</code> <code>workflows/create-plan.md</code> — step 1 becomes "invoke the <code>discuss</code> skill" for new plans, with the explicit-skip escape ("requester must say to skip") and a pointer to its depth rubric.</li>
+        <li data-task="3.4"><code class="status" data-status-for="3.4">[]</code> <code>workflows/update-plan.md</code> — offer the <code>discuss</code> skill when the revision is structural (new phases, changed approach); never for status flips or wording.</li>
+        <li data-task="3.5"><code class="status" data-status-for="3.5">[]</code> <code>workflows/build-plan.md</code> — close step gains the one-line map rule: if this work added, removed, renamed, or re-owned a component, update its line in <code>SYSTEM.md</code> (the entry points at the very plan/ADR just written).</li>
+        <li data-task="3.6"><code class="status" data-status-for="3.6">[]</code> <code>README.md</code> — brief consumer-facing description of the discuss skill, the context layer, and Orient, including how a project seeds <code>STACK.md</code> (org seed / generic template / interview).</li>
       </ul>
 
       <h4>3. Testing Strategy</h4>
       <p>Greppable presence checks plus a cross-document consistency read.</p>
       <ul class="checklist">
-        <li data-task="3.6"><code class="status" data-status-for="3.6">[]</code> <code>grep -n "Discuss Plan" .claude/skills/planf3/SKILL.md</code> — workflow-table row present</li>
-        <li data-task="3.7"><code class="status" data-status-for="3.7">[]</code> Consistency read: SKILL.md, create-plan.md, update-plan.md, and README state identical trigger/intensity rules (default-for-new, explicit skip, structural-only offers, scaled depth)</li>
+        <li data-task="3.7"><code class="status" data-status-for="3.7">[]</code> <code>grep -n "discuss" skills/planf3/workflows/create-plan.md skills/planf3/workflows/update-plan.md skills/planf3/workflows/build-plan.md</code> — the cross-skill wiring is present in all three</li>
+        <li data-task="3.8"><code class="status" data-status-for="3.8">[]</code> Consistency read: both SKILL.md files, create-plan.md, update-plan.md, and README state identical trigger/intensity rules (default-for-new, explicit skip, structural-only offers, scaled depth) and disjoint trigger vocabularies</li>
       </ul>
       <div class="loop">
         🔁 <strong>Do not exit this phase until every box above is <code>[x]</code> or <code>[f]</code>.</strong>
@@ -251,17 +262,18 @@
       <h3><code class="status" data-status-for="phase-4">[]</code> Phase 4: Dogfood Validation</h3>
       <p>Before pointing engineers at it, prove the interview produces thinking rather than ceremony. Run it in <em>this</em> repo: planf3 is a Python/uv tool, so the Microsoft org seed doesn't apply — which forces the <strong>interview-fallback seeding path</strong>, the hardest branch, and exercises brownfield answering against a real codebase.</p>
 
-      <h4>1. Run the workflow end-to-end</h4>
+      <h4>1. Run the skill end-to-end</h4>
       <ul class="checklist">
-        <li data-task="4.1"><code class="status" data-status-for="4.1">[]</code> Run <code>workflows/discuss-plan.md</code> on a real next-iteration prompt for this repo. The session must produce: <code>STACK.md</code> at the repo root (via the interview fallback), at least one three-gate ADR in <code>docs/adr/</code>, and a set of resolved decisions handed off as locked inputs to Create/Update Plan.</li>
-        <li data-task="4.2"><code class="status" data-status-for="4.2">[]</code> Capture every point of friction (questions that felt rote, missing context loads, unclear depth calls) and fix <code>discuss-plan.md</code> in the same session; record the dogfood outcome on this plan via <code>PLAN_TOOL amend</code>.</li>
+        <li data-task="4.1"><code class="status" data-status-for="4.1">[]</code> Run the <code>discuss</code> skill's interview on a real next-iteration prompt for this repo. The session must produce: <code>STACK.md</code> at the repo root (via the interview fallback), at least one three-gate ADR in <code>docs/adr/</code>, a seeded <code>SYSTEM.md</code> component map, and a set of resolved decisions handed off as locked inputs to Create/Update Plan.</li>
+        <li data-task="4.2"><code class="status" data-status-for="4.2">[]</code> Capture every point of friction (questions that felt rote, missing context loads, unclear depth calls) and fix <code>skills/discuss/workflows/interview.md</code> in the same session; record the dogfood outcome on this plan via <code>PLAN_TOOL amend</code>.</li>
       </ul>
 
       <h4>2. Testing Strategy</h4>
-      <p>Artifact placement is checkable; interview quality is a human gate — the owner signs off before the workflow is announced to engineers.</p>
+      <p>Artifact placement is checkable; interview quality is a human gate — the owner signs off before the skill is announced to engineers.</p>
       <ul class="checklist">
-        <li data-task="4.3"><code class="status" data-status-for="4.3">[]</code> <code>ls STACK.md docs/adr/</code> — dogfood artifacts exist in their convention locations, and <code>CONTEXT.md</code> (if created) contains glossary entries only</li>
-        <li data-task="4.4"><code class="status" data-status-for="4.4">[]</code> Owner sign-off: the session felt like thinking, not ceremony — required before the discuss phase is announced as the team default</li>
+        <li data-task="4.3"><code class="status" data-status-for="4.3">[]</code> <code>ls STACK.md SYSTEM.md docs/adr/</code> — dogfood artifacts exist in their convention locations, and <code>CONTEXT.md</code> (if created) contains glossary entries only</li>
+        <li data-task="4.4"><code class="status" data-status-for="4.4">[]</code> Orient smoke: run <code>workflows/orient.md</code> against the fresh map — the walkthrough matches the actual code, and nothing gets written to a file</li>
+        <li data-task="4.5"><code class="status" data-status-for="4.5">[]</code> Owner sign-off: the session felt like thinking, not ceremony — required before the discuss skill is announced as the team default</li>
       </ul>
       <div class="loop">
         🔁 <strong>Do not exit this phase until every box above is <code>[x]</code> or <code>[f]</code>.</strong>
@@ -278,7 +290,7 @@
       <li data-task="g.1"><code class="status" data-status-for="g.1">[]</code> <code>uv run scripts/plan_tool.py validate specs/context-aware-planning.html</code> — this plan stays well-formed through the build</li>
       <li data-task="g.2"><code class="status" data-status-for="g.2">[]</code> <code>uv run --with pytest pytest tests/ -q</code> — all 63 tests still green: proves the iteration touched zero code surface (pure markdown, per the locked scope)</li>
       <li data-task="g.3"><code class="status" data-status-for="g.3">[]</code> <code>uv run scripts/plan_tool.py index</code> — specs catalog rebuilds clean with no dangling references</li>
-      <li data-task="g.4"><code class="status" data-status-for="g.4">[]</code> <code>ls .claude/skills/planf3/workflows/discuss-plan.md .claude/skills/planf3/templates/stack.md .claude/skills/planf3/templates/stack.cozy.md</code> — all three new artifacts exist at their documented paths</li>
+      <li data-task="g.4"><code class="status" data-status-for="g.4">[]</code> <code>ls skills/discuss/SKILL.md skills/discuss/workflows skills/discuss/templates</code> — the sibling skill and all its workflows/templates exist at their documented paths</li>
     </ul>
     <div class="loop">
       🔁 <strong>The plan is not complete until every box is <code>[x]</code> or <code>[f]</code> and every command passes. If a step genuinely cannot be completed, mark it <code>[f]</code> (terminal, with a one-line reason) and move on.</strong>
@@ -296,32 +308,36 @@
     <p>These six decisions were resolved in a full collaborate interview before this plan was authored. They are <strong>inputs, not open questions</strong> — do not relitigate during build.</p>
     <table>
       <tr><th>#</th><th>Decision</th><th>Why</th></tr>
-      <tr><td>1</td><td><strong>Home:</strong> bake into planf3 as a self-contained <code>workflows/discuss-plan.md</code></td><td>Only things that ship with the project reach engineers and agents; personal global skills don't travel</td></tr>
+      <tr><td>1</td><td><strong>Home (revised 2026-07-04, same day):</strong> a self-contained sibling skill <code>skills/discuss/</code> in the planf3 plugin. <em>Original decision was a workflow file inside planf3; revised after a skill-boundary audit against the writing-great-skills rubric</em></td><td>The distribution argument ("personal skills don't travel") never distinguished workflow-in-planf3 from a sibling skill in the same plugin — both ship. The sibling skill wins on the By-invocation criterion: <strong>grill/discuss</strong> is a distinct leading word that must fire on its own ("poke holes in this" with no plan in sight), and folding it into planf3 would re-broaden the skill the rescope just narrowed</td></tr>
       <tr><td>2</td><td><strong>Entry routes:</strong> greenfield (→ Create Plan) and brownfield (→ Update Plan) sharing one interview core</td><td>Brownfield is nearly free: the interview answers from the codebase where it can instead of asking</td></tr>
       <tr><td>3</td><td><strong>Trigger &amp; intensity:</strong> discuss-by-default for new plans (explicit skip required), depth scaled to stakes; structural revisions get an offer, status flips get nothing</td><td>Default path teaches behavior without gates; mandatory ceremony on trivial work is how teams learn to route around a process</td></tr>
       <tr><td>4</td><td><strong>STACK.md shape:</strong> per-repo at root; default + lane + escape hatch per entry; Deviations section; living file</td><td>A bare inventory reads as law and suppresses trade-offs; lanes turn deviations into recordable decisions</td></tr>
       <tr><td>5</td><td><strong>Seeding:</strong> generic scaffold ships in templates/; the org's Microsoft stack is a separate copy-in seed; interview fallback when neither fits</td><td>Keeps planf3 a general tool (plugin flip stays viable) while the org still gets one-copy seeding</td></tr>
       <tr><td>6</td><td><strong>Layout &amp; linkage:</strong> <code>CONTEXT.md</code> (glossary) + <code>docs/adr/</code> conventions unchanged, STACK.md beside them; plain inline links; zero plan_tool/CLI/hook/test changes</td><td>Standard locations stay greppable; "it's just a hyperlink" doesn't justify new CLI surface — wiring can be added later if links prove too loose</td></tr>
+      <tr><td>7</td><td><strong>Understanding layer (added 2026-07-04):</strong> nodes-only <code>SYSTEM.md</code> component map + on-demand <strong>Orient</strong> workflow — <em>store nodes, synthesize edges</em></td><td>The drift-rate line: the component roster changes only on structural events (which the discuss pass already gates — one-line updates, co-located with their trigger), while wiring/behavior drifts every commit and must be derived fresh from code. A stored map fails only in bounded, greppable ways; stored current-state prose fails invisibly — the excised-compliance mistake ported to docs</td></tr>
     </table>
 
     <div class="callout"><strong>Scope guard.</strong> This iteration is context + interrogation + records <em>only</em>. No enforcement, no gating, no revert mechanics — git owns those (branches/PRs, CODEOWNERS, tags, blame, CI). The compliance layer was deliberately excised in the re-scope (see back-ref); nothing here may walk that back. If a build decision seems to need enforcement, the answer is a git-layer convention, not tool machinery.</div>
 
-    <div class="callout"><strong>Key risk.</strong> <span class="risk">discuss-plan.md's interview quality is the single load-bearing artifact.</span> A weak script yields ceremony — rote questions, autopilot answers — and the whole iteration reads as process theater. That is why Phase 2 gets the authoring care and Phase 4 (dogfood + owner sign-off) gates the announcement to engineers.</div>
+    <div class="callout"><strong>Key risk.</strong> <span class="risk">The interview quality in <code>skills/discuss/workflows/interview.md</code> is the single load-bearing artifact.</span> A weak script yields ceremony — rote questions, autopilot answers — and the whole iteration reads as process theater. That is why Phase 2 gets the authoring care and Phase 4 (dogfood + owner sign-off) gates the announcement to engineers.</div>
 
     <h3>Rejected alternatives</h3>
     <ul>
+      <li><span class="no">Workflow file inside planf3 as the discuss home</span> (the original decision #1) — fails the By-invocation criterion: the grill leading word gets buried under a plan-authoring description and can't fire standalone; re-broadens the skill the rescope narrowed. Revised same-day to the sibling skill; see the amended decision table.</li>
+      <li><span class="no">Three or more skills</span> (interview / stack-context / orient as separate peers) — stack and glossary capture have no independent leading word (they're reached <em>by</em> the interview), splitting severs the ask-→-record-it-right-there co-location, and each extra skill spends session context load. Orient stays inside discuss with a documented split trigger: promote it to its own skill only if "onboard me / how does this work" misroutes in practice.</li>
       <li><span class="no">Vendor the personal skills</span> (copy grilling/domain-modeling into each project) — three more things to copy per project; worsens the friction the plugin flip exists to fix.</li>
       <li><span class="no">Org-preloaded stack template</span> — would make every future planf3 consumer inherit one org's Microsoft opinions as defaults.</li>
       <li><span class="no">ADRs under <code>specs/</code></span> — breaks the industry-standard <code>docs/adr/</code> location and drags non-plan files into index/guard/validate territory.</li>
       <li><span class="no">Wiring ADR links into plan metadata</span> (<code>meta --field refs</code>, validate resolution) — new CLI surface + tests for what is fundamentally a hyperlink; revisit only if inline links prove too loose.</li>
       <li><span class="no">Always-full-depth or purely opt-in triggering</span> — the former breeds resentment and gaming; the latter never reaches the people who most need to slow down.</li>
+      <li><span class="no">Stored current-state SYSTEM.md prose</span> (architecture doc describing today's wiring) — the only artifact class whose correctness decays on every merge; "update it when things change" is the discretionary non-story that predictably fails. Nodes-only map + on-demand Orient instead.</li>
     </ul>
 
     <h3>Relationships &amp; future threads</h3>
     <ul>
       <li><strong>Back-ref:</strong> <code>planf3-rescope</code> — this iteration builds directly on the lean scope it established; the scope guard above is its contract.</li>
-      <li><strong>Plugin flip</strong> (<code>plugin-flip</code>, gated): the three new files ride along for free — a discuss phase that ships in the plugin strengthens the case for flipping.</li>
-      <li><strong>Owner's personal skills:</strong> <code>/grill-with-docs</code> remains a personal shortcut that converges on the same conventions; mild text duplication between it and <code>discuss-plan.md</code> is accepted, with the workflow file canonical for projects.</li>
+      <li><strong>Sequencing dependency:</strong> <code>plugin-flip</code> executes <em>first</em> (its trigger fired 2026-07-04 — team adoption); this plan builds onto the plugin layout (<code>skills/discuss/</code> beside <code>skills/planf3/</code>), and the plugin's <code>skills/</code> auto-discovery makes the sibling skill free to ship.</li>
+      <li><strong>Owner's personal skills:</strong> <code>/grill-with-docs</code>, <code>/grilling</code>, and <code>/domain-modeling</code> are superseded by the shipped <code>discuss</code> skill — single source of truth; retire the personal copies after the dogfood pass to avoid double-triggering.</li>
       <li><strong>Diagrams:</strong> image slots are brace-stripped TODO comments — the <code>excalidraw-diagram</code> skill is not installed on this machine; generate when available.</li>
     </ul>
   </section>
@@ -338,6 +354,14 @@
       <details>
         <summary>2026-07-04T16:20:35-05:00 — back-refs += planf3-rescope.html</summary>
         <p>Linked to planf3-rescope.html (back reference).</p>
+      </details>
+      <details>
+        <summary>2026-07-04T17:22:26-05:00 — Path 2 revision: discuss rehomed as a sibling plugin skill; understanding layer added</summary>
+        <p>Locked decision #1 revised same-day after a skill-boundary audit against the writing-great-skills rubric: the discuss capability moves from workflows/discuss-plan.md (inside planf3) to skills/discuss/ (sibling skill in the plugin) — the grill leading word must fire standalone, and the distribution argument never distinguished the two homes. Added decision #7 (understanding layer): nodes-only SYSTEM.md component map + on-demand Orient workflow, per the drift-rate line (store nodes, synthesize edges). Phase 2 now authors the full skill (SKILL.md, interview/seed-stack/orient workflows, stack/system templates); Phase 3 rewires planf3 (description tightening, Context Layer, create/update/build workflow hooks); Phase 4 dogfood extended with SYSTEM.md seeding and an Orient smoke. Sequencing: plugin-flip executes first (trigger fired); this plan builds on the plugin layout.</p>
+      </details>
+      <details>
+        <summary>2026-07-04T17:22:26-05:00 — back-refs += plugin-flip.html</summary>
+        <p>Linked to plugin-flip.html (back reference).</p>
       </details></div>
   </section>
 

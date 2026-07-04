@@ -1,2 +1,5 @@
 {"ts": "2026-07-04T16:15:30-05:00", "event": "created", "role": null, "agent": "claude-fable-5", "session": null, "details": {"id": "context-aware-planning", "title": "Context-Aware Solution Building: Discuss Phase + Stack Layer", "owner": "architect", "kind": "plan", "file": "context-aware-planning.html"}}
 {"ts": "2026-07-04T16:20:35-05:00", "event": "ref", "role": null, "agent": "claude-fable-5", "session": null, "details": {"field": "back-refs", "other": "planf3-rescope.html", "type": "back"}}
+{"ts": "2026-07-04T17:22:26-05:00", "event": "amend", "role": null, "agent": "claude-fable-5", "session": null, "details": {"summary": "Path 2 revision: discuss rehomed as a sibling plugin skill; understanding layer added"}}
+{"ts": "2026-07-04T17:22:26-05:00", "event": "ref", "role": null, "agent": "claude-fable-5", "session": null, "details": {"field": "back-refs", "other": "plugin-flip.html", "type": "back"}}
+{"ts": "2026-07-04T17:22:27-05:00", "event": "meta", "role": null, "agent": "claude-fable-5", "session": null, "details": {"field": "status", "value": "active"}}
