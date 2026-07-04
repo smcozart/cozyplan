@@ -161,24 +161,18 @@ A plan is a living artifact many agents (and, soon, many roles) touch over time.
 
 | Command | What it does |
 |---|---|
-| `new` | Scaffold a fresh plan from `templates/plan.html` — stamps every `data-*` anchor + metadata (`status=draft`); `--kind plan\|contract`; refuses to overwrite |
+| `new` | Scaffold a fresh plan from `templates/plan.html` — stamps every `data-*` anchor + metadata (`status=draft`); refuses to overwrite |
 | `status` | Flip a task/phase marker (`idle`/`wip`/`x`/`f`; `f` requires `--reason`) |
-| `meta` | Set or append a metadata field (`id`/`owner`/`status`/`kind`, or the append-only lists) |
-| `build-meta` | Append agent + session, auto-capture + verify HEAD, and stamp `modified` in one call |
-| `ref` | Add a typed reference between two plans — `--type back\|forward\|provides\|consumes` (dedupes, updates both sides) |
+| `meta` | Set or append a metadata field (`id`/`owner`/`status`, or the append-only lists — `modified`, `commits`, `agent`, `session`) |
+| `ref` | Add a reference between two plans — `--type back\|forward` (dedupes, updates both sides) |
 | `amend` | Append an amendment entry |
-| `report` | Append a cross-role report-back event (incl. `request` / `request-closed` change-request lifecycle) |
-| `checkpoint` | Bind plan state to a verified commit + annotated git tag (`planf3/<id>/<n>`); refuses a dirty tree |
-| `accept` | Architect: record acceptance + create a checkpoint tag |
-| `ack` | Acknowledge the current state of a seam a consumer plan depends on |
 | `brief` | Compact plain-text extract of a plan (or `--all` for a one-liner index) |
 | `validate` | Lint a plan (leftover `{{}}` tokens, markers, metadata, images, refs) |
 | `index` | Scan `specs/` → `_index.json` + `_index.html`, flag dangling refs and doc drift |
 | `init-ids` | Backfill `data-*` anchors on a legacy/un-anchored plan (also stamps the schema) |
-| `roles build` | Generate `roles/_roles.json` + `.github/CODEOWNERS` from `roles/*.md` |
-| `rollup` | Scan event logs + `_index.json` → `specs/_status.html` (the architect view) |
+| `roles build` | Generate `roles/_roles.json` (ownership map) + `.github/CODEOWNERS` from `roles/*.md` |
 
-Every mutating command also appends a one-line JSON event to **`specs/<plan>.log.ndjson`** — an append-only, `merge=union` sidecar (see `.gitattributes`) so concurrent writes from different agents/roles combine cleanly instead of colliding — and holds an exclusive `<plan>.lock` for its read-modify-write so two agents touching the same plan never lose an update.
+Every mutating command also appends a one-line JSON event to **`specs/<plan>.log.ndjson`** — an append-only, `merge=union` sidecar (see `.gitattributes`) so concurrent writes from different agents/roles combine cleanly instead of colliding — and holds an exclusive `<plan>.lock` for its read-modify-write so two agents touching the same plan never lose an update. (The `--role`/`--agent`/`--session` labels on any command are just free-text tags in that log.)
 
 **Lifecycle.** Each plan carries a single-value `status`: `draft` → `active` → `built`, plus `superseded` (replaced — carries a forward ref to its successor) and `archived` (kept for history). The generated `specs/_index.html` catalog lets `specs/` stay navigable as plans accumulate.
 
@@ -186,10 +180,10 @@ Every mutating command also appends a one-line JSON event to **`specs/<plan>.log
 
 **Hooks (opt-in).** `.claude/settings.json.sample` carries two hooks — merge it into `.claude/settings.json` to activate:
 
-- a **PreToolUse** guard that steers raw `Edit`/`Write` of CLI-managed regions to `plan_tool.py` (and blocks overwriting an existing plan),
+- a **PreToolUse** coherence guard that steers raw `Edit`/`Write` of CLI-managed regions to `plan_tool.py` (and blocks overwriting an existing plan),
 - a **PostToolUse** lint that runs `plan_tool validate` after any write to `specs/*.html` and feeds failures back to the agent.
 
-Both **fail open** — an unexpected error never hard-blocks the agent. They execute commands, which is why they're shipped as a sample rather than enabled automatically.
+Both **fail open** — an unexpected error never hard-blocks the agent. They execute commands, which is why they're shipped as a sample rather than enabled automatically. The guard is a **coherence aid, not a security boundary**: it nudges in-tool edits through the CLI, but a `Bash` heredoc or any out-of-tool write bypasses it by design. Real enforcement (who may change what, and reverting a bad change) lives in git — branches, PR review, CODEOWNERS, and CI.
 
 ---
 
@@ -197,22 +191,20 @@ Both **fail open** — an unexpected error never hard-blocks the agent. They exe
 
 Role mode is **optional and off by default** — planf3 is a complete planning tool without it, and users running their own custom agentic approach can simply never turn it on. It shines on team projects with source control, where roles tie directly to source-control ownership rules and to each role's planning, executing, and logging docs.
 
-Roles are **new** and project-scoped: on a multi-owner project you opt in by running the **Generate Roles** workflow once at kickoff to scope the project into roles — the owners of its plans, code, and docs — and revise them as the architecture evolves. It's the answer to the merge pain of several people (and agents) pushing to their own scattered `CLAUDE.md`/markdown files with no shared process. Nothing role-related activates until that workflow creates `roles/` (enforcement is fail-open without it).
+Roles are **new** and project-scoped: on a multi-owner project you opt in by running the **Generate Roles** workflow once at kickoff to scope the project into roles — the owners of its plans, code, and docs — and revise them as the architecture evolves. It's the answer to the merge pain of several people (and agents) pushing to their own scattered `CLAUDE.md`/markdown files with no shared process. Nothing role-related exists until that workflow creates `roles/`.
 
-Each role is **one hand-authored file** at `roles/<role>.md` (from [`templates/role.md`](.claude/skills/planf3/templates/role.md)) that serves three readers at once: a human onboarding doc, an agent operating brief, and the parsed source the enforcement machinery reads. A role file carries explicit **responsibilities**, a concrete **Definition of Done** (with runnable checks a human and an agent run the same way), and **disjoint ownership globs** — `source_of_truth` and `code` globs may not overlap across roles (`plan_tool roles build` rejects overlap, since overlap is what causes the merge pain in the first place).
+Each role is **one hand-authored file** at `roles/<role>.md` (from [`templates/role.md`](.claude/skills/planf3/templates/role.md)) that serves three readers at once: a human onboarding doc, an agent operating brief, and the parsed source `plan_tool roles build` compiles into an ownership map. A role file carries explicit **responsibilities**, a concrete **Definition of Done** (with runnable checks a human and an agent run the same way), and **disjoint ownership globs** — `source_of_truth` and `code` globs may not overlap across roles (`plan_tool roles build` rejects overlap, since overlap is what causes the merge pain in the first place).
 
-Ownership is enforced **twice from that one source**:
+From that one source, `plan_tool roles build` generates two artifacts:
 
-- **Agents** — the PreToolUse guard reads the generated `roles/_roles.json` plus your `PLANF3_ROLE` env var. Its behaviour is set by a project-wide **mode** (on the architect role): `off` (dormant), `track` (log impact, no denies — the default), or `protect` (also deny a role writing another role's *source of truth*). Fail-open when unset.
-- **Humans** — `plan_tool roles build` also generates `.github/CODEOWNERS` from each role's `github:` identity for review-time ownership (a role without one is emitted commented-out rather than as an unusable `@role` slug).
+- **`roles/_roles.json`** — a **pure ownership map** (role → owned globs). No modes, no acceptance, no enforcement fields.
+- **`.github/CODEOWNERS`** — each role's `github:` identity mapped to its globs for review-time ownership (a role without one is emitted commented-out rather than as an unusable `@role` slug).
 
-The guiding line is **coherence, not compliance**: only two writes are ever *blocked* — hand-edits to CLI-managed regions, and (in `protect`) cross-role source-of-truth writes. Everything else is **allowed and logged**. The system's job is to make incoherence *visible*, not to force plan-obedience. So `plan_tool rollup` surfaces **ownership drift** (a role's path written by someone else, from an append-only `roles/activity.log.ndjson`), **pending acceptance** (built plans awaiting an architect `accept`, under `acceptance=manual`), **open change requests**, and **unacknowledged seam changes**.
+**Enforcement is git's job, not planf3's.** There is no edit-time gate on who writes what — planf3 compiles the map, git enforces it. Ownership is enforced the way every git project already enforces it: **CODEOWNERS** routes review to the owning role, **PR review** is the acceptance gate, and **`git blame`** answers "who changed my file." The guiding line is **coherence, not compliance**: the tool's job is to make ownership *legible*, then get out of the way.
 
-**Seams & checkpoints.** A `kind=contract` plan is a **seam** — the interface where two components meet. Consumers wire to it with `ref --type consumes` and re-`ack` it when it changes; a consumer that hasn't acknowledged the latest change lights up in the rollup. And `checkpoint`/`accept` bind a plan to a **verified** git commit (HEAD + tree, refusing a dirty tree) and tag it `planf3/<id>/<n>` — a real, git-native revert point, not a self-reported SHA.
+A plan names its role in the `owner` metadata field, and every `plan_tool` event carries a free-text `--role` label so the plan's `.log.ndjson` records who did what (a label for the log, not an enforced identity). As with `_index.*` and `CODEOWNERS`, the generated aggregates are **generated, never hand-edited**.
 
-A plan names its role in the `owner` metadata field. Roles **report back** to the role they report to (usually the architect) via `plan_tool report`, which appends an event to the plan's `.log.ndjson`; the architect regenerates a status dashboard with `plan_tool rollup` → `specs/_status.html`. As with `_index.*` and `CODEOWNERS`, these aggregates are **generated, never hand-edited**.
-
-When an agent or human assumes role `R`, the role file's **Session bootstrap** sets the read order: `SKILL.md` → `roles/<R>.md` → export `PLANF3_ROLE=R` → the `owner=R`-filtered `specs/_index.html` and `specs/_status.html` → `roles/<R>/memory.md` → the relevant plan's `.log.ndjson`. Adding or splitting a role is a file plus a `roles build` — ownership is a field and a glob, not a directory move, so it never breaks existing plan references.
+When an agent or human assumes role `R`, the role file's **Session bootstrap** sets the read order: `SKILL.md` → `roles/<R>.md` → the `owner=R`-filtered `specs/_index.html` → `roles/<R>/memory.md` → the relevant plan's `.log.ndjson`. Adding or splitting a role is a file plus a `roles build` — ownership is a field and a glob, not a directory move, so it never breaks existing plan references.
 
 ---
 
@@ -264,7 +256,7 @@ planf3/
 │           └── diagram-generation.md   # subworkflow — local Excalidraw diagrams
 │
 ├── scripts/
-│   ├── plan_tool.py                # deterministic CLI for all managed plan writes + validate/index/roles/rollup
+│   ├── plan_tool.py                # deterministic CLI for all managed plan writes + validate/index/roles
 │   └── hooks/
 │       ├── guard_plan_edit.py      # PreToolUse — steers raw edits of managed regions to plan_tool
 │       └── lint_plan.py            # PostToolUse — validates specs/*.html after any write
@@ -275,7 +267,6 @@ planf3/
 ├── specs/                          # where plans land
 │   ├── _index.json                 # generated catalog (machine-readable)
 │   ├── _index.html                 # generated catalog (browsable)
-│   ├── _status.html                # generated architect rollup (plan_tool rollup)
 │   ├── pi-iroh-coms-net.html       # a REAL planf3 plan — open it in a browser
 │   ├── pi-iroh-coms-net/           # its synced, generated section diagrams
 │   └── <plan>.log.ndjson           # per-plan append-only event log (created on first managed write)
@@ -286,7 +277,7 @@ planf3/
 #   roles/
 #   ├── <role>.md                   # hand-authored role source of truth (from templates/role.md)
 #   ├── <role>/memory.md            # that role's single-writer durable notes
-#   └── _roles.json                 # GENERATED enforcement manifest (plan_tool roles build)
+#   └── _roles.json                 # GENERATED ownership map (plan_tool roles build)
 #   .github/CODEOWNERS              # GENERATED from roles/*.md for review-time ownership
 ```
 
