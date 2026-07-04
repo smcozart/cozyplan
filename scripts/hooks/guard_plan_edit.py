@@ -3,47 +3,37 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-"""PreToolUse guard: managed-region integrity + role-ownership (mode-driven).
+"""PreToolUse guard: managed-region COHERENCE for plan artifacts.
 
-Reads the Claude Code hook payload from stdin. Two composed checks on
-Edit/MultiEdit/Write:
+Reads the Claude Code hook payload from stdin. On Edit/MultiEdit/Write to a
+plan (specs/*.html), it steers CLI-managed writes through plan_tool so the
+machine-readable regions (status markers, metadata, amendments) stay
+well-formed. Prose/diagram edits pass untouched.
 
-  1. Managed region (specs/*.html only) — the INTEGRITY layer, always on for
-     everyone regardless of roles. Allow Write to a new plan (Create authoring);
-     deny Write over an existing plan; deny Edit/MultiEdit whose text touches a
-     managed token (data-managed, data-meta=, class="status", amendments, or a
-     bare status bracket), steering to plan_tool. Prose/diagram edits pass.
+  - Allow Write to a NEW plan (Create authoring); deny Write over an existing
+    plan (route structured writes through plan_tool).
+  - Deny Edit/MultiEdit whose text touches a managed token (data-managed,
+    data-meta=, class="status", amendments, or a bare status bracket).
+  - Draft authoring window: while the plan's status is `draft` (the state
+    `plan_tool new` stamps), STRUCTURAL authoring is allowed — duplicating /
+    renumbering phase/task blocks with their anchors and markers — because the
+    Create workflow requires it (and phase loop prose legitimately contains
+    [x]/[f] literals a substring heuristic can't tell from markers). Metadata
+    (data-meta=) and the amendments region stay CLI-only in every status; once
+    the plan leaves draft, full strictness resumes.
 
-     Draft authoring window: while the plan's status is `draft` (the state
-     `plan_tool new` stamps), STRUCTURAL authoring is allowed — duplicating /
-     renumbering phase/task blocks with their anchors (data-phase, data-task,
-     data-status-for, class="status") and status markers — because the Create
-     workflow requires it (and each phase's loop prose legitimately contains
-     [x]/[f] literals a substring heuristic cannot tell apart from markers).
-     Marker values carry no meaning until Build, which requires leaving draft.
-     Metadata (data-meta=) and the amendments region stay CLI-only in EVERY
-     status; once the plan leaves draft, full strictness resumes.
-
-  2. Role ownership (any path) — driven by roles/_roles.json `mode`:
-       off / no manifest / no roles dir : fail-open, no role logic.
-       track                            : no denies (impact is logged post-write).
-       protect                          : deny ONLY when the acting role (PLANF3_ROLE)
-                                          is set, is not `architect`, and the target
-                                          matches ANOTHER role's source_of_truth globs.
-     Everything else — code paths, supporting, unowned, roleless sessions, the
-     architect — is allowed. This is "coherence, not compliance": only integrity
-     and cross-role source-of-truth writes are ever blocked.
-
-The role matcher is plan_tool.glob_match — the SAME function roles-build uses for
-disjointness — so build time and enforce time never disagree. If plan_tool cannot
-be located the role layer fails open.
+WHAT THIS IS — and is NOT. This is a COHERENCE layer: it keeps a *cooperative*
+agent routing structured writes through plan_tool, so plans stay well-formed and
+diffable. It is deliberately NOT a tamper-proof boundary — a hook only sees
+Edit/MultiEdit/Write, so a Bash/`sed`/redirect write (or any out-of-tool edit)
+bypasses it by design. Real accountability and revert points are git's job
+(branches, PRs, CODEOWNERS, tags). Do not rely on this to *prevent* a determined
+writer; rely on it to keep an honest one consistent.
 
 Fail-open: any unexpected error exits 0 so the hook never hard-blocks the agent.
 """
 
-import importlib.util
 import json
-import os
 import re
 import sys
 from pathlib import Path
@@ -74,91 +64,34 @@ CLI_HINT = (
     "or amendments). Use plan_tool instead:\n"
     "  status:    uv run scripts/plan_tool.py status <plan> --id <id> --state wip|x|f\n"
     "  metadata:  uv run scripts/plan_tool.py meta <plan> --field <field> --value <v>\n"
-    "  reference: uv run scripts/plan_tool.py ref --this <plan> --other <plan> --type back|forward|provides|consumes\n"
+    "  reference: uv run scripts/plan_tool.py ref --this <plan> --other <plan> --type back|forward\n"
     "  amendment: uv run scripts/plan_tool.py amend <plan> --summary \"…\" --detail \"…\"\n"
     "Free-form prose (Purpose/Problem/Solution/Notes) and diagrams may be edited normally."
 )
 
 
 def is_plan_path(fp: str) -> bool:
+    """True if fp names a plan (specs/*.html), robust to case-insensitive
+    filesystems and trailing dots that resolve to the same file (Windows).
+
+    Checks both the raw path and its resolved form, matches `specs` case-
+    insensitively, and ignores trailing dots/spaces on the filename — so
+    `SPECS/plan.html` and `specs/plan.html.` are treated as the plan they are.
+    """
     if not fp:
         return False
-    p = Path(fp.replace("\\", "/"))
-    return p.suffix.lower() == ".html" and "specs" in p.parts
-
-
-def _load_glob_match(cwd: Path):
-    """Return plan_tool.glob_match (the single shared matcher), or None if unlocatable."""
-    candidates = []
-    pr = os.environ.get("CLAUDE_PLUGIN_ROOT")
-    if pr:
-        candidates.append(Path(pr) / "scripts" / "plan_tool.py")
-    candidates.append(cwd / "scripts" / "plan_tool.py")
-    candidates.append(Path(__file__).resolve().parent.parent / "plan_tool.py")
-    for c in candidates:
-        if not c.exists():
-            continue
-        try:
-            sys.dont_write_bytecode = True
-            spec = importlib.util.spec_from_file_location("_planf3_plan_tool_guard", c)
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
-            return mod.glob_match
-        except Exception:
-            continue
-    return None
-
-
-def _rel_posix(fp: str, cwd: Path) -> str:
-    p = Path(fp.replace("\\", "/"))
+    raw = Path(fp.replace("\\", "/"))
+    candidates = [raw]
     try:
-        return p.resolve().relative_to(cwd.resolve()).as_posix()
-    except (ValueError, OSError):
-        return p.as_posix()
-
-
-def role_denial(payload: dict, fp: str):
-    """Return (owning_role, matched_glob) if the acting role may not touch fp, else None."""
-    acting = os.environ.get("PLANF3_ROLE")
-    if not acting:
-        return None  # roleless session -> allow (logged post-write)
-    cwd = Path(payload.get("cwd") or ".")
-    roles_dir = cwd / "roles"
-    manifest = roles_dir / "_roles.json"
-    if not roles_dir.exists() or not manifest.exists():
-        return None  # fail-open: roles not in use
-    try:
-        data = json.loads(manifest.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return None
-    mode = data.get("mode", "track")
-    if mode != "protect":
-        return None  # off / track -> no denies
-    if acting == "architect":
-        return None  # architect is never denied by the role layer
-    glob_match = _load_glob_match(cwd)
-    if glob_match is None:
-        return None  # cannot enforce without the shared matcher -> fail-open
-    roles = data.get("roles", {})
-    rel = _rel_posix(fp, cwd)
-    # Deny only on ANOTHER role's source-of-truth. Disjointness (build-time) means
-    # this cannot also be the acting role's own SoT/code, so no self-conflict.
-    for role, info in roles.items():
-        if role == acting:
-            continue
-        for g in info.get("source_of_truth", []):
-            if glob_match(rel, g):
-                return role, g
-    return None
-
-
-def role_msg(owner: str, glob: str) -> str:
-    acting = os.environ.get("PLANF3_ROLE")
-    return (f"Role boundary: '{acting}' may not edit this path — it is the source of truth "
-            f"owned by role '{owner}' (matches its glob '{glob}'). Do not edit another role's "
-            f"source of truth. File a change request: "
-            f"uv run scripts/plan_tool.py report <{owner}'s plan> --status request "
-            f"--summary \"…\", or escalate to the architect.")
+        candidates.append(raw.resolve())
+    except (OSError, RuntimeError):
+        pass
+    for p in candidates:
+        parts_lower = [seg.lower() for seg in p.parts]
+        name = p.name.rstrip(". ")  # Windows ignores trailing dots/spaces
+        if name.lower().endswith(".html") and "specs" in parts_lower:
+            return True
+    return False
 
 
 def touches_managed(text: str) -> bool:
@@ -211,13 +144,7 @@ def main() -> int:
     if tool not in ("Edit", "MultiEdit", "Write"):
         return 0
 
-    # 1. Role ownership — applies to ANY path (src, docs, specs, roles, …).
-    if fp:
-        denial = role_denial(payload, fp)
-        if denial:
-            deny(role_msg(*denial))
-
-    # 2. Managed-region check — specs/*.html only (integrity layer, always on).
+    # Managed-region coherence — specs/*.html only.
     if not is_plan_path(fp):
         return 0
 

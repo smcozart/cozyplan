@@ -51,29 +51,14 @@ def test_roles_build_structured_manifest(pt, tmp_path):
     co = tmp_path / "CODEOWNERS"
     assert _build(pt, rd, co) == 0
     manifest = json.loads((rd / "_roles.json").read_text(encoding="utf-8"))
-    # top-level project knobs (defaults) + structured per-role owns
-    assert manifest["mode"] == "track"
-    assert manifest["acceptance"] == "manual"
+    # _roles.json is a pure ownership map now — no enforcement mode/acceptance knobs.
+    assert "mode" not in manifest and "acceptance" not in manifest
     ux = manifest["roles"]["ux"]
     assert ux["source_of_truth"] == ["specs/ux-*.html"]
     assert ux["code"] == ["src/ui/**"]
     assert ux["supporting"] == ["docs/ux/**"]
     assert ux["github"] == "@org/ux"
     assert "src/ui/**" in ux["owns"] and "docs/ux/**" in ux["owns"]  # union for CODEOWNERS
-
-
-def test_roles_build_mode_acceptance_from_architect(pt, tmp_path):
-    rd = _roles_dir(tmp_path, {
-        "architect": {"sot": "specs/vision-*.html", "code_glob": "docs/architecture/**",
-                      "mode": "protect", "acceptance": "auto", "github": "@org/arch"},
-        "engineer-api": {"sot": "specs/api-*.html", "code_glob": "src/api/**",
-                         "github": "@org/api"},
-    })
-    co = tmp_path / "CODEOWNERS"
-    assert _build(pt, rd, co) == 0
-    manifest = json.loads((rd / "_roles.json").read_text(encoding="utf-8"))
-    assert manifest["mode"] == "protect"
-    assert manifest["acceptance"] == "auto"
 
 
 def test_codeowners_uses_github_identity(pt, tmp_path):

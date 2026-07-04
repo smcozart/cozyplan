@@ -36,14 +36,14 @@ def test_brief_open_failure_shows_reason(pt, new_plan, capsys):
     assert "[f]" in out and "upstream gone" in out
 
 
-def test_brief_shows_seam_refs(pt, new_plan, capsys):
+def test_brief_shows_refs(pt, new_plan, capsys):
     consumer = new_plan("bc")
-    seam = new_plan("bs")
-    pt.main(["ref", "--this", str(consumer), "--other", str(seam), "--type", "consumes"])
+    other = new_plan("bs")
+    pt.main(["ref", "--this", str(consumer), "--other", str(other), "--type", "forward"])
     capsys.readouterr()
     pt.main(["brief", str(consumer)])
     out = capsys.readouterr().out
-    assert "consumes" in out and "bs.html" in out
+    assert "forward" in out and "bs.html" in out
 
 
 def test_brief_all_one_line_per_plan(pt, new_plan, specs, capsys):

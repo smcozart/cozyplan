@@ -1,4 +1,4 @@
-"""`ref` (bidirectional), `amend` (newest-at-bottom), `report` (event fields)."""
+"""`ref` (bidirectional back/forward links) and `amend` (newest-at-bottom)."""
 
 from conftest import read, sidecar_events
 
@@ -41,20 +41,3 @@ def test_amend_appends_newest_at_bottom(pt, new_plan):
     # both inserted inside the amendments container
     body = text.split("data-amendments-list")[1]
     assert "first change" in body and "second change" in body
-
-
-def test_report_writes_event_with_fields(pt, new_plan):
-    plan = new_plan("report-plan", owner="engineer-api")
-    code = pt.main(["report", str(plan), "--role", "engineer-api",
-                    "--status", "done", "--summary", "shipped it",
-                    "--commits", "sha1,sha2"])
-    assert code == 0
-    reports = [e for e in sidecar_events(plan) if e["event"] == "report"]
-    assert len(reports) == 1
-    ev = reports[0]
-    assert ev["role"] == "engineer-api"
-    assert ev["details"]["report_status"] == "done"
-    assert ev["details"]["summary"] == "shipped it"
-    assert ev["details"]["commits"] == ["sha1", "sha2"]
-    # report also drops a readable amendment into the HTML
-    assert "shipped it" in read(plan)
