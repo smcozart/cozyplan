@@ -83,7 +83,7 @@
         <dt>owner</dt>        <dd data-meta="owner">architect</dd>
         <dt>status</dt>       <dd data-meta="status">draft</dd>
         <dt>created</dt>      <dd data-meta="created">2026-07-03T16:14:32-05:00</dd>
-        <dt>modified</dt>     <dd data-meta="modified">2026-07-03T16:14:32-05:00</dd>
+        <dt>modified</dt>     <dd data-meta="modified">2026-07-03T16:14:32-05:00, 2026-07-03T20:10:59-05:00</dd>
         <dt>commits</dt>      <dd data-meta="commits">—</dd>
         <dt>agent name</dt>   <dd data-meta="agent">—</dd>
         <dt>session id</dt>   <dd data-meta="session">—</dd>
@@ -313,7 +313,11 @@
     <!-- CLI-managed: PLAN_TOOL amend/ref/report append <details> entries into the
          container below, newest at the bottom. Do not hand-edit. -->
     <div data-amendments-list>
-    </div>
+    
+      <details>
+        <summary>2026-07-03T20:10:59-05:00 — Executed as sharper excision, not fork-B demote-in-place</summary>
+        <p>On review the owner chose to excise the compliance layer to git history (recoverable from 4a3921e) rather than demote it in place. Shipped on branch rework/lean-core: checkpoint/accept/build-meta/report/ack/seams/rollup removed; guard reduced to a coherence layer + path-normalization fix; roles kept as an ownership-map-&gt;CODEOWNERS generator only; enforcement/revert/accountability delegated to git. plan_tool.py 1960-&gt;1352 lines, 63 tests green. This plan is retained as the decision record.</p>
+      </details></div>
   </section>
 
 </main>
