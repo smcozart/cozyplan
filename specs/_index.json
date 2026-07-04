@@ -1,5 +1,5 @@
 {
-  "as_of": "2026-07-04T17:22:27-05:00",
+  "as_of": "2026-07-04T17:37:09-05:00",
   "plans": [
     {
       "file": "context-aware-planning.html",
@@ -9,7 +9,7 @@
       "status": "active",
       "owner": "architect",
       "created": "2026-07-04T16:15:30-05:00",
-      "modified": "2026-07-04T17:22:27-05:00",
+      "modified": "2026-07-04T17:37:09-05:00",
       "image_dir": "",
       "back_refs": [
         "planf3-rescope.html",
@@ -44,7 +44,7 @@
       "status": "active",
       "owner": "architect",
       "created": "2026-07-03T14:47:24-05:00",
-      "modified": "2026-07-04T17:22:26-05:00",
+      "modified": "2026-07-04T17:37:08-05:00",
       "image_dir": "",
       "back_refs": [],
       "forward_refs": [

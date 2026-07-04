@@ -2,3 +2,26 @@
 {"ts": "2026-07-04T17:17:25-05:00", "event": "amend", "role": null, "agent": "claude-fable-5", "session": null, "details": {"summary": "Rescope-alignment amendment: lean surface + Path 2 sequencing"}}
 {"ts": "2026-07-04T17:17:25-05:00", "event": "meta", "role": null, "agent": "claude-fable-5", "session": null, "details": {"field": "status", "value": "active"}}
 {"ts": "2026-07-04T17:22:26-05:00", "event": "ref", "role": null, "agent": "claude-fable-5", "session": null, "details": {"field": "forward-refs", "other": "context-aware-planning.html", "type": "back"}}
+{"ts": "2026-07-04T17:36:32-05:00", "event": "status", "role": null, "agent": "claude-fable-5", "session": null, "details": {"id": "1.1", "state": "x", "reason": null}}
+{"ts": "2026-07-04T17:36:33-05:00", "event": "status", "role": null, "agent": "claude-fable-5", "session": null, "details": {"id": "1.2", "state": "x", "reason": null}}
+{"ts": "2026-07-04T17:36:33-05:00", "event": "status", "role": null, "agent": "claude-fable-5", "session": null, "details": {"id": "1.3", "state": "x", "reason": null}}
+{"ts": "2026-07-04T17:36:33-05:00", "event": "status", "role": null, "agent": "claude-fable-5", "session": null, "details": {"id": "1.4", "state": "x", "reason": null}}
+{"ts": "2026-07-04T17:36:33-05:00", "event": "status", "role": null, "agent": "claude-fable-5", "session": null, "details": {"id": "1.5", "state": "x", "reason": null}}
+{"ts": "2026-07-04T17:36:33-05:00", "event": "status", "role": null, "agent": "claude-fable-5", "session": null, "details": {"id": "1.6", "state": "x", "reason": null}}
+{"ts": "2026-07-04T17:36:33-05:00", "event": "status", "role": null, "agent": "claude-fable-5", "session": null, "details": {"id": "1.7", "state": "x", "reason": null}}
+{"ts": "2026-07-04T17:36:33-05:00", "event": "status", "role": null, "agent": "claude-fable-5", "session": null, "details": {"id": "1.8", "state": "x", "reason": null}}
+{"ts": "2026-07-04T17:36:34-05:00", "event": "status", "role": null, "agent": "claude-fable-5", "session": null, "details": {"id": "phase-1", "state": "x", "reason": null}}
+{"ts": "2026-07-04T17:36:34-05:00", "event": "status", "role": null, "agent": "claude-fable-5", "session": null, "details": {"id": "2.1", "state": "x", "reason": null}}
+{"ts": "2026-07-04T17:36:34-05:00", "event": "status", "role": null, "agent": "claude-fable-5", "session": null, "details": {"id": "2.2", "state": "x", "reason": null}}
+{"ts": "2026-07-04T17:36:34-05:00", "event": "status", "role": null, "agent": "claude-fable-5", "session": null, "details": {"id": "2.3", "state": "x", "reason": null}}
+{"ts": "2026-07-04T17:36:34-05:00", "event": "status", "role": null, "agent": "claude-fable-5", "session": null, "details": {"id": "2.5", "state": "x", "reason": null}}
+{"ts": "2026-07-04T17:36:34-05:00", "event": "status", "role": null, "agent": "claude-fable-5", "session": null, "details": {"id": "2.6", "state": "x", "reason": null}}
+{"ts": "2026-07-04T17:36:34-05:00", "event": "status", "role": null, "agent": "claude-fable-5", "session": null, "details": {"id": "g.1", "state": "x", "reason": null}}
+{"ts": "2026-07-04T17:36:34-05:00", "event": "status", "role": null, "agent": "claude-fable-5", "session": null, "details": {"id": "g.2", "state": "x", "reason": null}}
+{"ts": "2026-07-04T17:36:35-05:00", "event": "status", "role": null, "agent": "claude-fable-5", "session": null, "details": {"id": "g.3", "state": "x", "reason": null}}
+{"ts": "2026-07-04T17:36:35-05:00", "event": "status", "role": null, "agent": "claude-fable-5", "session": null, "details": {"id": "phase-2", "state": "wip", "reason": null}}
+{"ts": "2026-07-04T17:36:35-05:00", "event": "status", "role": null, "agent": "claude-fable-5", "session": null, "details": {"id": "phase-3", "state": "wip", "reason": null}}
+{"ts": "2026-07-04T17:36:35-05:00", "event": "status", "role": null, "agent": "claude-fable-5", "session": null, "details": {"id": "3.1", "state": "wip", "reason": null}}
+{"ts": "2026-07-04T17:37:08-05:00", "event": "meta", "role": null, "agent": "claude-fable-5", "session": null, "details": {"field": "commits", "value": "2a6d7a4"}}
+{"ts": "2026-07-04T17:37:08-05:00", "event": "meta", "role": null, "agent": null, "session": null, "details": {"field": "agent", "value": "claude-fable-5"}}
+{"ts": "2026-07-04T17:37:08-05:00", "event": "amend", "role": null, "agent": "claude-fable-5", "session": null, "details": {"summary": "Build wave 1 complete; one deliberate Python deviation recorded"}}

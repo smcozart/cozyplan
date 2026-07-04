@@ -83,8 +83,8 @@
         <dt>owner</dt>        <dd data-meta="owner">architect</dd>
         <dt>status</dt>       <dd data-meta="status">active</dd>
         <dt>created</dt>      <dd data-meta="created">2026-07-04T16:15:30-05:00</dd>
-        <dt>modified</dt>     <dd data-meta="modified">2026-07-04T16:15:30-05:00, 2026-07-04T16:20:35-05:00, 2026-07-04T17:22:26-05:00, 2026-07-04T17:22:27-05:00</dd>
-        <dt>commits</dt>      <dd data-meta="commits">—</dd>
+        <dt>modified</dt>     <dd data-meta="modified">2026-07-04T16:15:30-05:00, 2026-07-04T16:20:35-05:00, 2026-07-04T17:22:26-05:00, 2026-07-04T17:22:27-05:00, 2026-07-04T17:36:45-05:00, 2026-07-04T17:36:46-05:00, 2026-07-04T17:36:47-05:00, 2026-07-04T17:36:48-05:00, 2026-07-04T17:36:49-05:00, 2026-07-04T17:37:09-05:00</dd>
+        <dt>commits</dt>      <dd data-meta="commits">47832f2, b652e1e</dd>
         <dt>agent name</dt>   <dd data-meta="agent">claude-fable-5</dd>
         <dt>session id</dt>   <dd data-meta="session">—</dd>
         <dt>back refs</dt>    <dd data-meta="back-refs">planf3-rescope.html, plugin-flip.html</dd>
@@ -160,25 +160,25 @@
     <p>Status markers: <code>[]</code> idle · <code>[wip]</code> in progress · <code>[x]</code> complete · <code>[f]</code> failed (terminal — requires a one-line reason). All start as <code>[]</code>; the Build Plan workflow flips them via <code>PLAN_TOOL status</code> as it works. The <code>data-status-for</code> / <code>data-phase</code> / <code>data-task</code> ids are the anchors the CLI targets — assign them at Create (or run <code>PLAN_TOOL init-ids</code>), numbering tasks <code>&lt;phase&gt;.&lt;task&gt;</code> and phases <code>phase-&lt;n&gt;</code>.</p>
 
     <div class="phase" data-phase="1">
-      <h3><code class="status" data-status-for="phase-1">[]</code> Phase 1: Stack Context Layer</h3>
+      <h3><code class="status" data-status-for="phase-1">[x]</code> Phase 1: Stack Context Layer</h3>
       <p>Author the two stack templates. The entry format is the load-bearing convention of this phase: every entry is a <strong>default + when-to-use lane + escape hatch</strong>, never a bare product name. A bare inventory reads as law to an agent and suppresses exactly the trade-offs the discuss pass exists to surface; a lane with an escape hatch turns every deviation into a recordable decision instead of a violation.</p>
 
       <h4>1. Author the generic scaffold — <code>templates/stack.md</code></h4>
       <ul class="checklist">
-        <li data-task="1.1"><code class="status" data-status-for="1.1">[]</code> Create <code>skills/discuss/templates/stack.md</code> with the section skeleton — Hosting, Business Logic, Frontend, Data, Identity &amp; Access, CI/CD, Observability, Deviations — and a short header stating living-file semantics: sessions update this file as the system evolves; it describes defaults, it does not enforce them.</li>
-        <li data-task="1.2"><code class="status" data-status-for="1.2">[]</code> Document the entry format with one fully worked example (e.g. "Azure Functions — default for event-driven/API business logic; reach for Container Apps when a process is long-running") and the Deviations rule: a deviation that clears the ADR three-gate test (hard to reverse + surprising without context + real trade-off) gets an ADR, linked from its Deviations line.</li>
+        <li data-task="1.1"><code class="status" data-status-for="1.1">[x]</code> Create <code>skills/discuss/templates/stack.md</code> with the section skeleton — Hosting, Business Logic, Frontend, Data, Identity &amp; Access, CI/CD, Observability, Deviations — and a short header stating living-file semantics: sessions update this file as the system evolves; it describes defaults, it does not enforce them.</li>
+        <li data-task="1.2"><code class="status" data-status-for="1.2">[x]</code> Document the entry format with one fully worked example (e.g. "Azure Functions — default for event-driven/API business logic; reach for Container Apps when a process is long-running") and the Deviations rule: a deviation that clears the ADR three-gate test (hard to reverse + surprising without context + real trade-off) gets an ADR, linked from its Deviations line.</li>
       </ul>
 
       <h4>2. Author the org seed — <code>templates/stack.cozy.md</code></h4>
       <ul class="checklist">
-        <li data-task="1.3"><code class="status" data-status-for="1.3">[]</code> Fill the same skeleton with the org's Microsoft stack, each entry carrying its lane and escape hatch: Azure (hosting default), Azure Functions (event-driven/API business logic), Power Apps (internal CRUD/workflow UIs; escape to React when customer-facing or design-controlled), React (customer-facing frontend base), Dataverse (data owned by Power Platform workloads), Fabric (analytics/BI). Mark Identity &amp; Access and CI/CD entries as <strong>PROPOSED</strong> for the owner to confirm — they were not specified in the design session.</li>
+        <li data-task="1.3"><code class="status" data-status-for="1.3">[x]</code> Fill the same skeleton with the org's Microsoft stack, each entry carrying its lane and escape hatch: Azure (hosting default), Azure Functions (event-driven/API business logic), Power Apps (internal CRUD/workflow UIs; escape to React when customer-facing or design-controlled), React (customer-facing frontend base), Dataverse (data owned by Power Platform workloads), Fabric (analytics/BI). Mark Identity &amp; Access and CI/CD entries as <strong>PROPOSED</strong> for the owner to confirm — they were not specified in the design session.</li>
       </ul>
 
       <h4>3. Testing Strategy</h4>
       <p>Structural review — these are markdown conventions, so validation is shape-checking plus a critical read against the anti-inventory rule.</p>
       <ul class="checklist">
-        <li data-task="1.4"><code class="status" data-status-for="1.4">[]</code> <code>grep -c "^## " skills/discuss/templates/stack.md skills/discuss/templates/stack.cozy.md</code> — both files carry the identical section skeleton</li>
-        <li data-task="1.5"><code class="status" data-status-for="1.5">[]</code> Manual read: every entry in both files follows default + lane + escape hatch; zero bare inventory lines; PROPOSED markers present on unconfirmed org entries</li>
+        <li data-task="1.4"><code class="status" data-status-for="1.4">[x]</code> <code>grep -c "^## " skills/discuss/templates/stack.md skills/discuss/templates/stack.cozy.md</code> — both files carry the identical section skeleton</li>
+        <li data-task="1.5"><code class="status" data-status-for="1.5">[x]</code> Manual read: every entry in both files follows default + lane + escape hatch; zero bare inventory lines; PROPOSED markers present on unconfirmed org entries</li>
       </ul>
       <div class="loop">
         🔁 <strong>Do not exit this phase until every box above is <code>[x]</code> or <code>[f]</code>.</strong>
@@ -187,40 +187,40 @@
     </div>
 
     <div class="phase" data-phase="2">
-      <h3><code class="status" data-status-for="phase-2">[]</code> Phase 2: The discuss Skill</h3>
+      <h3><code class="status" data-status-for="phase-2">[x]</code> Phase 2: The discuss Skill</h3>
       <p><strong>This is the load-bearing artifact of the whole iteration.</strong> A weak interview script produces ceremony — questions engineers answer on autopilot — instead of thinking. Spend the authoring care here, and keep the skill fully self-contained: it must not reference the owner's personal global skills (<code>grilling</code>, <code>domain-modeling</code>, <code>grill-with-docs</code>), because project machines don't have them — this skill <em>replaces</em> them as the single source of truth. It ships as a sibling skill (<code>skills/discuss/</code>) in the plugin, independently invocable on its own grill/discuss/orient trigger vocabulary, kept disjoint from planf3's plan/spec/build vocabulary.</p>
 
       <h4>1. SKILL.md + context load + stack seeding</h4>
       <ul class="checklist">
-        <li data-task="2.1"><code class="status" data-status-for="2.1">[]</code> Author <code>skills/discuss/SKILL.md</code> (description with grill/stress-test/poke-holes/orient triggers; workflow routing table in planf3's style; the four-context-artifact table; scope guard; exit routes) and the session-start read order: <code>STACK.md</code> → <code>CONTEXT.md</code> → <code>docs/adr/</code> → <code>specs/_index.html</code> → (brownfield) the relevant code. Author <code>workflows/seed-stack.md</code> as the first-run branch: copy an org seed when provided; else instantiate the generic template; else interview the user about their environment section-by-section and write <code>STACK.md</code> from the answers.</li>
+        <li data-task="2.1"><code class="status" data-status-for="2.1">[x]</code> Author <code>skills/discuss/SKILL.md</code> (description with grill/stress-test/poke-holes/orient triggers; workflow routing table in planf3's style; the four-context-artifact table; scope guard; exit routes) and the session-start read order: <code>STACK.md</code> → <code>CONTEXT.md</code> → <code>docs/adr/</code> → <code>specs/_index.html</code> → (brownfield) the relevant code. Author <code>workflows/seed-stack.md</code> as the first-run branch: copy an org seed when provided; else instantiate the generic template; else interview the user about their environment section-by-section and write <code>STACK.md</code> from the answers.</li>
       </ul>
 
       <h4>2. Interview core — <code>workflows/interview.md</code></h4>
       <ul class="checklist">
-        <li data-task="2.2"><code class="status" data-status-for="2.2">[]</code> Distill the interview discipline into the workflow's own text: one question at a time, each with a recommended answer and brief reasoning; prerequisite questions resolved first (call the dependency out); answer from the codebase instead of asking whenever the code can answer; challenge stack fit explicitly against <code>STACK.md</code> lanes ("this is customer-facing — why Power Apps?").</li>
-        <li data-task="2.3"><code class="status" data-status-for="2.3">[]</code> Write the depth rubric: <strong>short pass</strong> (goal, stack fit, edge cases — a handful of questions) for small features; <strong>full relentless interview</strong> (every branch of the decision tree) for new systems or architectural changes. New plans get the discuss pass by default — skipping requires the requester explicitly saying so. Structural revisions to existing plans get an <em>offer</em>; status flips and wording changes get nothing.</li>
+        <li data-task="2.2"><code class="status" data-status-for="2.2">[x]</code> Distill the interview discipline into the workflow's own text: one question at a time, each with a recommended answer and brief reasoning; prerequisite questions resolved first (call the dependency out); answer from the codebase instead of asking whenever the code can answer; challenge stack fit explicitly against <code>STACK.md</code> lanes ("this is customer-facing — why Power Apps?").</li>
+        <li data-task="2.3"><code class="status" data-status-for="2.3">[x]</code> Write the depth rubric: <strong>short pass</strong> (goal, stack fit, edge cases — a handful of questions) for small features; <strong>full relentless interview</strong> (every branch of the decision tree) for new systems or architectural changes. New plans get the discuss pass by default — skipping requires the requester explicitly saying so. Structural revisions to existing plans get an <em>offer</em>; status flips and wording changes get nothing.</li>
       </ul>
 
       <h4>3. Capture rules</h4>
       <ul class="checklist">
-        <li data-task="2.4"><code class="status" data-status-for="2.4">[]</code> Inline the record disciplines: ADRs only when all three gates pass (hard to reverse + surprising without context + real trade-off), written to <code>docs/adr/NNNN-title.md</code> as decisions crystallize; <code>CONTEXT.md</code> is a glossary and nothing else (update inline as terms resolve; zero implementation detail); stack deviations update <code>STACK.md</code>'s Deviations section; a component added, removed, renamed, or re-owned updates its one line in <code>SYSTEM.md</code>; plans link ADRs inline in phase/task rationale — no CLI involvement anywhere.</li>
+        <li data-task="2.4"><code class="status" data-status-for="2.4">[x]</code> Inline the record disciplines: ADRs only when all three gates pass (hard to reverse + surprising without context + real trade-off), written to <code>docs/adr/NNNN-title.md</code> as decisions crystallize; <code>CONTEXT.md</code> is a glossary and nothing else (update inline as terms resolve; zero implementation detail); stack deviations update <code>STACK.md</code>'s Deviations section; a component added, removed, renamed, or re-owned updates its one line in <code>SYSTEM.md</code>; plans link ADRs inline in phase/task rationale — no CLI involvement anywhere.</li>
       </ul>
 
       <h4>4. Exit routes</h4>
       <ul class="checklist">
-        <li data-task="2.5"><code class="status" data-status-for="2.5">[]</code> Close the interview by handing the resolved decisions to the planf3 skill as locked inputs — greenfield → Create Plan, brownfield structural revision → Update Plan — mirroring how this very plan was authored from a collaborate session's locked decisions.</li>
+        <li data-task="2.5"><code class="status" data-status-for="2.5">[x]</code> Close the interview by handing the resolved decisions to the planf3 skill as locked inputs — greenfield → Create Plan, brownfield structural revision → Update Plan — mirroring how this very plan was authored from a collaborate session's locked decisions.</li>
       </ul>
 
       <h4>5. Orient + the component map</h4>
       <ul class="checklist">
-        <li data-task="2.6"><code class="status" data-status-for="2.6">[]</code> Author <code>workflows/orient.md</code> (read <code>SYSTEM.md</code> + glossary + stack + ADR titles, then the actual code of in-scope components; walk the reader through how the system runs <em>today</em>; hard rule: never write the walkthrough to a file — stored current-state prose drifts every commit) and <code>templates/system.md</code> (nodes-only map: honesty-contract header; entry = name · one-line responsibility · owner · why-links; "store nodes, synthesize edges" — dependency edges, protocols, and data flow are out; ~30 lines with one worked example).</li>
+        <li data-task="2.6"><code class="status" data-status-for="2.6">[x]</code> Author <code>workflows/orient.md</code> (read <code>SYSTEM.md</code> + glossary + stack + ADR titles, then the actual code of in-scope components; walk the reader through how the system runs <em>today</em>; hard rule: never write the walkthrough to a file — stored current-state prose drifts every commit) and <code>templates/system.md</code> (nodes-only map: honesty-contract header; entry = name · one-line responsibility · owner · why-links; "store nodes, synthesize edges" — dependency edges, protocols, and data flow are out; ~30 lines with one worked example).</li>
       </ul>
 
       <h4>6. Testing Strategy</h4>
       <p>Self-containedness is greppable; interview quality is only provable by use (Phase 4 owns that).</p>
       <ul class="checklist">
-        <li data-task="2.7"><code class="status" data-status-for="2.7">[]</code> <code>grep -rinE "grill-with-docs|domain-modeling|/grilling" skills/discuss/</code> — returns nothing: no dependency on personally-installed skills</li>
-        <li data-task="2.8"><code class="status" data-status-for="2.8">[]</code> Scope-guard read-through: the skill contains no enforcement, gating, or revert language — it interviews, records, orients, and hands off; nothing more</li>
+        <li data-task="2.7"><code class="status" data-status-for="2.7">[x]</code> <code>grep -rinE "grill-with-docs|domain-modeling|/grilling" skills/discuss/</code> — returns nothing: no dependency on personally-installed skills</li>
+        <li data-task="2.8"><code class="status" data-status-for="2.8">[x]</code> Scope-guard read-through: the skill contains no enforcement, gating, or revert language — it interviews, records, orients, and hands off; nothing more</li>
       </ul>
       <div class="loop">
         🔁 <strong>Do not exit this phase until every box above is <code>[x]</code> or <code>[f]</code>.</strong>
@@ -229,28 +229,28 @@
     </div>
 
     <div class="phase" data-phase="3">
-      <h3><code class="status" data-status-for="phase-3">[]</code> Phase 3: Surface Integration</h3>
+      <h3><code class="status" data-status-for="phase-3">[x]</code> Phase 3: Surface Integration</h3>
       <p>Wire the new pieces into the documented surface so the default path — not enforcement — teaches the behavior. Every touched doc must describe the <em>same</em> trigger-and-intensity rules; divergence here is how "encouraged" quietly becomes "optional and forgotten".</p>
 
       <h4>1. planf3 SKILL.md</h4>
       <ul class="checklist">
-        <li data-task="3.1"><code class="status" data-status-for="3.1">[]</code> Tighten the skill description to name all five branches (create, update, build, references, roles) per the skill-boundary audit, keeping its trigger vocabulary (plan/spec/design/build) strictly disjoint from discuss's (grill/stress-test/poke-holes/orient) — no grill words in planf3's description, no author/scaffold words in discuss's.</li>
-        <li data-task="3.2"><code class="status" data-status-for="3.2">[]</code> Add a compact <strong>Context Layer</strong> section: <code>STACK.md</code> (root; defaults + lanes + escape hatches + Deviations; living file), <code>CONTEXT.md</code> (root; glossary only), <code>SYSTEM.md</code> (root; nodes-only component map — run the discuss skill's Orient workflow for current wiring), <code>docs/adr/</code> (three-gate ADRs); linkage is plain inline links — plans → ADRs in rationale, Deviations → ADRs; explicitly note <code>PLAN_TOOL</code> has no role here and these are authored by the <code>discuss</code> skill.</li>
+        <li data-task="3.1"><code class="status" data-status-for="3.1">[x]</code> Tighten the skill description to name all five branches (create, update, build, references, roles) per the skill-boundary audit, keeping its trigger vocabulary (plan/spec/design/build) strictly disjoint from discuss's (grill/stress-test/poke-holes/orient) — no grill words in planf3's description, no author/scaffold words in discuss's.</li>
+        <li data-task="3.2"><code class="status" data-status-for="3.2">[x]</code> Add a compact <strong>Context Layer</strong> section: <code>STACK.md</code> (root; defaults + lanes + escape hatches + Deviations; living file), <code>CONTEXT.md</code> (root; glossary only), <code>SYSTEM.md</code> (root; nodes-only component map — run the discuss skill's Orient workflow for current wiring), <code>docs/adr/</code> (three-gate ADRs); linkage is plain inline links — plans → ADRs in rationale, Deviations → ADRs; explicitly note <code>PLAN_TOOL</code> has no role here and these are authored by the <code>discuss</code> skill.</li>
       </ul>
 
       <h4>2. Workflow docs + README</h4>
       <ul class="checklist">
-        <li data-task="3.3"><code class="status" data-status-for="3.3">[]</code> <code>workflows/create-plan.md</code> — step 1 becomes "invoke the <code>discuss</code> skill" for new plans, with the explicit-skip escape ("requester must say to skip") and a pointer to its depth rubric.</li>
-        <li data-task="3.4"><code class="status" data-status-for="3.4">[]</code> <code>workflows/update-plan.md</code> — offer the <code>discuss</code> skill when the revision is structural (new phases, changed approach); never for status flips or wording.</li>
-        <li data-task="3.5"><code class="status" data-status-for="3.5">[]</code> <code>workflows/build-plan.md</code> — close step gains the one-line map rule: if this work added, removed, renamed, or re-owned a component, update its line in <code>SYSTEM.md</code> (the entry points at the very plan/ADR just written).</li>
-        <li data-task="3.6"><code class="status" data-status-for="3.6">[]</code> <code>README.md</code> — brief consumer-facing description of the discuss skill, the context layer, and Orient, including how a project seeds <code>STACK.md</code> (org seed / generic template / interview).</li>
+        <li data-task="3.3"><code class="status" data-status-for="3.3">[x]</code> <code>workflows/create-plan.md</code> — step 1 becomes "invoke the <code>discuss</code> skill" for new plans, with the explicit-skip escape ("requester must say to skip") and a pointer to its depth rubric.</li>
+        <li data-task="3.4"><code class="status" data-status-for="3.4">[x]</code> <code>workflows/update-plan.md</code> — offer the <code>discuss</code> skill when the revision is structural (new phases, changed approach); never for status flips or wording.</li>
+        <li data-task="3.5"><code class="status" data-status-for="3.5">[x]</code> <code>workflows/build-plan.md</code> — close step gains the one-line map rule: if this work added, removed, renamed, or re-owned a component, update its line in <code>SYSTEM.md</code> (the entry points at the very plan/ADR just written).</li>
+        <li data-task="3.6"><code class="status" data-status-for="3.6">[x]</code> <code>README.md</code> — brief consumer-facing description of the discuss skill, the context layer, and Orient, including how a project seeds <code>STACK.md</code> (org seed / generic template / interview).</li>
       </ul>
 
       <h4>3. Testing Strategy</h4>
       <p>Greppable presence checks plus a cross-document consistency read.</p>
       <ul class="checklist">
-        <li data-task="3.7"><code class="status" data-status-for="3.7">[]</code> <code>grep -n "discuss" skills/planf3/workflows/create-plan.md skills/planf3/workflows/update-plan.md skills/planf3/workflows/build-plan.md</code> — the cross-skill wiring is present in all three</li>
-        <li data-task="3.8"><code class="status" data-status-for="3.8">[]</code> Consistency read: both SKILL.md files, create-plan.md, update-plan.md, and README state identical trigger/intensity rules (default-for-new, explicit skip, structural-only offers, scaled depth) and disjoint trigger vocabularies</li>
+        <li data-task="3.7"><code class="status" data-status-for="3.7">[x]</code> <code>grep -n "discuss" skills/planf3/workflows/create-plan.md skills/planf3/workflows/update-plan.md skills/planf3/workflows/build-plan.md</code> — the cross-skill wiring is present in all three</li>
+        <li data-task="3.8"><code class="status" data-status-for="3.8">[x]</code> Consistency read: both SKILL.md files, create-plan.md, update-plan.md, and README state identical trigger/intensity rules (default-for-new, explicit skip, structural-only offers, scaled depth) and disjoint trigger vocabularies</li>
       </ul>
       <div class="loop">
         🔁 <strong>Do not exit this phase until every box above is <code>[x]</code> or <code>[f]</code>.</strong>
@@ -259,7 +259,7 @@
     </div>
 
     <div class="phase" data-phase="4">
-      <h3><code class="status" data-status-for="phase-4">[]</code> Phase 4: Dogfood Validation</h3>
+      <h3><code class="status" data-status-for="phase-4">[wip]</code> Phase 4: Dogfood Validation</h3>
       <p>Before pointing engineers at it, prove the interview produces thinking rather than ceremony. Run it in <em>this</em> repo: planf3 is a Python/uv tool, so the Microsoft org seed doesn't apply — which forces the <strong>interview-fallback seeding path</strong>, the hardest branch, and exercises brownfield answering against a real codebase.</p>
 
       <h4>1. Run the skill end-to-end</h4>
@@ -287,10 +287,10 @@
     <h2>Validation Commands</h2>
     <p>Execute these commands to validate the entire plan is complete:</p>
     <ul class="checklist">
-      <li data-task="g.1"><code class="status" data-status-for="g.1">[]</code> <code>uv run scripts/plan_tool.py validate specs/context-aware-planning.html</code> — this plan stays well-formed through the build</li>
-      <li data-task="g.2"><code class="status" data-status-for="g.2">[]</code> <code>uv run --with pytest pytest tests/ -q</code> — all 63 tests still green: proves the iteration touched zero code surface (pure markdown, per the locked scope)</li>
-      <li data-task="g.3"><code class="status" data-status-for="g.3">[]</code> <code>uv run scripts/plan_tool.py index</code> — specs catalog rebuilds clean with no dangling references</li>
-      <li data-task="g.4"><code class="status" data-status-for="g.4">[]</code> <code>ls skills/discuss/SKILL.md skills/discuss/workflows skills/discuss/templates</code> — the sibling skill and all its workflows/templates exist at their documented paths</li>
+      <li data-task="g.1"><code class="status" data-status-for="g.1">[x]</code> <code>uv run scripts/plan_tool.py validate specs/context-aware-planning.html</code> — this plan stays well-formed through the build</li>
+      <li data-task="g.2"><code class="status" data-status-for="g.2">[x]</code> <code>uv run --with pytest pytest tests/ -q</code> — all 63 tests still green: proves the iteration touched zero code surface (pure markdown, per the locked scope)</li>
+      <li data-task="g.3"><code class="status" data-status-for="g.3">[x]</code> <code>uv run scripts/plan_tool.py index</code> — specs catalog rebuilds clean with no dangling references</li>
+      <li data-task="g.4"><code class="status" data-status-for="g.4">[x]</code> <code>ls skills/discuss/SKILL.md skills/discuss/workflows skills/discuss/templates</code> — the sibling skill and all its workflows/templates exist at their documented paths</li>
     </ul>
     <div class="loop">
       🔁 <strong>The plan is not complete until every box is <code>[x]</code> or <code>[f]</code> and every command passes. If a step genuinely cannot be completed, mark it <code>[f]</code> (terminal, with a one-line reason) and move on.</strong>
@@ -362,6 +362,10 @@
       <details>
         <summary>2026-07-04T17:22:26-05:00 — back-refs += plugin-flip.html</summary>
         <p>Linked to plugin-flip.html (back reference).</p>
+      </details>
+      <details>
+        <summary>2026-07-04T17:37:09-05:00 — Phases 1-3 built; Phase 4 dogfood pending owner</summary>
+        <p>Stack templates, the discuss skill (interview/seed-stack/orient + stack/stack.cozy/system templates), and all planf3 wiring shipped on feat/plugin-v2 (commits 47832f2, b652e1e). Second review verdicts applied: both skills PASS-with-fixes under the writing-great-skills rubric, NO further split warranted (Orient stays in discuss — coupling to the shared records is real; split trigger documented). Phase 4 (interview-fallback dogfood, Orient smoke, owner sign-off) awaits a live session with the owner.</p>
       </details></div>
   </section>
 

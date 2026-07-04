@@ -157,9 +157,9 @@
         <dt>owner</dt>        <dd data-meta="owner">architect</dd>
         <dt>status</dt>       <dd data-meta="status">active</dd>
         <dt>created</dt>      <dd data-meta="created">2026-07-03T14:47:24-05:00</dd>
-        <dt>modified</dt>     <dd data-meta="modified">2026-07-03T14:47:24-05:00, 2026-07-04T17:17:25-05:00, 2026-07-04T17:22:26-05:00</dd>
-        <dt>commits</dt>      <dd data-meta="commits">—</dd>
-        <dt>agent name</dt>   <dd data-meta="agent">—</dd>
+        <dt>modified</dt>     <dd data-meta="modified">2026-07-03T14:47:24-05:00, 2026-07-04T17:17:25-05:00, 2026-07-04T17:22:26-05:00, 2026-07-04T17:36:32-05:00, 2026-07-04T17:36:33-05:00, 2026-07-04T17:36:34-05:00, 2026-07-04T17:36:35-05:00, 2026-07-04T17:37:08-05:00</dd>
+        <dt>commits</dt>      <dd data-meta="commits">2a6d7a4</dd>
+        <dt>agent name</dt>   <dd data-meta="agent">claude-fable-5</dd>
         <dt>session id</dt>   <dd data-meta="session">—</dd>
         <dt>back refs</dt>    <dd data-meta="back-refs">—</dd>
         <dt>forward refs</dt> <dd data-meta="forward-refs">context-aware-planning.html</dd>
@@ -235,7 +235,7 @@
     <p>Status markers: <code>[]</code> idle · <code>[wip]</code> in progress · <code>[x]</code> complete · <code>[f]</code> failed (terminal — requires a one-line reason). All start as <code>[]</code>; the Build Plan workflow flips them via <code>PLAN_TOOL status</code> as it works. The <code>data-status-for</code> / <code>data-phase</code> / <code>data-task</code> ids are the anchors the CLI targets — assign them at Create (or run <code>PLAN_TOOL init-ids</code>), numbering tasks <code>&lt;phase&gt;.&lt;task&gt;</code> and phases <code>phase-&lt;n&gt;</code>.</p>
 
     <div class="phase" data-phase="1">
-      <h3><code class="status" data-status-for="phase-1">[]</code> Phase 1: Restructure into plugin form</h3>
+      <h3><code class="status" data-status-for="phase-1">[x]</code> Phase 1: Restructure into plugin form</h3>
       <p>Pure mechanical moves plus two small JSON files. The skill content, CLI, and hook scripts are reused byte-for-byte — the <code>CLAUDE_PLUGIN_ROOT</code> seams already landed mean <strong>no Python changes at all</strong>. The template lookup in <code>plan_tool.py</code> already lists <code>skills/planf3/templates/plan.html</code> as a candidate, so the skill move is invisible to <code>plan_tool new</code>.</p>
 
       <figure>
@@ -245,23 +245,23 @@
 
       <h4>1. Move the skill and add the manifest</h4>
       <ul class="checklist">
-        <li data-task="1.1"><code class="status" data-status-for="1.1">[]</code> <code>git mv ".claude/skills/planf3" "skills/planf3"</code> — skill content unchanged; the plugin auto-discovers <code>skills/</code></li>
-        <li data-task="1.2"><code class="status" data-status-for="1.2">[]</code> Author <code>.claude-plugin/plugin.json</code>: name <code>planf3</code>, version <code>2.0.0</code>, description, author — SemVer; a future MAJOR bump may raise the minimum supported artifact schema but must ship a migration one schema back</li>
+        <li data-task="1.1"><code class="status" data-status-for="1.1">[x]</code> <code>git mv ".claude/skills/planf3" "skills/planf3"</code> — skill content unchanged; the plugin auto-discovers <code>skills/</code></li>
+        <li data-task="1.2"><code class="status" data-status-for="1.2">[x]</code> Author <code>.claude-plugin/plugin.json</code>: name <code>planf3</code>, version <code>2.0.0</code>, description, author — SemVer; a future MAJOR bump may raise the minimum supported artifact schema but must ship a migration one schema back</li>
       </ul>
 
       <h4>2. Convert the hook config</h4>
       <ul class="checklist">
-        <li data-task="1.3"><code class="status" data-status-for="1.3">[]</code> Author <code>hooks/hooks.json</code> from <code>.claude/settings.json.sample</code>: same matchers (PreToolUse <code>Edit|MultiEdit|Write</code> → guard; PostToolUse <code>Edit|MultiEdit|Write|Bash</code> → lint), swapping <code>${CLAUDE_PROJECT_DIR}/scripts/…</code> → <code>"${CLAUDE_PLUGIN_ROOT}/scripts/…"</code> — keep the path quoted, plugin roots can contain spaces</li>
-        <li data-task="1.4"><code class="status" data-status-for="1.4">[]</code> <code>git rm .claude/settings.json.sample</code> — the manual-merge path is dead; <code>scripts/</code> stays at plugin root (already the right place)</li>
+        <li data-task="1.3"><code class="status" data-status-for="1.3">[x]</code> Author <code>hooks/hooks.json</code> from <code>.claude/settings.json.sample</code>: same matchers (PreToolUse <code>Edit|MultiEdit|Write</code> → guard; PostToolUse <code>Edit|MultiEdit|Write|Bash</code> → lint), swapping <code>${CLAUDE_PROJECT_DIR}/scripts/…</code> → <code>"${CLAUDE_PLUGIN_ROOT}/scripts/…"</code> — keep the path quoted, plugin roots can contain spaces</li>
+        <li data-task="1.4"><code class="status" data-status-for="1.4">[x]</code> <code>git rm .claude/settings.json.sample</code> — the manual-merge path is dead; <code>scripts/</code> stays at plugin root (already the right place)</li>
       </ul>
 
       <h4>3. Testing Strategy</h4>
       <p>The moves must be invisible to the machinery: the full regression suite plus a live CLI op against an existing artifact prove the new layout resolves everything (template lookup, hook-to-CLI resolution) without code edits.</p>
       <ul class="checklist">
-        <li data-task="1.5"><code class="status" data-status-for="1.5">[]</code> <code>uv run --with pytest pytest tests/ -q</code> — full regression suite passes under the new layout</li>
-        <li data-task="1.6"><code class="status" data-status-for="1.6">[]</code> <code>uv run python -m json.tool .claude-plugin/plugin.json</code> — manifest parses</li>
-        <li data-task="1.7"><code class="status" data-status-for="1.7">[]</code> <code>uv run python -m json.tool hooks/hooks.json</code> — hook config parses</li>
-        <li data-task="1.8"><code class="status" data-status-for="1.8">[]</code> <code>uv run scripts/plan_tool.py validate specs/plugin-flip.html</code> — the CLI still runs clean from the restructured repo</li>
+        <li data-task="1.5"><code class="status" data-status-for="1.5">[x]</code> <code>uv run --with pytest pytest tests/ -q</code> — full regression suite passes under the new layout</li>
+        <li data-task="1.6"><code class="status" data-status-for="1.6">[x]</code> <code>uv run python -m json.tool .claude-plugin/plugin.json</code> — manifest parses</li>
+        <li data-task="1.7"><code class="status" data-status-for="1.7">[x]</code> <code>uv run python -m json.tool hooks/hooks.json</code> — hook config parses</li>
+        <li data-task="1.8"><code class="status" data-status-for="1.8">[x]</code> <code>uv run scripts/plan_tool.py validate specs/plugin-flip.html</code> — the CLI still runs clean from the restructured repo</li>
       </ul>
       <div class="loop">
         🔁 <strong>Do not exit this phase until every box above is <code>[x]</code> or <code>[f]</code>.</strong>
@@ -270,22 +270,22 @@
     </div>
 
     <div class="phase" data-phase="2">
-      <h3><code class="status" data-status-for="phase-2">[]</code> Phase 2: Repo hygiene and docs</h3>
+      <h3><code class="status" data-status-for="phase-2">[wip]</code> Phase 2: Repo hygiene and docs</h3>
       <p>The plugin repo doubles as a planf3 <em>project</em> — this very plan lives in its <code>specs/</code>. Only demo content moves out; live plans stay. The README's install story flips from copy/merge to marketplace/install/update, and every trace of the old copy-install is cut over so the plugin is the single source of truth.</p>
 
       <h4>1. Relocate the demo and rewrite the docs</h4>
       <ul class="checklist">
-        <li data-task="2.1"><code class="status" data-status-for="2.1">[]</code> <code>git mv</code> the three <code>pi-iroh-coms-net</code> artifacts (html, image dir, log.ndjson) to <code>examples/pi-iroh-coms-net/</code></li>
-        <li data-task="2.2"><code class="status" data-status-for="2.2">[]</code> <code>uv run scripts/plan_tool.py index</code> — rebuild <code>specs/_index.*</code> so the catalog drops the demo and keeps live plans</li>
-        <li data-task="2.3"><code class="status" data-status-for="2.3">[]</code> Rewrite <code>README.md</code>: new install story, machinery-vs-artifacts table, teammate onboarding (install plugin → clone project → plan), uv-as-prerequisite with honest fail-open note, honest non-Claude degradation section</li>
+        <li data-task="2.1"><code class="status" data-status-for="2.1">[x]</code> <code>git mv</code> the three <code>pi-iroh-coms-net</code> artifacts (html, image dir, log.ndjson) to <code>examples/pi-iroh-coms-net/</code></li>
+        <li data-task="2.2"><code class="status" data-status-for="2.2">[x]</code> <code>uv run scripts/plan_tool.py index</code> — rebuild <code>specs/_index.*</code> so the catalog drops the demo and keeps live plans</li>
+        <li data-task="2.3"><code class="status" data-status-for="2.3">[x]</code> Rewrite <code>README.md</code>: new install story, machinery-vs-artifacts table, teammate onboarding (install plugin → clone project → plan), uv-as-prerequisite with honest fail-open note, honest non-Claude degradation section</li>
         <li data-task="2.4"><code class="status" data-status-for="2.4">[]</code> Clean cutover, both halves: delete any hand-copied planf3 from <code>~/.claude/skills</code> and other projects' <code>.claude/skills</code>, <strong>and disable the planf3 hook entries in any project-local <code>.claude/settings.json</code></strong> — a plugin copy beside a hand copy double-triggers the skill, and plugin hooks beside project-local hooks fire the guard and lint <em>twice</em> per edit</li>
       </ul>
 
       <h4>2. Testing Strategy</h4>
       <p>Grep-level checks that no stale install path survives in the docs, plus the regression suite again after the artifact moves.</p>
       <ul class="checklist">
-        <li data-task="2.5"><code class="status" data-status-for="2.5">[]</code> <code>grep -rn "settings.json.sample" README.md skills/</code> — zero stale references to the old install story</li>
-        <li data-task="2.6"><code class="status" data-status-for="2.6">[]</code> <code>uv run --with pytest pytest tests/ -q</code> — suite still green after the demo relocation</li>
+        <li data-task="2.5"><code class="status" data-status-for="2.5">[x]</code> <code>grep -rn "settings.json.sample" README.md skills/</code> — zero stale references to the old install story</li>
+        <li data-task="2.6"><code class="status" data-status-for="2.6">[x]</code> <code>uv run --with pytest pytest tests/ -q</code> — suite still green after the demo relocation</li>
       </ul>
       <div class="loop">
         🔁 <strong>Do not exit this phase until every box above is <code>[x]</code> or <code>[f]</code>.</strong>
@@ -294,7 +294,7 @@
     </div>
 
     <div class="phase" data-phase="3">
-      <h3><code class="status" data-status-for="phase-3">[]</code> Phase 3: Distribution and cross-platform verification</h3>
+      <h3><code class="status" data-status-for="phase-3">[wip]</code> Phase 3: Distribution and cross-platform verification</h3>
       <p>Make the one-step install story real, then burn down the top packaging risk: Windows hook fragility (<code>uv</code> on PATH, <code>${CLAUDE_PLUGIN_ROOT}</code> quoting, spaces in paths — this repo's own path contains one). Hooks are designed fail-open; verify that property survives pluginization.</p>
 
       <figure>
@@ -304,7 +304,7 @@
 
       <h4>1. Publish</h4>
       <ul class="checklist">
-        <li data-task="3.1"><code class="status" data-status-for="3.1">[]</code> Author <code>.claude-plugin/marketplace.json</code> so this repo is its own marketplace; tag the release (<code>v2.0.0</code>)</li>
+        <li data-task="3.1"><code class="status" data-status-for="3.1">[wip]</code> Author <code>.claude-plugin/marketplace.json</code> so this repo is its own marketplace; tag the release (<code>v2.0.0</code>)</li>
       </ul>
 
       <h4>2. Testing Strategy</h4>
@@ -327,9 +327,9 @@
     <h2>Validation Commands</h2>
     <p>Execute these commands to validate the entire plan is complete:</p>
     <ul class="checklist">
-      <li data-task="g.1"><code class="status" data-status-for="g.1">[]</code> <code>uv run --with pytest pytest tests/ -q</code> — full regression suite green in the final plugin layout</li>
-      <li data-task="g.2"><code class="status" data-status-for="g.2">[]</code> <code>uv run scripts/plan_tool.py validate specs/plugin-flip.html</code> — this plan validates with zero failures</li>
-      <li data-task="g.3"><code class="status" data-status-for="g.3">[]</code> <code>uv run scripts/plan_tool.py index</code> — deterministic catalog rebuild, no dangling references</li>
+      <li data-task="g.1"><code class="status" data-status-for="g.1">[x]</code> <code>uv run --with pytest pytest tests/ -q</code> — full regression suite green in the final plugin layout</li>
+      <li data-task="g.2"><code class="status" data-status-for="g.2">[x]</code> <code>uv run scripts/plan_tool.py validate specs/plugin-flip.html</code> — this plan validates with zero failures</li>
+      <li data-task="g.3"><code class="status" data-status-for="g.3">[x]</code> <code>uv run scripts/plan_tool.py index</code> — deterministic catalog rebuild, no dangling references</li>
       <li data-task="g.4"><code class="status" data-status-for="g.4">[]</code> <code>git tag -a v2.0.0 -m "planf3 plugin flip complete"</code> — plain git tag as the release marker and revert point (the excised <code>checkpoint</code> command's job, done where it actually holds)</li>
     </ul>
     <div class="loop">
@@ -405,6 +405,10 @@
       <details>
         <summary>2026-07-04T17:22:26-05:00 — forward-refs += context-aware-planning.html</summary>
         <p>Reciprocal link from context-aware-planning.html.</p>
+      </details>
+      <details>
+        <summary>2026-07-04T17:37:08-05:00 — Build wave 1 complete; one deliberate Python deviation recorded</summary>
+        <p>Phases 1-2 built on feat/plugin-v2 (commit 2a6d7a4): plugin manifests, hooks.json, skill move, demo relocation, README install story — 63 tests green. Deviation from the 'zero Python changes' claim: plugin-validator review found guard_plan_edit.py's CLI_HINT hardcoded the project-relative plan_tool path, which misdirects agents in consumer projects; the hint now resolves via CLAUDE_PLUGIN_ROOT (same seam the lint hook already used). SKILL.md's PLAN_TOOL variable got the matching resolution rule. Remaining: 2.4 cutover on owner machines, 3.1 release tag, 3.2-3.5 install verification — all owner-gated.</p>
       </details></div>
   </section>
 
