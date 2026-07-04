@@ -1,6 +1,6 @@
 ---
 name: planf3
-description: Creates a concise engineering implementation plan based on user requirements and saves it to specs directory
+description: Creates and maintains concise HTML-first engineering implementation plans in the specs directory — scaffold new plans, update or build existing ones, refresh references, and generate role/CODEOWNERS ownership maps. Use when the user wants to plan, spec, or design new work, or to update, implement, or build an existing plan.
 argument-hint: "[user-prompt]"
 ---
 
@@ -21,7 +21,7 @@ AI_DOCS: `AI_DOCS/`
 APP_DOCS: `APP_DOCS/`
 IDE: `code`
 BROWSER: `chrome`
-PLAN_TOOL: `uv run scripts/plan_tool.py` - the deterministic CLI that owns all structured writes to a plan (status, metadata, references, amendments) plus `validate` and `index`
+PLAN_TOOL: the deterministic CLI that owns all structured writes to a plan (status, metadata, references, amendments) plus `validate` and `index`. Resolve it once at session start: if the `CLAUDE_PLUGIN_ROOT` environment variable is set (plugin install — the normal case), use `uv run "${CLAUDE_PLUGIN_ROOT}/scripts/plan_tool.py"` with the path **quoted** (plugin roots can contain spaces); otherwise fall back to `uv run scripts/plan_tool.py` (project-local `scripts/`, plain-clone/standalone mode). Every `PLAN_TOOL …` invocation below means that resolved command
 
 ## Instructions
 
@@ -29,7 +29,7 @@ PLAN_TOOL: `uv run scripts/plan_tool.py` - the deterministic CLI that owns all s
 - Carefully analyze the user's requirements provided in the `USER_PROMPT` variable
 - Think deeply (ultrathink) about the best approach to implement the requested functionality or solve the problem
 - Explore the codebase to understand existing patterns, documentation, previous specs and architecture
-- The plan is **HTML-first**: a single self-contained `.html` document. **Never hand-author the structure** — run `PLAN_TOOL new` to stamp the scaffold from `templates/plan.html` (the single source of truth for plan structure), then author only the **content** (see `## Plan Template`)
+- The plan is **HTML-first**: a single self-contained `.html` document, scaffolded by `PLAN_TOOL new` — the authoring contract (structure vs content, placeholders, repeats) lives in `## Plan Template`
 - The scaffold uses `{{PLACEHOLDER}}` variables in free-form content positions — replace EVERY `{{...}}` with real content. Leftover `{{}}` tokens are a validation *warning* while `status=draft` but a *failure* once the plan leaves draft, so none may remain in a non-draft plan
 - Blocks marked with `<!-- repeat -->` are repeatable: duplicate them as many times as the plan needs (e.g. one block per phase, task, file, or Q&A entry) and delete the comment markers
 - Keep the document self-contained: all CSS lives in the single `<style>` block; do not link external stylesheets or scripts
@@ -38,7 +38,7 @@ PLAN_TOOL: `uv run scripts/plan_tool.py` - the deterministic CLI that owns all s
 - For every diagram, focus on one or two primary ideas. Keep total words shown under ~10 — boxes, arrows, and short labels only. The goal is diagrams that aid the plan and convey the core information for the section they belong to.
 - Build diagrams for professional software engineers to convey exactly what is going to be built. Be sure to center and space them properly.
 - Embed diagrams via the `{{...IMAGE}}` slots. During Create, leave them as commented placeholders noting the intended subject; the Diagram Generation workflow fills them later
-- The metadata header (`schema`, `id`, `owner`, `status`, `created`, `modified`, `commits`, `agent`, `session`, back/forward references) is **stamped by `PLAN_TOOL new`** and updatable across the plan's lifecycle. `schema`, `id`, and `created` are write-once; `status` is a single value; `modified`/`commits`/`agent`/`session`/back-refs/forward-refs are append-only comma-separated lists. `schema` is the artifact's structural-contract version (currently `1`) — leave it as the template sets it; `PLAN_TOOL` refuses to write a plan stamped newer than it understands. **Never hand-edit the metadata, status markers, or amendments — route every such write through `PLAN_TOOL` (see `## Managed Writes`).** These regions are marked `data-managed="cli"` in the template
+- The metadata header (`schema`, `id`, `owner`, `status`, `created`, `modified`, `commits`, `agent`, `session`, back/forward references) is **stamped by `PLAN_TOOL new`** and updatable across the plan's lifecycle. `schema`, `id`, and `created` are write-once; `status` is a single value; `modified`/`commits`/`agent`/`session`/back-refs/forward-refs are append-only comma-separated lists. `schema` is the artifact's structural-contract version (currently `1`) — leave it as the template sets it; `PLAN_TOOL` refuses to write a plan stamped newer than it understands. Metadata, status markers, and amendments are CLI-managed regions — see `## Managed Writes` for the routing rule
 - **Plan `status`** is a single value from a closed vocabulary: `draft` (authored, not started) → `active` (approved / being built) → `built` (implemented, tests pass); plus `superseded` (replaced — must carry a forward ref to its successor) and `archived` (kept for history). Set it with `PLAN_TOOL meta <plan> --field status --value <state>`. Create sets `draft` (or `active`); Build moves `active`→`built`
 - **`id`** is a short immutable slug set once at Create (references and event logs point at it, so it survives renames). **`owner`** is the role that owns the plan (e.g. `architect`, `engineer-<component>`, `ux`); only the owner edits plan content
 - If `QUESTIONABLE` is true, actively surface open questions/assumptions in the toggleable Q&A section rather than silently deciding
@@ -50,6 +50,19 @@ PLAN_TOOL: `uv run scripts/plan_tool.py` - the deterministic CLI that owns all s
 ## Scope — planf3 is the plan layer, not the enforcement layer
 
 planf3 owns **plans/intent**: it makes a plan deterministic, browsable, and internally coherent. It does **not** reimplement enforcement, revert points, or accountability — **git does that**: branches + PRs gate merges, CODEOWNERS routes review, `git tag`/commits are your revert points, `git blame` answers "who changed this," and CI is your definition of done. Use planf3 for the plan; use git for everything around it. (An earlier version grew a coordination/enforcement layer — protect-mode role denial, verified checkpoints, acceptance queues, seams, drift dashboards — that presented as guarantees it couldn't keep under real multi-agent use. It was removed; git already does those jobs, and does them for real.)
+
+## Context Layer
+
+Beside the plans, a project may carry four living context artifacts, **owned and defined by the sibling `discuss` skill** (see its Context artifacts table) — planf3 *reads* them when planning but never manages them, and `PLAN_TOOL` has no role in any of them:
+
+| Artifact | Location | Read it for |
+| --- | --- | --- |
+| `STACK.md` | repo root | The technology defaults a plan should conform to — or deviate from with a recorded reason |
+| `CONTEXT.md` | repo root | The project's canonical vocabulary — use its terms in the plan |
+| `SYSTEM.md` | repo root | Which components exist and who owns them (nodes only; the discuss skill's Orient workflow derives current wiring from code) |
+| `docs/adr/` | `docs/adr/NNNN-title.md` | The "why" behind standing decisions — link the relevant ones inline in phase/task rationale |
+
+When these files are present, read them during Create/Update so plans challenge and reflect the recorded context rather than re-deriving it.
 
 ## Managed Writes
 
@@ -76,13 +89,7 @@ To record which commit implemented a plan, append it with `PLAN_TOOL meta <plan>
 
 ### Roles (ownership map → CODEOWNERS — OPT-IN)
 
-Roles are **optional and off by default**. They activate only when the user runs the `Generate Roles` workflow (or a `roles/` directory already exists) — never enable them on your own initiative. Without them, planf3 is a pure planning tool and `owner` is just a free label.
-
-Roles are a **pure ownership-map generator, not an enforcement engine.** Each owner has one hand-authored file at `roles/<role>.md` (see `templates/role.md`) declaring its `github:` identity and its `source_of_truth`/`code`/`supporting` globs. `PLAN_TOOL roles build` compiles those into `roles/_roles.json` (the ownership map) + `.github/CODEOWNERS`, requiring each role's `source_of_truth` + `code` globs to be disjoint across roles (`supporting` may overlap). CODEOWNERS uses each role's `github:` identity; a role without one has its lines emitted **commented-out**. A plan names its role in the `owner` metadata field.
-
-**Enforcement is git's job, not the tool's.** Once `roles build` writes CODEOWNERS, ownership is enforced where it actually holds: **PR review routing + branch protection**, with `git blame` for after-the-fact attribution. planf3 does not deny edits by role, run "modes," queue acceptances, or track drift — that machinery was removed because it couldn't enforce anything under multi-agent-in-one-session use, while CODEOWNERS + PR review can. The always-on managed-region coherence guard is independent of roles.
-
-**Role session bootstrap** — when you assume role `R`, read in this order: (1) this `SKILL.md`; (2) `roles/<R>.md` (your mission, DoD, owned globs); (3) `specs/_index.html` filtered to `owner=<R>`, opening only the full plan you will work on; (4) `roles/<R>/memory.md` (your durable notes) if present; (5) tail the relevant `specs/<plan>.log.ndjson` for recent activity. Pass `--role <R>` on `PLAN_TOOL` calls to label your events.
+Roles are **optional and off by default** — they activate only when the user runs the `Generate Roles` workflow (or a `roles/` directory already exists); never enable them on your own initiative. Without them, planf3 is a pure planning tool and `owner` is just a free label. They are a **pure ownership-map generator, not an enforcement engine**: `PLAN_TOOL roles build` compiles hand-authored `roles/*.md` into `roles/_roles.json` + `.github/CODEOWNERS`, and enforcement is git's job (PR review routing + branch protection + `git blame`). Full mechanics live in `workflows/generate-roles.md`; the assume-a-role read order lives in each role file's **Session bootstrap** section (from `templates/role.md`) — pass `--role <R>` on `PLAN_TOOL` calls to label your events.
 
 ## Workflow
 

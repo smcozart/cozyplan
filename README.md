@@ -1,6 +1,6 @@
 # Planf3 — Plans For Fable Five
 
-> **A [Mythos-class](https://www.anthropic.com/news/claude-fable-5-mythos-5) planning meta-skill: one skill that writes, builds, and maintains every plan your agents run.**
+> **A [Mythos-class](https://www.anthropic.com/news/claude-fable-5-mythos-5) planning plugin: two skills that interrogate, write, build, and maintain every plan your agents run — and keep the "why" alive after everyone moves on.**
 > Built for the agent trifecta: you, your team, and your AI agents.
 
 📺 Watch this video to get the full breakdown of this codebase: **[Planf3 on YouTube](https://youtu.be/DzbqeO_diOQ)**
@@ -17,55 +17,25 @@ The big unlock is the new Mythos-class models (Fable 5 and what follows). They r
 
 ## Install
 
-Planf3 is a Claude Code Agent Skill (it runs in Pi, Codex, opencode, or any harness that reads `.claude/skills/`). There's nothing to compile and no API key to wire; "installing" is putting the skill where your agent can find it, dropping in the deterministic `plan_tool.py` CLI, and (optionally) activating the two hooks that keep plans consistent.
-
-### Agentic Install
-
-Open this repo in your agentic coding tool and prompt:
+Planf3 ships as a **Claude Code plugin**. Installing it is two commands — nothing to compile, no API key to wire, and no files to hand-copy into each project:
 
 ```
-Read .claude/skills/planf3/SKILL.md and install this skill for me:
-copy it to ~/.claude/skills/planf3 so /planf3 works in every project,
-and tell me how to wire scripts/plan_tool.py plus the two hooks in
-.claude/settings.json.sample.
+/plugin marketplace add <git-url>
+/plugin install planf3
 ```
 
-The skill moves as a unit — `SKILL.md`, the four `workflows/` + one subworkflow, and the `scripts/` CLI. Its one external dependency is the [`excalidraw-diagram`](#the-workflows) skill used to render diagrams (see below); without it the plan still writes and the `{{...IMAGE}}` slots stay as placeholders.
+The first command registers this repo as a plugin marketplace; the second installs the `planf3` plugin from it. The plugin carries everything as one unit — **two skills** (`planf3`, the plan layer, and `discuss`, the understanding loop — each with its own workflows and templates), the deterministic `plan_tool.py` CLI, and the two coherence hooks. Once it's installed, both skills work in every project your harness opens; there's no per-project setup.
 
-### Manual Install
+**Prerequisite: [`uv`](https://docs.astral.sh/uv/) on your `PATH`.** The CLI and both hooks run through `uv run`. If `uv` isn't found the hooks **fail open** — they exit quietly instead of blocking, so the guard that steers raw edits back through `plan_tool` and the lint that validates every plan write both silently stop enforcing. Plans still get written, but nothing is catching drift or malformed HTML for you. Install `uv` first, or accept that plan coherence is on the honor system — there's no error to warn you it lapsed.
 
-**Prereqs:** [`claude`](https://docs.claude.com/en/docs/claude-code) (or [`pi`](https://pi.dev/) / Codex / opencode), [`uv`](https://docs.astral.sh/uv/) (runs `plan_tool.py` and the diagram renderer), and the globally-installed `excalidraw-diagram` skill (invoked by the [Diagram Generation subworkflow](.claude/skills/planf3/workflows/diagram-generation.md)) for local, key-free diagram rendering. No API keys — diagrams are rendered locally.
+Diagrams are the plugin's one external dependency: the globally-installed [`excalidraw-diagram`](#the-workflows) skill renders them locally, key-free. Without it a plan still writes; the `{{...IMAGE}}` slots stay as placeholders until you run the Diagram Generation subworkflow with the skill present.
 
-planf3 has **two parts that must both be present** in the project you plan in:
-the **skill** (the workflow prose, model-invoked) and the **`scripts/` CLI +
-hooks** (`plan_tool.py` and `scripts/hooks/`, invoked as `uv run
-scripts/plan_tool.py` and resolved by the hooks from the project root). Copying
-only the skill is the most common install mistake — the skill will trigger but
-every `plan_tool` call and both hooks fail with file-not-found.
+### Migrating from the copy-install
 
-```bash
-# 1. Put the SKILL where your agent finds it — project-local (already here under
-#    .claude/skills/planf3) or global for every project:
-cp -r .claude/skills/planf3 ~/.claude/skills/planf3        # /planf3 everywhere
+Earlier versions of planf3 were installed by hand-copying the skill and merging hooks into each project. If you did that, undo it when you move to the plugin — otherwise the skill and the hooks each register **twice**:
 
-# 2. Put the CLI + hooks at your PROJECT ROOT (required — the skill and hooks
-#    both invoke uv run scripts/plan_tool.py relative to the project):
-cp -r scripts /path/to/your-project/scripts
-cp .gitattributes /path/to/your-project/.gitattributes     # merge=union for *.log.ndjson
-
-# 3. (Optional) Activate the consistency hooks — merge the sample into live settings:
-#    copy .claude/settings.json.sample into .claude/settings.json (or merge the
-#    "hooks" block). They run commands, so they're intentionally NOT auto-enabled.
-
-# 4. Run it
-#    /planf3 "<what you want planned>"
-```
-
-> The scripts are **path-agnostic** — every command takes explicit paths — so one
-> copy of `scripts/` at the project root serves every plan in that project's
-> `specs/`. (This copy-in-two-places friction is exactly what the planned
-> skill→plugin migration removes: `/plugin install` ships the skill, CLI, and
-> hooks together.)
+- **Delete any hand-copied skill.** Remove `.claude/skills/planf3` from any project you copied it into (and `~/.claude/skills/planf3` if you installed it globally). The plugin now supplies the skill; a leftover copy shadows it.
+- **Remove the two planf3 hook entries** — the `guard_plan_edit.py` PreToolUse block and the `lint_plan.py` PostToolUse block — from any project-local `.claude/settings.json`. The plugin registers these hooks itself, so a project-local copy makes each hook fire twice (plugin + project) on every write.
 
 To surface open decisions in a toggleable Q&A section instead of silently
 deciding, ask for it in the prompt (e.g. "…and flag the open questions").
@@ -113,7 +83,7 @@ On a create run the agent reads the prompt, explores the codebase (plus `AI_DOCS
   <img src="images/04_plan_anatomy.png" alt="The plan template — metadata, purpose, phases with checklists, validation loop, notes" width="780">
 </p>
 
-The heart of the skill is the **Plan Template** in [`SKILL.md`](.claude/skills/planf3/SKILL.md): the structure the agent mirrors every time. `{{PLACEHOLDER}}` tokens get replaced with real content; `<!-- repeat -->` blocks duplicate per phase, task, or file. Every plan carries:
+The heart of the skill is the **Plan Template** in [`SKILL.md`](skills/planf3/SKILL.md): the structure the agent mirrors every time. `{{PLACEHOLDER}}` tokens get replaced with real content; `<!-- repeat -->` blocks duplicate per phase, task, or file. Every plan carries:
 
 | Section | What it gives the trifecta |
 |---|---|
@@ -139,17 +109,38 @@ Planf3 is one skill, but the prompt routes to one of **five dedicated workflows*
 
 | Workflow | Trigger | File |
 |---|---|---|
-| **Create Plan** | Plan/spec/design new work, no existing plan referenced | [`create-plan.md`](.claude/skills/planf3/workflows/create-plan.md) |
-| **Update Plan** | Change, extend, or revise an existing plan (surgical edit + amendment) | [`update-plan.md`](.claude/skills/planf3/workflows/update-plan.md) |
-| **Update References** | Refresh metadata or wire bidirectional back/forward references | [`update-references.md`](.claude/skills/planf3/workflows/update-references.md) |
-| **Build Plan** | Implement the work in an existing plan, updating status markers as it goes | [`build-plan.md`](.claude/skills/planf3/workflows/build-plan.md) |
-| **Generate Roles** | Scope a whole project/team into roles and set up who-owns-what (not a single plan) | [`generate-roles.md`](.claude/skills/planf3/workflows/generate-roles.md) |
+| **Create Plan** | Plan/spec/design new work, no existing plan referenced — **step 1 runs the `discuss` skill's interview by default** (skip by saying so) | [`create-plan.md`](skills/planf3/workflows/create-plan.md) |
+| **Update Plan** | Change, extend, or revise an existing plan (surgical edit + amendment); offers a discuss pass for structural revisions | [`update-plan.md`](skills/planf3/workflows/update-plan.md) |
+| **Update References** | Refresh metadata or wire bidirectional back/forward references | [`update-references.md`](skills/planf3/workflows/update-references.md) |
+| **Build Plan** | Implement the work in an existing plan, updating status markers as it goes | [`build-plan.md`](skills/planf3/workflows/build-plan.md) |
+| **Generate Roles** | Scope a whole project/team into roles and set up who-owns-what (not a single plan) | [`generate-roles.md`](skills/planf3/workflows/generate-roles.md) |
 
 | Subworkflow | Called by | File |
 |---|---|---|
-| **Diagram Generation** | Other workflows (e.g. Create Plan) — authors and renders the embedded Excalidraw diagrams locally via the `excalidraw-diagram` skill (no API key) | [`diagram-generation.md`](.claude/skills/planf3/workflows/diagram-generation.md) |
+| **Diagram Generation** | Other workflows (e.g. Create Plan) — authors and renders the embedded Excalidraw diagrams locally via the `excalidraw-diagram` skill (no API key) | [`diagram-generation.md`](skills/planf3/workflows/diagram-generation.md) |
 
 The **Build Plan** workflow is the payoff: a fresh agent reads the full plan (every image, every back reference at depth 1), then executes phases top to bottom, looping on each phase's tests until they pass, marking `[x]` or `[f]` (via `plan_tool.py`) as it goes.
+
+---
+
+## The discuss skill — interrogation + living context
+
+The plugin's second skill, [`discuss`](skills/discuss/SKILL.md), runs the **understanding loop** around the plans. It exists because a plan is only as good as the thinking before it, and because the "why" behind decisions usually evaporates into chat history the moment a project changes hands.
+
+**Write side — the interview.** Before a new plan is authored (by default; say "skip the grill" to opt out), discuss interviews the requester relentlessly: one question at a time with a recommended answer, prerequisite decisions first, depth scaled to stakes — a short pass for a small feature, the full decision-tree walk for a new system. It answers from the codebase instead of asking where it can, and challenges technology choices against the project's recorded stack. What crystallizes gets recorded **inline, the moment it lands**:
+
+| Record | File | What lands there |
+|---|---|---|
+| Decisions | `docs/adr/NNNN-title.md` | Only when hard-to-reverse **and** surprising-without-context **and** a real trade-off |
+| Vocabulary | `CONTEXT.md` | Glossary only — canonical terms, zero implementation detail |
+| Tech defaults | `STACK.md` | Each entry is *default + when-to-use lane + escape hatch*; deviations link their ADR |
+| Components | `SYSTEM.md` | Nodes only — what exists, who owns it, where its why lives |
+
+`STACK.md` is seeded on first run: copy an org seed (e.g. [`stack.cozy.md`](skills/discuss/templates/stack.cozy.md)), instantiate the [generic scaffold](skills/discuss/templates/stack.md), or let the skill interview you about your environment.
+
+**Read side — Orient.** For the engineer who inherits the system in eighteen months (or the architect slotting new work): Orient reads the component map, glossary, stack, and ADRs, then reads the **actual code** of the components in scope and walks you through how the system runs *today*. The walkthrough is never written to a file — a stored description of current behavior drifts on every commit; the map stores the slow-changing nodes, the code is always the source of the edges.
+
+The result: plans record *what and when*, ADRs record *why*, the glossary records *what words mean*, the stack records *what world you build in*, and the map + Orient answer *what runs and how* — a complete picture that survives team turnover.
 
 ---
 
@@ -178,12 +169,12 @@ Every mutating command also appends a one-line JSON event to **`specs/<plan>.log
 
 **Schema stamp.** Every plan carries a write-once `schema` version (currently `1`) recording its structural contract. `plan_tool.py` refuses to write a plan stamped newer than it understands (so an older tool never corrupts a newer artifact) and `init-ids` stamps the schema on older/legacy plans to migrate them forward.
 
-**Hooks (opt-in).** `.claude/settings.json.sample` carries two hooks — merge it into `.claude/settings.json` to activate:
+**Hooks (bundled with the plugin).** Installing the plugin registers two hooks (`hooks/hooks.json`):
 
 - a **PreToolUse** coherence guard that steers raw `Edit`/`Write` of CLI-managed regions to `plan_tool.py` (and blocks overwriting an existing plan),
 - a **PostToolUse** lint that runs `plan_tool validate` after any write to `specs/*.html` and feeds failures back to the agent.
 
-Both **fail open** — an unexpected error never hard-blocks the agent. They execute commands, which is why they're shipped as a sample rather than enabled automatically. The guard is a **coherence aid, not a security boundary**: it nudges in-tool edits through the CLI, but a `Bash` heredoc or any out-of-tool write bypasses it by design. Real enforcement (who may change what, and reverting a bad change) lives in git — branches, PR review, CODEOWNERS, and CI.
+Both **fail open** — an unexpected error (or a missing `uv`) never hard-blocks the agent; enforcement just quietly stops. The guard is a **coherence aid, not a security boundary**: it nudges in-tool edits through the CLI, but a `Bash` heredoc or any out-of-tool write bypasses it by design. Real enforcement (who may change what, and reverting a bad change) lives in git — branches, PR review, CODEOWNERS, and CI.
 
 ---
 
@@ -193,7 +184,7 @@ Role mode is **optional and off by default** — planf3 is a complete planning t
 
 Roles are **new** and project-scoped: on a multi-owner project you opt in by running the **Generate Roles** workflow once at kickoff to scope the project into roles — the owners of its plans, code, and docs — and revise them as the architecture evolves. It's the answer to the merge pain of several people (and agents) pushing to their own scattered `CLAUDE.md`/markdown files with no shared process. Nothing role-related exists until that workflow creates `roles/`.
 
-Each role is **one hand-authored file** at `roles/<role>.md` (from [`templates/role.md`](.claude/skills/planf3/templates/role.md)) that serves three readers at once: a human onboarding doc, an agent operating brief, and the parsed source `plan_tool roles build` compiles into an ownership map. A role file carries explicit **responsibilities**, a concrete **Definition of Done** (with runnable checks a human and an agent run the same way), and **disjoint ownership globs** — `source_of_truth` and `code` globs may not overlap across roles (`plan_tool roles build` rejects overlap, since overlap is what causes the merge pain in the first place).
+Each role is **one hand-authored file** at `roles/<role>.md` (from [`templates/role.md`](skills/planf3/templates/role.md)) that serves three readers at once: a human onboarding doc, an agent operating brief, and the parsed source `plan_tool roles build` compiles into an ownership map. A role file carries explicit **responsibilities**, a concrete **Definition of Done** (with runnable checks a human and an agent run the same way), and **disjoint ownership globs** — `source_of_truth` and `code` globs may not overlap across roles (`plan_tool roles build` rejects overlap, since overlap is what causes the merge pain in the first place).
 
 From that one source, `plan_tool roles build` generates two artifacts:
 
@@ -233,27 +224,42 @@ Every choice in planf3 serves the **agent trifecta**: the engineer (you), the en
 ## Folder structure
 
 ```
-planf3/
+planf3/                             # the repo IS the plugin (and its own marketplace)
 ├── README.md                       # this file
 ├── RAW.md                          # the raw think-out-loud spec that started the build
 ├── legacy_v1_meta_plan.md          # the V1 markdown spec planf3 evolved from
-├── .env.sample                     # no keys required — placeholder for your own vars
 ├── .gitattributes                  # merge=union on specs/*.log.ndjson (clean concurrent appends)
 │
-├── .claude/
-│   ├── settings.json.sample        # opt-in PreToolUse guard + PostToolUse lint hooks
-│   └── skills/planf3/              # the meta-skill itself
-│       ├── SKILL.md                # API, instructions, and plan-template conventions
+├── .claude-plugin/
+│   ├── plugin.json                 # plugin manifest (name, version, description)
+│   └── marketplace.json            # lets you /plugin marketplace add <git-url>
+│
+├── hooks/
+│   └── hooks.json                  # PreToolUse guard + PostToolUse lint, registered on install
+│
+├── skills/
+│   ├── planf3/                     # SKILL 1 — the plan layer
+│   │   ├── SKILL.md                # API, instructions, and plan-template conventions
+│   │   ├── templates/
+│   │   │   ├── plan.html           # the HTML plan template — single source of truth (stamped by plan_tool new)
+│   │   │   └── role.md             # source template for a project's role files
+│   │   └── workflows/              # five workflows + one subworkflow
+│   │       ├── create-plan.md      # step 1 invokes the discuss skill by default
+│   │       ├── update-plan.md
+│   │       ├── update-references.md
+│   │       ├── build-plan.md       # close step maintains the SYSTEM.md component map
+│   │       ├── generate-roles.md   # scope a project into roles / who-owns-what
+│   │       └── diagram-generation.md   # subworkflow — local Excalidraw diagrams
+│   └── discuss/                    # SKILL 2 — the understanding loop
+│       ├── SKILL.md                # interview + records + orient
 │       ├── templates/
-│       │   ├── plan.html           # the HTML plan template — single source of truth (stamped by plan_tool new)
-│       │   └── role.md             # source template for a project's role files
-│       └── workflows/              # five workflows + one subworkflow
-│           ├── create-plan.md
-│           ├── update-plan.md
-│           ├── update-references.md
-│           ├── build-plan.md
-│           ├── generate-roles.md   # scope a project into roles / who-owns-what
-│           └── diagram-generation.md   # subworkflow — local Excalidraw diagrams
+│       │   ├── stack.md            # generic STACK.md scaffold (default + lane + escape hatch)
+│       │   ├── stack.cozy.md       # a filled-in org seed (Microsoft/Azure stack)
+│       │   └── system.md           # nodes-only SYSTEM.md component-map template
+│       └── workflows/
+│           ├── interview.md        # the relentless, depth-scaled interview + capture rules
+│           ├── seed-stack.md       # first-run STACK.md creation
+│           └── orient.md           # understand how the system runs today (never stored)
 │
 ├── scripts/
 │   ├── plan_tool.py                # deterministic CLI for all managed plan writes + validate/index/roles
@@ -264,12 +270,13 @@ planf3/
 ├── prompts/
 │   └── pi-iroh-coms.md             # the demo prompt
 │
-├── specs/                          # where plans land
+├── specs/                          # this repo's own live plans
 │   ├── _index.json                 # generated catalog (machine-readable)
 │   ├── _index.html                 # generated catalog (browsable)
-│   ├── pi-iroh-coms-net.html       # a REAL planf3 plan — open it in a browser
-│   ├── pi-iroh-coms-net/           # its synced, generated section diagrams
 │   └── <plan>.log.ndjson           # per-plan append-only event log (created on first managed write)
+│
+├── examples/
+│   └── pi-iroh-coms-net/           # a REAL planf3 plan + its synced diagrams — open the .html in a browser
 │
 └── images/                         # README diagrams
 
@@ -286,10 +293,10 @@ planf3/
 ## See it in action
 
 <p align="center">
-  <img src="specs/pi-iroh-coms-net/solution.png" alt="A real planf3-generated plan: serverless P2P agent mesh on iroh" width="780">
+  <img src="examples/pi-iroh-coms-net/pi-iroh-coms-net/solution.png" alt="A real planf3-generated plan: serverless P2P agent mesh on iroh" width="780">
 </p>
 
-[`specs/pi-iroh-coms-net.html`](specs/pi-iroh-coms-net.html) is a real, unedited planf3 output. The prompt in [`prompts/pi-iroh-coms.md`](prompts/pi-iroh-coms.md) asked the agent to re-implement an HTTP agent-communication extension as a serverless peer-to-peer mesh on [iroh](https://iroh.computer). One `/planf3` run produced:
+[`examples/pi-iroh-coms-net/pi-iroh-coms-net.html`](examples/pi-iroh-coms-net/pi-iroh-coms-net.html) is a real, unedited planf3 output. The prompt in [`prompts/pi-iroh-coms.md`](prompts/pi-iroh-coms.md) asked the agent to re-implement an HTTP agent-communication extension as a serverless peer-to-peer mesh on [iroh](https://iroh.computer). One `/planf3` run produced:
 
 - a full HTML plan with metadata, four phases, per-phase checklists, and validation loops
 - eight synced diagrams (hero, problem, solution, one per phase, notes)
@@ -298,9 +305,9 @@ planf3/
 Open the `.html` in a browser to see exactly what the skill delivers.
 
 ```bash
-start "" specs\pi-iroh-coms-net.html    # Windows
-open specs/pi-iroh-coms-net.html        # macOS
-xdg-open specs/pi-iroh-coms-net.html    # Linux
+start "" examples\pi-iroh-coms-net\pi-iroh-coms-net.html    # Windows
+open examples/pi-iroh-coms-net/pi-iroh-coms-net.html        # macOS
+xdg-open examples/pi-iroh-coms-net/pi-iroh-coms-net.html    # Linux
 ```
 
 ---
