@@ -1,6 +1,23 @@
 {
-  "as_of": "2026-07-03T20:10:59-05:00",
+  "as_of": "2026-07-04T16:20:35-05:00",
   "plans": [
+    {
+      "file": "context-aware-planning.html",
+      "id": "context-aware-planning",
+      "kind": "plan",
+      "title": "Context-Aware Solution Building: Discuss Phase + Stack Layer",
+      "status": "draft",
+      "owner": "architect",
+      "created": "2026-07-04T16:15:30-05:00",
+      "modified": "2026-07-04T16:20:35-05:00",
+      "image_dir": "",
+      "back_refs": [
+        "planf3-rescope.html"
+      ],
+      "forward_refs": [],
+      "provides": [],
+      "consumes": []
+    },
     {
       "file": "pi-iroh-coms-net.html",
       "id": "pi-iroh-coms-net",
@@ -27,10 +44,12 @@
       "status": "draft",
       "owner": "architect",
       "created": "2026-07-03T16:14:32-05:00",
-      "modified": "2026-07-03T20:10:59-05:00",
+      "modified": "2026-07-04T16:20:35-05:00",
       "image_dir": "",
       "back_refs": [],
-      "forward_refs": [],
+      "forward_refs": [
+        "context-aware-planning.html"
+      ],
       "provides": [],
       "consumes": []
     },

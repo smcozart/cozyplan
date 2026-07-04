@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plan: Context-Aware Solution Building: Discuss Phase + Stack Layer</title>
+<style>
+  :root {
+    --bg:        #0B1120; --surface: #111A2E; --surface-2: #182440; --border: #2B3A5C;
+    --text:      #E8EDF7; --muted: #A9B6CE; --dim: #6F7D9A;
+    --azure:     #5FA9F5; --gold: #E4BC66; --mint: #63D6A4; --violet: #B49CF6; --red: #F08080;
+    --radius:    14px;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1200px 600px at 85% -10%, rgba(95,169,245,0.10), transparent 60%),
+      radial-gradient(1000px 500px at -10% 15%, rgba(99,214,164,0.06), transparent 55%),
+      var(--bg);
+    color: var(--text); font-family: var(--sans); line-height: 1.65; font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 920px; margin: 0 auto; padding: 56px 24px 120px; }
+  header h1 {
+    font-size: clamp(1.9rem, 4vw, 2.5rem); line-height: 1.12; margin: 0 0 6px; letter-spacing: -0.02em;
+    background: linear-gradient(100deg, var(--text) 30%, var(--azure) 70%, var(--mint));
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .tagline { color: var(--muted); font-size: 1.05rem; margin: 0 0 18px; }
+  details.meta { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 16px; margin-bottom: 8px; font-size: 0.86rem; }
+  details.meta summary { cursor: pointer; color: var(--azure); font-weight: 600; font-family: var(--mono); letter-spacing: 0.02em; }
+  details.meta dl { display: grid; grid-template-columns: 130px 1fr; gap: 4px 14px; margin: 12px 0 4px; }
+  details.meta dt { color: var(--dim); font-family: var(--mono); font-size: 0.8rem; }
+  details.meta dd { margin: 0; color: var(--muted); font-family: var(--mono); font-size: 0.8rem; word-break: break-word; }
+  section { margin-top: 52px; scroll-margin-top: 24px; }
+  h2 { font-size: 1.6rem; letter-spacing: -0.01em; margin: 0 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  h2::before { content: "◈ "; color: var(--azure); }
+  h3 { font-size: 1.18rem; margin: 26px 0 10px; color: var(--text); }
+  h4 { font-size: 1rem; margin: 20px 0 8px; color: var(--mint); font-family: var(--mono); }
+  p { color: var(--text); }
+  a { color: var(--azure); }
+  figure { margin: 22px 0; text-align: center; }
+  figure img { max-width: 100%; height: auto; border-radius: var(--radius); border: 1px solid var(--border); box-shadow: 0 10px 40px rgba(0,0,0,0.45); }
+  figcaption { color: var(--dim); font-size: 0.82rem; margin-top: 10px; font-style: italic; }
+  code { font-family: var(--mono); font-size: 0.86em; background: var(--surface-2); color: var(--azure); padding: 1px 6px; border-radius: 6px; border: 1px solid var(--border); }
+  pre { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; overflow-x: auto; font-size: 0.84rem; line-height: 1.55; }
+  pre code { background: none; border: none; padding: 0; color: var(--text); }
+  ul, ol { padding-left: 22px; } li { margin: 5px 0; }
+  ul.checklist { list-style: none; padding-left: 4px; } ul.checklist > li { margin: 7px 0; }
+  .tag { font-family: var(--mono); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); vertical-align: middle; }
+  .tag.existing { color: var(--gold); border-color: rgba(228,188,102,0.4); background: rgba(228,188,102,0.08); }
+  .tag.new { color: var(--mint); border-color: rgba(99,214,164,0.4); background: rgba(99,214,164,0.08); }
+  .status { font-weight: 700; color: var(--dim); }
+  .phase { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--azure); border-radius: var(--radius); padding: 4px 22px 22px; margin: 22px 0; }
+  .phase h3 { color: var(--text); } .phase h3 .status { margin-right: 6px; }
+  .loop { margin-top: 16px; padding: 12px 16px; background: rgba(99,214,164,0.06); border: 1px solid rgba(99,214,164,0.3); border-radius: 10px; font-size: 0.9rem; color: var(--text); }
+  .callout { margin: 16px 0; padding: 12px 16px; background: rgba(95,169,245,0.07); border: 1px solid rgba(95,169,245,0.35); border-radius: 10px; font-size: 0.92rem; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 0.9rem; }
+  th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: var(--surface-2); color: var(--azure); font-family: var(--mono); font-size: 0.8rem; letter-spacing: 0.03em; }
+  td { background: var(--surface); color: var(--muted); }
+  td strong, td code, li code, p code { color: var(--azure); }
+  .keep { color: var(--mint); font-weight: 600; } .risk { color: var(--gold); font-weight: 600; } .no { color: var(--red); font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+
+  <!-- ===== HEADER + UPDATABLE METADATA ===== -->
+  <header>
+    <h1>Plan: Context-Aware Solution Building: Discuss Phase + Stack Layer</h1>
+    <p class="tagline">Add the missing discuss phase and a living stack-context layer so plans are interrogated before they're written. Context + interrogation + records only — git keeps enforcement. All six design decisions locked in a collaborate session (2026-07-04); captured here, not relitigated.</p>
+    <details class="meta" data-region="metadata" data-managed="cli">
+      <summary>Metadata</summary>
+      <dl>
+        <dt>schema</dt>       <dd data-meta="schema">1</dd>
+        <dt>id</dt>           <dd data-meta="id">context-aware-planning</dd>
+        <dt>kind</dt>         <dd data-meta="kind">plan</dd>
+        <dt>owner</dt>        <dd data-meta="owner">architect</dd>
+        <dt>status</dt>       <dd data-meta="status">draft</dd>
+        <dt>created</dt>      <dd data-meta="created">2026-07-04T16:15:30-05:00</dd>
+        <dt>modified</dt>     <dd data-meta="modified">2026-07-04T16:15:30-05:00, 2026-07-04T16:20:35-05:00</dd>
+        <dt>commits</dt>      <dd data-meta="commits">—</dd>
+        <dt>agent name</dt>   <dd data-meta="agent">claude-fable-5</dd>
+        <dt>session id</dt>   <dd data-meta="session">—</dd>
+        <dt>back refs</dt>    <dd data-meta="back-refs">planf3-rescope.html</dd>
+        <dt>forward refs</dt> <dd data-meta="forward-refs">—</dd>
+        <dt>provides</dt>     <dd data-meta="provides">—</dd>
+        <dt>consumes</dt>     <dd data-meta="consumes">—</dd>
+      </dl>
+    </details>
+    <!-- Metadata, status markers, and amendments are CLI-managed (data-managed="cli").
+         Never hand-edit them — use PLAN_TOOL (see ## Managed Writes). -->
+  </header>
+
+  <!-- Hero image — synced to the :root visual identity. Replace with <img> once generated. -->
+  <figure>
+    <!-- diagram TODO: three-layer flow — STACK.md / CONTEXT.md / docs-adr boxes feeding a "Discuss" interview loop that feeds the Plan artifact; a rail underneath labeled "git = enforcement" -->
+    <figcaption>The iteration at a glance: standing context feeds a discuss loop, the plan absorbs the answers, and git keeps every enforcement job.</figcaption>
+  </figure>
+
+  <!-- ===== PURPOSE / PROBLEM / SOLUTION ===== -->
+  <section id="purpose">
+    <h2>Purpose</h2>
+    <p>Make planf3's plan authoring <strong>context-aware</strong>. Two additions, both pure markdown authoring — zero changes to <code>plan_tool.py</code>, the hooks, or the tests: <strong>(1) a Discuss Plan workflow</strong> — a self-contained, depth-scaled interview that runs by default before a new plan is authored, capturing decisions as ADRs, vocabulary as a glossary, and stack deviations in place; <strong>(2) a stack-context layer</strong> — a per-repo <code>STACK.md</code> of technology defaults written as <em>default + when-to-use lane + escape hatch</em>, seeded from a generic template, an org seed, or a first-run interview. The goal is cultural, not mechanical: engineers (and agents) slow down, interrogate the idea, and own their process — and the "why" survives in living artifacts instead of evaporating into chat history.</p>
+  </section>
+
+  <section id="problem">
+    <h2>Problem</h2>
+    <p>Today the Create Plan workflow goes straight from prompt to draft. Nothing in the toolchain makes an engineer or agent stop and interrogate the idea first, so weak assumptions land in plans unchallenged. Decisions have no durable record — "why Dataverse here and not SQL?" is unanswerable six months later. And there is no shared environment context: every plan re-derives (or silently guesses) the org's stack, so an agent may reach for the wrong tool with nothing to challenge it against. The existing cure lives in the wrong place: <code>/grill-with-docs</code> — the owner's personal composition of a relentless interview plus ADR/glossary capture — sits in <code>~/.claude/skills/</code> on one machine. Engineers and project agents can't run what they don't have; "encouraged for anyone on the project" is currently impossible.</p>
+    <figure>
+      <!-- diagram TODO: straight arrow "prompt → plan" with question marks (assumptions? stack fit? why?) falling through a gap; a small "grill" box stranded on one laptop off to the side -->
+      <figcaption>Today: prompt goes straight to draft, the interrogation lives on one machine, and the "why" evaporates.</figcaption>
+    </figure>
+  </section>
+
+  <section id="solution">
+    <h2>Solution</h2>
+    <p>Bake the composition into planf3 itself so it ships with every project. A new <code>workflows/discuss-plan.md</code> carries the full interview discipline <strong>in its own text</strong> — no dependency on any personally-installed skill: one question at a time with a recommended answer, dependencies resolved first, answers taken from the codebase instead of the user wherever possible (the brownfield route), and inline capture rules — ADRs behind a three-gate test in <code>docs/adr/</code>, glossary terms in <code>CONTEXT.md</code>, deviations in <code>STACK.md</code>. Create Plan's documented first step becomes the discuss pass, skippable only when the requester explicitly says so; depth scales with stakes (short pass for small features, full relentless interview for new systems). Update Plan offers a grill for structural revisions only. <code>templates/stack.md</code> ships a generic scaffold; <code>templates/stack.cozy.md</code> carries the org's Microsoft stack as a copy-in seed; when neither fits, the workflow interviews the user and writes <code>STACK.md</code> from the answers. Everything added is context, interrogation, and records — enforcement, gating, and revert stay with git, exactly per the re-scope.</p>
+    <figure>
+      <!-- diagram TODO: a "discuss" diamond between prompt and plan; side outputs ADR / glossary / stack deviation; two entry arrows labeled greenfield and brownfield -->
+      <figcaption>The discuss pass sits between prompt and plan — greenfield and brownfield entries, records as side outputs.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ===== RELEVANT FILES ===== -->
+  <section id="files" class="files">
+    <h2>Relevant Files</h2>
+
+    <h3>Existing Files</h3>
+    <ul>
+      <li><span class="tag existing">existing</span> <code>.claude/skills/planf3/SKILL.md</code> — gains a Discuss Plan row in the workflow table and a compact Context Layer section (STACK.md / CONTEXT.md / docs-adr conventions and linkage)</li>
+      <li><span class="tag existing">existing</span> <code>.claude/skills/planf3/workflows/create-plan.md</code> — the discuss pass becomes documented step 1 for new plans, with an explicit-skip escape</li>
+      <li><span class="tag existing">existing</span> <code>.claude/skills/planf3/workflows/update-plan.md</code> — offers a grill for structural revisions only (never status flips or wording)</li>
+      <li><span class="tag existing">existing</span> <code>README.md</code> — consumer-facing description of the discuss phase and the stack-context layer</li>
+    </ul>
+
+    <h3>New Files</h3>
+    <ul>
+      <li><span class="tag new">new</span> <code>.claude/skills/planf3/workflows/discuss-plan.md</code> — the load-bearing interview workflow: self-contained interview core, depth rubric, capture rules, stack seeding, exit routes</li>
+      <li><span class="tag new">new</span> <code>.claude/skills/planf3/templates/stack.md</code> — generic stack scaffold: section skeleton, the default + lane + escape-hatch entry format, one worked example, Deviations section</li>
+      <li><span class="tag new">new</span> <code>.claude/skills/planf3/templates/stack.cozy.md</code> — org seed: the Microsoft stack (Azure · Functions · Power Apps · React · Dataverse · Fabric) with lanes and escape hatches filled in</li>
+      <li><span class="tag new">new</span> <code>STACK.md</code> + <code>docs/adr/0001-*.md</code> (this repo) — produced by the Phase 4 dogfood run via the interview-fallback path, proving the workflow end-to-end</li>
+    </ul>
+  </section>
+
+  <!-- ===== IMPLEMENTATION PHASES ===== -->
+  <section id="phases">
+    <h2>Implementation Phases</h2>
+    <p><strong>IMPORTANT:</strong> Execute every phase and task step by step, in order, top to bottom.</p>
+    <p>Status markers: <code>[]</code> idle · <code>[wip]</code> in progress · <code>[x]</code> complete · <code>[f]</code> failed (terminal — requires a one-line reason). All start as <code>[]</code>; the Build Plan workflow flips them via <code>PLAN_TOOL status</code> as it works. The <code>data-status-for</code> / <code>data-phase</code> / <code>data-task</code> ids are the anchors the CLI targets — assign them at Create (or run <code>PLAN_TOOL init-ids</code>), numbering tasks <code>&lt;phase&gt;.&lt;task&gt;</code> and phases <code>phase-&lt;n&gt;</code>.</p>
+
+    <div class="phase" data-phase="1">
+      <h3><code class="status" data-status-for="phase-1">[]</code> Phase 1: Stack Context Layer</h3>
+      <p>Author the two stack templates. The entry format is the load-bearing convention of this phase: every entry is a <strong>default + when-to-use lane + escape hatch</strong>, never a bare product name. A bare inventory reads as law to an agent and suppresses exactly the trade-offs the discuss pass exists to surface; a lane with an escape hatch turns every deviation into a recordable decision instead of a violation.</p>
+
+      <h4>1. Author the generic scaffold — <code>templates/stack.md</code></h4>
+      <ul class="checklist">
+        <li data-task="1.1"><code class="status" data-status-for="1.1">[]</code> Create <code>templates/stack.md</code> with the section skeleton — Hosting, Business Logic, Frontend, Data, Identity &amp; Access, CI/CD, Observability, Deviations — and a short header stating living-file semantics: sessions update this file as the system evolves; it describes defaults, it does not enforce them.</li>
+        <li data-task="1.2"><code class="status" data-status-for="1.2">[]</code> Document the entry format with one fully worked example (e.g. "Azure Functions — default for event-driven/API business logic; reach for Container Apps when a process is long-running") and the Deviations rule: a deviation that clears the ADR three-gate test (hard to reverse + surprising without context + real trade-off) gets an ADR, linked from its Deviations line.</li>
+      </ul>
+
+      <h4>2. Author the org seed — <code>templates/stack.cozy.md</code></h4>
+      <ul class="checklist">
+        <li data-task="1.3"><code class="status" data-status-for="1.3">[]</code> Fill the same skeleton with the org's Microsoft stack, each entry carrying its lane and escape hatch: Azure (hosting default), Azure Functions (event-driven/API business logic), Power Apps (internal CRUD/workflow UIs; escape to React when customer-facing or design-controlled), React (customer-facing frontend base), Dataverse (data owned by Power Platform workloads), Fabric (analytics/BI). Mark Identity &amp; Access and CI/CD entries as <strong>PROPOSED</strong> for the owner to confirm — they were not specified in the design session.</li>
+      </ul>
+
+      <h4>3. Testing Strategy</h4>
+      <p>Structural review — these are markdown conventions, so validation is shape-checking plus a critical read against the anti-inventory rule.</p>
+      <ul class="checklist">
+        <li data-task="1.4"><code class="status" data-status-for="1.4">[]</code> <code>grep -c "^## " .claude/skills/planf3/templates/stack.md .claude/skills/planf3/templates/stack.cozy.md</code> — both files carry the identical section skeleton</li>
+        <li data-task="1.5"><code class="status" data-status-for="1.5">[]</code> Manual read: every entry in both files follows default + lane + escape hatch; zero bare inventory lines; PROPOSED markers present on unconfirmed org entries</li>
+      </ul>
+      <div class="loop">
+        🔁 <strong>Do not exit this phase until every box above is <code>[x]</code> or <code>[f]</code>.</strong>
+        If a command fails, fix the cause and re-run; loop until it passes. <code>[f]</code> is terminal — only when a box genuinely cannot be made to pass, mark it <code>[f]</code> (with a one-line reason via <code>PLAN_TOOL status … --state f --reason "…"</code>) and move on.
+      </div>
+    </div>
+
+    <div class="phase" data-phase="2">
+      <h3><code class="status" data-status-for="phase-2">[]</code> Phase 2: The Discuss Plan Workflow</h3>
+      <p><strong>This is the load-bearing artifact of the whole iteration.</strong> A weak interview script produces ceremony — questions engineers answer on autopilot — instead of thinking. Spend the authoring care here, and keep the file fully self-contained: it must not reference the owner's personal global skills (<code>grilling</code>, <code>domain-modeling</code>, <code>grill-with-docs</code>), because project machines don't have them.</p>
+
+      <h4>1. Context load + stack seeding front-matter</h4>
+      <ul class="checklist">
+        <li data-task="2.1"><code class="status" data-status-for="2.1">[]</code> Author the session-start read order: <code>STACK.md</code> → <code>CONTEXT.md</code> → <code>docs/adr/</code> → <code>specs/_index.html</code> → (brownfield) the relevant code. Then the first-run branch: if no <code>STACK.md</code> exists, copy in an org seed when one is provided; else offer the generic template; else interview the user about their environment section-by-section and write <code>STACK.md</code> from the answers.</li>
+      </ul>
+
+      <h4>2. Interview core</h4>
+      <ul class="checklist">
+        <li data-task="2.2"><code class="status" data-status-for="2.2">[]</code> Distill the interview discipline into the file's own text: one question at a time, each with a recommended answer and brief reasoning; prerequisite questions resolved first (call the dependency out); answer from the codebase instead of asking whenever the code can answer; challenge stack fit explicitly against <code>STACK.md</code> lanes ("this is customer-facing — why Power Apps?").</li>
+        <li data-task="2.3"><code class="status" data-status-for="2.3">[]</code> Write the depth rubric: <strong>short pass</strong> (goal, stack fit, edge cases — a handful of questions) for small features; <strong>full relentless interview</strong> (every branch of the decision tree) for new systems or architectural changes. New plans get the discuss pass by default — skipping requires the requester explicitly saying so. Structural revisions to existing plans get an <em>offer</em>; status flips and wording changes get nothing.</li>
+      </ul>
+
+      <h4>3. Capture rules</h4>
+      <ul class="checklist">
+        <li data-task="2.4"><code class="status" data-status-for="2.4">[]</code> Inline the record disciplines: ADRs only when all three gates pass (hard to reverse + surprising without context + real trade-off), written to <code>docs/adr/NNNN-title.md</code> as decisions crystallize; <code>CONTEXT.md</code> is a glossary and nothing else (update inline as terms resolve; zero implementation detail); stack deviations update <code>STACK.md</code>'s Deviations section; plans link ADRs inline in phase/task rationale — no CLI involvement anywhere.</li>
+      </ul>
+
+      <h4>4. Exit routes</h4>
+      <ul class="checklist">
+        <li data-task="2.5"><code class="status" data-status-for="2.5">[]</code> Close the workflow by handing the interview's resolved decisions to the next workflow as locked inputs — greenfield → Create Plan, brownfield structural revision → Update Plan — mirroring how this very plan was authored from a collaborate session's locked decisions.</li>
+      </ul>
+
+      <h4>5. Testing Strategy</h4>
+      <p>Self-containedness is greppable; interview quality is only provable by use (Phase 4 owns that).</p>
+      <ul class="checklist">
+        <li data-task="2.6"><code class="status" data-status-for="2.6">[]</code> <code>grep -inE "grill-with-docs|domain-modeling|/grilling" .claude/skills/planf3/workflows/discuss-plan.md</code> — returns nothing: no dependency on personally-installed skills</li>
+        <li data-task="2.7"><code class="status" data-status-for="2.7">[]</code> Scope-guard read-through: the file contains no enforcement, gating, or revert language — it interviews, records, and hands off; nothing more</li>
+      </ul>
+      <div class="loop">
+        🔁 <strong>Do not exit this phase until every box above is <code>[x]</code> or <code>[f]</code>.</strong>
+        If a command fails, fix the cause and re-run; loop until it passes. <code>[f]</code> is terminal — only when a box genuinely cannot be made to pass, mark it <code>[f]</code> (with a one-line reason via <code>PLAN_TOOL status … --state f --reason "…"</code>) and move on.
+      </div>
+    </div>
+
+    <div class="phase" data-phase="3">
+      <h3><code class="status" data-status-for="phase-3">[]</code> Phase 3: Surface Integration</h3>
+      <p>Wire the new pieces into the documented surface so the default path — not enforcement — teaches the behavior. Every touched doc must describe the <em>same</em> trigger-and-intensity rules; divergence here is how "encouraged" quietly becomes "optional and forgotten".</p>
+
+      <h4>1. SKILL.md</h4>
+      <ul class="checklist">
+        <li data-task="3.1"><code class="status" data-status-for="3.1">[]</code> Add the Discuss Plan row to the workflow table — when: the prompt asks to think through, stress-test, or discuss an idea before planning, or a Create Plan run starts on a new plan; file: <code>workflows/discuss-plan.md</code>.</li>
+        <li data-task="3.2"><code class="status" data-status-for="3.2">[]</code> Add a compact <strong>Context Layer</strong> section: <code>STACK.md</code> (root; defaults + lanes + escape hatches + Deviations; living file), <code>CONTEXT.md</code> (root; glossary only), <code>docs/adr/</code> (three-gate ADRs); linkage is plain inline links — plans → ADRs in rationale, Deviations → ADRs; explicitly note <code>PLAN_TOOL</code> has no role here.</li>
+      </ul>
+
+      <h4>2. Workflow docs + README</h4>
+      <ul class="checklist">
+        <li data-task="3.3"><code class="status" data-status-for="3.3">[]</code> <code>workflows/create-plan.md</code> — insert the discuss pass as documented step 1 for new plans, with the explicit-skip escape ("requester must say to skip") and a pointer to the depth rubric.</li>
+        <li data-task="3.4"><code class="status" data-status-for="3.4">[]</code> <code>workflows/update-plan.md</code> — offer a grill when the revision is structural (new phases, changed approach); never for status flips or wording.</li>
+        <li data-task="3.5"><code class="status" data-status-for="3.5">[]</code> <code>README.md</code> — brief consumer-facing description of the discuss phase and stack layer, including how a project seeds <code>STACK.md</code> (org seed / generic template / interview).</li>
+      </ul>
+
+      <h4>3. Testing Strategy</h4>
+      <p>Greppable presence checks plus a cross-document consistency read.</p>
+      <ul class="checklist">
+        <li data-task="3.6"><code class="status" data-status-for="3.6">[]</code> <code>grep -n "Discuss Plan" .claude/skills/planf3/SKILL.md</code> — workflow-table row present</li>
+        <li data-task="3.7"><code class="status" data-status-for="3.7">[]</code> Consistency read: SKILL.md, create-plan.md, update-plan.md, and README state identical trigger/intensity rules (default-for-new, explicit skip, structural-only offers, scaled depth)</li>
+      </ul>
+      <div class="loop">
+        🔁 <strong>Do not exit this phase until every box above is <code>[x]</code> or <code>[f]</code>.</strong>
+        If a command fails, fix the cause and re-run; loop until it passes. <code>[f]</code> is terminal — only when a box genuinely cannot be made to pass, mark it <code>[f]</code> (with a one-line reason via <code>PLAN_TOOL status … --state f --reason "…"</code>) and move on.
+      </div>
+    </div>
+
+    <div class="phase" data-phase="4">
+      <h3><code class="status" data-status-for="phase-4">[]</code> Phase 4: Dogfood Validation</h3>
+      <p>Before pointing engineers at it, prove the interview produces thinking rather than ceremony. Run it in <em>this</em> repo: planf3 is a Python/uv tool, so the Microsoft org seed doesn't apply — which forces the <strong>interview-fallback seeding path</strong>, the hardest branch, and exercises brownfield answering against a real codebase.</p>
+
+      <h4>1. Run the workflow end-to-end</h4>
+      <ul class="checklist">
+        <li data-task="4.1"><code class="status" data-status-for="4.1">[]</code> Run <code>workflows/discuss-plan.md</code> on a real next-iteration prompt for this repo. The session must produce: <code>STACK.md</code> at the repo root (via the interview fallback), at least one three-gate ADR in <code>docs/adr/</code>, and a set of resolved decisions handed off as locked inputs to Create/Update Plan.</li>
+        <li data-task="4.2"><code class="status" data-status-for="4.2">[]</code> Capture every point of friction (questions that felt rote, missing context loads, unclear depth calls) and fix <code>discuss-plan.md</code> in the same session; record the dogfood outcome on this plan via <code>PLAN_TOOL amend</code>.</li>
+      </ul>
+
+      <h4>2. Testing Strategy</h4>
+      <p>Artifact placement is checkable; interview quality is a human gate — the owner signs off before the workflow is announced to engineers.</p>
+      <ul class="checklist">
+        <li data-task="4.3"><code class="status" data-status-for="4.3">[]</code> <code>ls STACK.md docs/adr/</code> — dogfood artifacts exist in their convention locations, and <code>CONTEXT.md</code> (if created) contains glossary entries only</li>
+        <li data-task="4.4"><code class="status" data-status-for="4.4">[]</code> Owner sign-off: the session felt like thinking, not ceremony — required before the discuss phase is announced as the team default</li>
+      </ul>
+      <div class="loop">
+        🔁 <strong>Do not exit this phase until every box above is <code>[x]</code> or <code>[f]</code>.</strong>
+        If a command fails, fix the cause and re-run; loop until it passes. <code>[f]</code> is terminal — only when a box genuinely cannot be made to pass, mark it <code>[f]</code> (with a one-line reason via <code>PLAN_TOOL status … --state f --reason "…"</code>) and move on.
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== GLOBAL VALIDATION ===== -->
+  <section id="validation">
+    <h2>Validation Commands</h2>
+    <p>Execute these commands to validate the entire plan is complete:</p>
+    <ul class="checklist">
+      <li data-task="g.1"><code class="status" data-status-for="g.1">[]</code> <code>uv run scripts/plan_tool.py validate specs/context-aware-planning.html</code> — this plan stays well-formed through the build</li>
+      <li data-task="g.2"><code class="status" data-status-for="g.2">[]</code> <code>uv run --with pytest pytest tests/ -q</code> — all 63 tests still green: proves the iteration touched zero code surface (pure markdown, per the locked scope)</li>
+      <li data-task="g.3"><code class="status" data-status-for="g.3">[]</code> <code>uv run scripts/plan_tool.py index</code> — specs catalog rebuilds clean with no dangling references</li>
+      <li data-task="g.4"><code class="status" data-status-for="g.4">[]</code> <code>ls .claude/skills/planf3/workflows/discuss-plan.md .claude/skills/planf3/templates/stack.md .claude/skills/planf3/templates/stack.cozy.md</code> — all three new artifacts exist at their documented paths</li>
+    </ul>
+    <div class="loop">
+      🔁 <strong>The plan is not complete until every box is <code>[x]</code> or <code>[f]</code> and every command passes. If a step genuinely cannot be completed, mark it <code>[f]</code> (terminal, with a one-line reason) and move on.</strong>
+    </div>
+  </section>
+
+  <!-- ===== NOTES ===== -->
+  <!-- Open canvas — the planning agent runs free here. There is no fixed shape:
+       use whatever HTML best serves the plan (prose, lists, tables, code blocks,
+       diagrams, callouts, decision logs, alternatives considered, open threads,
+       links, anything). Embed as many image slots as the plan benefits from. -->
+  <section id="notes">
+    <h2>Notes</h2>
+    <h3>Locked decisions (collaborate session, 2026-07-04)</h3>
+    <p>These six decisions were resolved in a full collaborate interview before this plan was authored. They are <strong>inputs, not open questions</strong> — do not relitigate during build.</p>
+    <table>
+      <tr><th>#</th><th>Decision</th><th>Why</th></tr>
+      <tr><td>1</td><td><strong>Home:</strong> bake into planf3 as a self-contained <code>workflows/discuss-plan.md</code></td><td>Only things that ship with the project reach engineers and agents; personal global skills don't travel</td></tr>
+      <tr><td>2</td><td><strong>Entry routes:</strong> greenfield (→ Create Plan) and brownfield (→ Update Plan) sharing one interview core</td><td>Brownfield is nearly free: the interview answers from the codebase where it can instead of asking</td></tr>
+      <tr><td>3</td><td><strong>Trigger &amp; intensity:</strong> discuss-by-default for new plans (explicit skip required), depth scaled to stakes; structural revisions get an offer, status flips get nothing</td><td>Default path teaches behavior without gates; mandatory ceremony on trivial work is how teams learn to route around a process</td></tr>
+      <tr><td>4</td><td><strong>STACK.md shape:</strong> per-repo at root; default + lane + escape hatch per entry; Deviations section; living file</td><td>A bare inventory reads as law and suppresses trade-offs; lanes turn deviations into recordable decisions</td></tr>
+      <tr><td>5</td><td><strong>Seeding:</strong> generic scaffold ships in templates/; the org's Microsoft stack is a separate copy-in seed; interview fallback when neither fits</td><td>Keeps planf3 a general tool (plugin flip stays viable) while the org still gets one-copy seeding</td></tr>
+      <tr><td>6</td><td><strong>Layout &amp; linkage:</strong> <code>CONTEXT.md</code> (glossary) + <code>docs/adr/</code> conventions unchanged, STACK.md beside them; plain inline links; zero plan_tool/CLI/hook/test changes</td><td>Standard locations stay greppable; "it's just a hyperlink" doesn't justify new CLI surface — wiring can be added later if links prove too loose</td></tr>
+    </table>
+
+    <div class="callout"><strong>Scope guard.</strong> This iteration is context + interrogation + records <em>only</em>. No enforcement, no gating, no revert mechanics — git owns those (branches/PRs, CODEOWNERS, tags, blame, CI). The compliance layer was deliberately excised in the re-scope (see back-ref); nothing here may walk that back. If a build decision seems to need enforcement, the answer is a git-layer convention, not tool machinery.</div>
+
+    <div class="callout"><strong>Key risk.</strong> <span class="risk">discuss-plan.md's interview quality is the single load-bearing artifact.</span> A weak script yields ceremony — rote questions, autopilot answers — and the whole iteration reads as process theater. That is why Phase 2 gets the authoring care and Phase 4 (dogfood + owner sign-off) gates the announcement to engineers.</div>
+
+    <h3>Rejected alternatives</h3>
+    <ul>
+      <li><span class="no">Vendor the personal skills</span> (copy grilling/domain-modeling into each project) — three more things to copy per project; worsens the friction the plugin flip exists to fix.</li>
+      <li><span class="no">Org-preloaded stack template</span> — would make every future planf3 consumer inherit one org's Microsoft opinions as defaults.</li>
+      <li><span class="no">ADRs under <code>specs/</code></span> — breaks the industry-standard <code>docs/adr/</code> location and drags non-plan files into index/guard/validate territory.</li>
+      <li><span class="no">Wiring ADR links into plan metadata</span> (<code>meta --field refs</code>, validate resolution) — new CLI surface + tests for what is fundamentally a hyperlink; revisit only if inline links prove too loose.</li>
+      <li><span class="no">Always-full-depth or purely opt-in triggering</span> — the former breeds resentment and gaming; the latter never reaches the people who most need to slow down.</li>
+    </ul>
+
+    <h3>Relationships &amp; future threads</h3>
+    <ul>
+      <li><strong>Back-ref:</strong> <code>planf3-rescope</code> — this iteration builds directly on the lean scope it established; the scope guard above is its contract.</li>
+      <li><strong>Plugin flip</strong> (<code>plugin-flip</code>, gated): the three new files ride along for free — a discuss phase that ships in the plugin strengthens the case for flipping.</li>
+      <li><strong>Owner's personal skills:</strong> <code>/grill-with-docs</code> remains a personal shortcut that converges on the same conventions; mild text duplication between it and <code>discuss-plan.md</code> is accepted, with the workflow file canonical for projects.</li>
+      <li><strong>Diagrams:</strong> image slots are brace-stripped TODO comments — the <code>excalidraw-diagram</code> skill is not installed on this machine; generate when available.</li>
+    </ul>
+  </section>
+
+  <!-- ===== AMENDMENTS ===== -->
+  <!-- Running history of changes made AFTER the plan was first executed. Append-only.
+       Populated by the Update Plan and Update References workflows — never edited during Create. -->
+  <section id="amendments" data-region="amendments" data-managed="cli">
+    <h2>Amendments</h2>
+    <!-- CLI-managed: PLAN_TOOL amend/ref/report append <details> entries into the
+         container below, newest at the bottom. Do not hand-edit. -->
+    <div data-amendments-list>
+    
+      <details>
+        <summary>2026-07-04T16:20:35-05:00 — back-refs += planf3-rescope.html</summary>
+        <p>Linked to planf3-rescope.html (back reference).</p>
+      </details></div>
+  </section>
+
+</main>
+</body>
+</html>

@@ -1,0 +1,2 @@
+{"ts": "2026-07-04T16:15:30-05:00", "event": "created", "role": null, "agent": "claude-fable-5", "session": null, "details": {"id": "context-aware-planning", "title": "Context-Aware Solution Building: Discuss Phase + Stack Layer", "owner": "architect", "kind": "plan", "file": "context-aware-planning.html"}}
+{"ts": "2026-07-04T16:20:35-05:00", "event": "ref", "role": null, "agent": "claude-fable-5", "session": null, "details": {"field": "back-refs", "other": "planf3-rescope.html", "type": "back"}}
