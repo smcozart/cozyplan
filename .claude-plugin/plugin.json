@@ -1,7 +1,7 @@
 {
   "name": "cozyplan",
   "version": "2.0.0",
-  "description": "HTML-first engineering plans with a discuss phase and living context artifacts — plan well, record why, understand the system.",
+  "description": "CozyPlan — HTML-first engineering plans with a discuss phase and living context artifacts — plan well, record why, understand the system.",
   "author": {
     "name": "Sean Cozart"
   }

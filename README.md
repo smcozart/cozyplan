@@ -1,30 +1,28 @@
-# Planf3 — Plans For Fable Five
+# CozyPlan — HTML-First Planning for Agentic Engineering
 
 > **A [Mythos-class](https://www.anthropic.com/news/claude-fable-5-mythos-5) planning plugin: two skills that interrogate, write, build, and maintain every plan your agents run — and keep the "why" alive after everyone moves on.**
 > Built for the agent trifecta: you, your team, and your AI agents.
-
-📺 Watch this video to get the full breakdown of this codebase: **[Planf3 on YouTube](https://youtu.be/DzbqeO_diOQ)**
 
 <p align="center">
   <img src="images/meta-skill-v5-multiplier-grid.png" alt="One meta-skill multiplies into countless plans" width="850">
 </p>
 
-Most engineers hand planning to the model and hope. `/plan` goes into a black box, something comes out, and you review whatever you get. Planf3 inverts that: you template your engineering once (the exact sections, the exact loops, the exact visual identity), and every plan the agent writes mirrors it, forever.
+Most engineers hand planning to the model and hope. `/plan` goes into a black box, something comes out, and you review whatever you get. CozyPlan inverts that: you template your engineering once (the exact sections, the exact loops, the exact visual identity), and every plan the agent writes mirrors it, forever.
 
-The big unlock is the new Mythos-class models (Fable 5 and what follows). They raise the intelligence ceiling far enough to absorb a token-rich, HTML-first plan and hit the *exact* outcomes you specify, which is the next level of planning ability we've been waiting for. Planf3 was built to pull that capability out of them: it deliberately spends tokens, images, and structure to extract the best plan these models can produce. Every property in the skill exists to capture that ceiling, and the payoff compounds with each more-capable model. **Great planning is great engineering, and this is the skill that encodes yours.**
+The big unlock is the new Mythos-class models (Fable 5 and what follows). They raise the intelligence ceiling far enough to absorb a token-rich, HTML-first plan and hit the *exact* outcomes you specify, which is the next level of planning ability we've been waiting for. CozyPlan was built to pull that capability out of them: it deliberately spends tokens, images, and structure to extract the best plan these models can produce. Every property in the skill exists to capture that ceiling, and the payoff compounds with each more-capable model. **Great planning is great engineering, and this is the skill that encodes yours.**
 
 ---
 
 ## Install
 
-Planf3 ships as a **Claude Code plugin**. Installing it is two commands — nothing to compile, no API key to wire, and no files to hand-copy into each project:
+CozyPlan ships as a **Claude Code plugin**. Installing it is two commands — nothing to compile, no API key to wire, and no files to hand-copy into each project:
 
 ```
-/plugin marketplace add <git-url>
-/plugin install planf3
+/plugin marketplace add https://github.com/smcozart/cozyplan.git
+/plugin install cozyplan@cozyplan
 ```
 
-The first command registers this repo as a plugin marketplace; the second installs the `planf3` plugin from it. The plugin carries everything as one unit — **two skills** (`planf3`, the plan layer, and `discuss`, the understanding loop — each with its own workflows and templates), the deterministic `plan_tool.py` CLI, and the two coherence hooks. Once it's installed, both skills work in every project your harness opens; there's no per-project setup.
+The first command registers this repo as a plugin marketplace; the second installs the `cozyplan` plugin from it. The plugin carries everything as one unit — **two skills** (`cozyplan`, the plan layer, and `discuss`, the understanding loop — each with its own workflows and templates), the deterministic `plan_tool.py` CLI, and the two coherence hooks. Once it's installed, both skills work in every project your harness opens; there's no per-project setup.
 
 **Prerequisite: [`uv`](https://docs.astral.sh/uv/) on your `PATH`.** The CLI and both hooks run through `uv run`. If `uv` isn't found the hooks **fail open** — they exit quietly instead of blocking, so the guard that steers raw edits back through `plan_tool` and the lint that validates every plan write both silently stop enforcing. Plans still get written, but nothing is catching drift or malformed HTML for you. Install `uv` first, or accept that plan coherence is on the honor system — there's no error to warn you it lapsed.
 
@@ -32,20 +30,20 @@ Diagrams are the plugin's one external dependency: the globally-installed [`exca
 
 ### Or: install as bare skills (npx)
 
-The repo is also a valid source for the [`skills` CLI](https://github.com/vercel-labs/skills) — both skill directories are fully self-contained (the `plan_tool.py` CLI and both hook scripts ship inside `skills/planf3/scripts/`, so they travel with the skill):
+The repo is also a valid source for the [`skills` CLI](https://github.com/vercel-labs/skills) — both skill directories are fully self-contained (the `plan_tool.py` CLI and both hook scripts ship inside `skills/cozyplan/scripts/`, so they travel with the skill):
 
 ```
-npx skills add smcozart/planf3
+npx skills add smcozart/cozyplan
 ```
 
-Select `planf3` (and `discuss` — recommended; it's the interview/context half) plus your agent, and the skills install into `.claude/skills/` (`-g` for global). Two differences from the plugin install: the coherence hooks are **not** auto-registered — every `plan_tool` op still self-validates, and the skill will offer to wire the hooks into `.claude/settings.json` if you ask — and updates come from `npx skills update` instead of the plugin marketplace.
+Select `cozyplan` (and `discuss` — recommended; it's the interview/context half) plus your agent, and the skills install into `.claude/skills/` (`-g` for global). Two differences from the plugin install: the coherence hooks are **not** auto-registered — every `plan_tool` op still self-validates, and the skill will offer to wire the hooks into `.claude/settings.json` if you ask — and updates come from `npx skills update` instead of the plugin marketplace.
 
 ### Migrating from the copy-install
 
-Earlier versions of planf3 were installed by hand-copying the skill and merging hooks into each project. If you did that, undo it when you move to the plugin — otherwise the skill and the hooks each register **twice**:
+Earlier versions of CozyPlan were installed by hand-copying the skill and merging hooks into each project. If you did that, undo it when you move to the plugin — otherwise the skill and the hooks each register **twice**:
 
-- **Delete any hand-copied skill.** Remove `.claude/skills/planf3` from any project you copied it into (and `~/.claude/skills/planf3` if you installed it globally). The plugin now supplies the skill; a leftover copy shadows it.
-- **Remove the two planf3 hook entries** — the `guard_plan_edit.py` PreToolUse block and the `lint_plan.py` PostToolUse block — from any project-local `.claude/settings.json`. The plugin registers these hooks itself, so a project-local copy makes each hook fire twice (plugin + project) on every write.
+- **Delete any hand-copied skill.** Remove `.claude/skills/cozyplan` from any project you copied it into (and `~/.claude/skills/cozyplan` if you installed it globally). The plugin now supplies the skill; a leftover copy shadows it.
+- **Remove the two CozyPlan hook entries** — the `guard_plan_edit.py` PreToolUse block and the `lint_plan.py` PostToolUse block — from any project-local `.claude/settings.json`. The plugin registers these hooks itself, so a project-local copy makes each hook fire twice (plugin + project) on every write.
 
 To surface open decisions in a toggleable Q&A section instead of silently
 deciding, ask for it in the prompt (e.g. "…and flag the open questions").
@@ -64,18 +62,18 @@ There are two hard constraints in agentic engineering: **planning** and **review
   <img src="images/03_templated_engineering.png" alt="One template stamps the same structured shape every time" width="750">
 </p>
 
-Planf3 is a **meta-skill**, a skill that produces other artifacts. You write the plan *format* once, and the agent reproduces it across hundreds of executions: same sections, same checklists, same validation loops, same look. That consistency is you teaching the agent *how you engineer*. **More upfront investment in the plan means less reviewing later, and the gap widens with every more-capable model.**
+CozyPlan is a **meta-skill**, a skill that produces other artifacts. You write the plan *format* once, and the agent reproduces it across hundreds of executions: same sections, same checklists, same validation loops, same look. That consistency is you teaching the agent *how you engineer*. **More upfront investment in the plan means less reviewing later, and the gap widens with every more-capable model.**
 
 ---
 
 ## How it works
 
-Planf3 takes a prompt and emits a single self-contained `.html` plan into `specs/`. HTML-first is a deliberate trade: it costs more tokens than markdown, and it buys a plan that opens in a browser, embeds synced diagrams, and reads cleanly for all three audiences. Of the trade-off trifecta (performance, speed, cost) this skill spends speed and cost to maximize performance.
+CozyPlan takes a prompt and emits a single self-contained `.html` plan into `specs/`. HTML-first is a deliberate trade: it costs more tokens than markdown, and it buys a plan that opens in a browser, embeds synced diagrams, and reads cleanly for all three audiences. Of the trade-off trifecta (performance, speed, cost) this skill spends speed and cost to maximize performance.
 
 The skill's API is one line:
 
 ```
-/planf3 "<user prompt>" [questionable]
+/cozyplan "<user prompt>" [questionable]
 ```
 
 | Input | Meaning |
@@ -93,7 +91,7 @@ On a create run the agent reads the prompt, explores the codebase (plus `AI_DOCS
   <img src="images/04_plan_anatomy.png" alt="The plan template — metadata, purpose, phases with checklists, validation loop, notes" width="780">
 </p>
 
-The heart of the skill is the **Plan Template** in [`SKILL.md`](skills/planf3/SKILL.md): the structure the agent mirrors every time. `{{PLACEHOLDER}}` tokens get replaced with real content; `<!-- repeat -->` blocks duplicate per phase, task, or file. Every plan carries:
+The heart of the skill is the **Plan Template** in [`SKILL.md`](skills/cozyplan/SKILL.md): the structure the agent mirrors every time. `{{PLACEHOLDER}}` tokens get replaced with real content; `<!-- repeat -->` blocks duplicate per phase, task, or file. Every plan carries:
 
 | Section | What it gives the trifecta |
 |---|---|
@@ -112,22 +110,22 @@ Status markers (`[]` idle · `[wip]` in progress · `[x]` complete · `[f]` fail
 ## The workflows
 
 <p align="center">
-  <img src="images/05_five_workflows.png" alt="Planf3 routes one prompt to one of five dedicated workflows plus a diagram subworkflow" width="780">
+  <img src="images/05_five_workflows.png" alt="CozyPlan routes one prompt to one of five dedicated workflows plus a diagram subworkflow" width="780">
 </p>
 
-Planf3 is one skill, but the prompt routes to one of **five dedicated workflows**, backed by **one subworkflow** for diagrams. This keeps the plan a living artifact across the whole lifecycle of the codebase, not a write-once document.
+CozyPlan is one skill, but the prompt routes to one of **five dedicated workflows**, backed by **one subworkflow** for diagrams. This keeps the plan a living artifact across the whole lifecycle of the codebase, not a write-once document.
 
 | Workflow | Trigger | File |
 |---|---|---|
-| **Create Plan** | Plan/spec/design new work, no existing plan referenced — **step 1 runs the `discuss` skill's interview by default** (skip by saying so) | [`create-plan.md`](skills/planf3/workflows/create-plan.md) |
-| **Update Plan** | Change, extend, or revise an existing plan (surgical edit + amendment); offers a discuss pass for structural revisions | [`update-plan.md`](skills/planf3/workflows/update-plan.md) |
-| **Update References** | Refresh metadata or wire bidirectional back/forward references | [`update-references.md`](skills/planf3/workflows/update-references.md) |
-| **Build Plan** | Implement the work in an existing plan, updating status markers as it goes | [`build-plan.md`](skills/planf3/workflows/build-plan.md) |
-| **Generate Roles** | Scope a whole project/team into roles and set up who-owns-what (not a single plan) | [`generate-roles.md`](skills/planf3/workflows/generate-roles.md) |
+| **Create Plan** | Plan/spec/design new work, no existing plan referenced — **step 1 runs the `discuss` skill's interview by default** (skip by saying so) | [`create-plan.md`](skills/cozyplan/workflows/create-plan.md) |
+| **Update Plan** | Change, extend, or revise an existing plan (surgical edit + amendment); offers a discuss pass for structural revisions | [`update-plan.md`](skills/cozyplan/workflows/update-plan.md) |
+| **Update References** | Refresh metadata or wire bidirectional back/forward references | [`update-references.md`](skills/cozyplan/workflows/update-references.md) |
+| **Build Plan** | Implement the work in an existing plan, updating status markers as it goes | [`build-plan.md`](skills/cozyplan/workflows/build-plan.md) |
+| **Generate Roles** | Scope a whole project/team into roles and set up who-owns-what (not a single plan) | [`generate-roles.md`](skills/cozyplan/workflows/generate-roles.md) |
 
 | Subworkflow | Called by | File |
 |---|---|---|
-| **Diagram Generation** | Other workflows (e.g. Create Plan) — authors and renders the embedded Excalidraw diagrams locally via the `excalidraw-diagram` skill (no API key) | [`diagram-generation.md`](skills/planf3/workflows/diagram-generation.md) |
+| **Diagram Generation** | Other workflows (e.g. Create Plan) — authors and renders the embedded Excalidraw diagrams locally via the `excalidraw-diagram` skill (no API key) | [`diagram-generation.md`](skills/cozyplan/workflows/diagram-generation.md) |
 
 The **Build Plan** workflow is the payoff: a fresh agent reads the full plan (every image, every back reference at depth 1), then executes phases top to bottom, looping on each phase's tests until they pass, marking `[x]` or `[f]` (via `plan_tool.py`) as it goes.
 
@@ -158,7 +156,7 @@ The result: plans record *what and when*, ADRs record *why*, the glossary record
 
 A plan is a living artifact many agents (and, soon, many roles) touch over time. To keep those touches deterministic and merge-friendly, every *structured* write goes through one CLI instead of free-form edits.
 
-**`skills/planf3/scripts/plan_tool.py`** — a stdlib-only CLI (run with `uv run`) that owns all managed writes. It targets machine-readable `data-*` anchors baked into the template, so it always writes well-formed HTML:
+**`skills/cozyplan/scripts/plan_tool.py`** — a stdlib-only CLI (run with `uv run`) that owns all managed writes. It targets machine-readable `data-*` anchors baked into the template, so it always writes well-formed HTML:
 
 | Command | What it does |
 |---|---|
@@ -190,18 +188,18 @@ Both **fail open** — an unexpected error (or a missing `uv`) never hard-blocks
 
 ## Roles (opt-in)
 
-Role mode is **optional and off by default** — planf3 is a complete planning tool without it, and users running their own custom agentic approach can simply never turn it on. It shines on team projects with source control, where roles tie directly to source-control ownership rules and to each role's planning, executing, and logging docs.
+Role mode is **optional and off by default** — CozyPlan is a complete planning tool without it, and users running their own custom agentic approach can simply never turn it on. It shines on team projects with source control, where roles tie directly to source-control ownership rules and to each role's planning, executing, and logging docs.
 
 Roles are **new** and project-scoped: on a multi-owner project you opt in by running the **Generate Roles** workflow once at kickoff to scope the project into roles — the owners of its plans, code, and docs — and revise them as the architecture evolves. It's the answer to the merge pain of several people (and agents) pushing to their own scattered `CLAUDE.md`/markdown files with no shared process. Nothing role-related exists until that workflow creates `roles/`.
 
-Each role is **one hand-authored file** at `roles/<role>.md` (from [`templates/role.md`](skills/planf3/templates/role.md)) that serves three readers at once: a human onboarding doc, an agent operating brief, and the parsed source `plan_tool roles build` compiles into an ownership map. A role file carries explicit **responsibilities**, a concrete **Definition of Done** (with runnable checks a human and an agent run the same way), and **disjoint ownership globs** — `source_of_truth` and `code` globs may not overlap across roles (`plan_tool roles build` rejects overlap, since overlap is what causes the merge pain in the first place).
+Each role is **one hand-authored file** at `roles/<role>.md` (from [`templates/role.md`](skills/cozyplan/templates/role.md)) that serves three readers at once: a human onboarding doc, an agent operating brief, and the parsed source `plan_tool roles build` compiles into an ownership map. A role file carries explicit **responsibilities**, a concrete **Definition of Done** (with runnable checks a human and an agent run the same way), and **disjoint ownership globs** — `source_of_truth` and `code` globs may not overlap across roles (`plan_tool roles build` rejects overlap, since overlap is what causes the merge pain in the first place).
 
 From that one source, `plan_tool roles build` generates two artifacts:
 
 - **`roles/_roles.json`** — a **pure ownership map** (role → owned globs). No modes, no acceptance, no enforcement fields.
 - **`.github/CODEOWNERS`** — each role's `github:` identity mapped to its globs for review-time ownership (a role without one is emitted commented-out rather than as an unusable `@role` slug).
 
-**Enforcement is git's job, not planf3's.** There is no edit-time gate on who writes what — planf3 compiles the map, git enforces it. Ownership is enforced the way every git project already enforces it: **CODEOWNERS** routes review to the owning role, **PR review** is the acceptance gate, and **`git blame`** answers "who changed my file." The guiding line is **coherence, not compliance**: the tool's job is to make ownership *legible*, then get out of the way.
+**Enforcement is git's job, not CozyPlan's.** There is no edit-time gate on who writes what — CozyPlan compiles the map, git enforces it. Ownership is enforced the way every git project already enforces it: **CODEOWNERS** routes review to the owning role, **PR review** is the acceptance gate, and **`git blame`** answers "who changed my file." The guiding line is **coherence, not compliance**: the tool's job is to make ownership *legible*, then get out of the way.
 
 A plan names its role in the `owner` metadata field, and every `plan_tool` event carries a free-text `--role` label so the plan's `.log.ndjson` records who did what (a label for the log, not an enforced identity). As with `_index.*` and `CODEOWNERS`, the generated aggregates are **generated, never hand-edited**.
 
@@ -217,7 +215,7 @@ When an agent or human assumes role `R`, the role file's **Session bootstrap** s
 
 > *`Performance > Speed >= Cost`*
 
-This is the design axis of the whole skill, and it's why planf3 looks "expensive." HTML over markdown, embedded images, rich updatable metadata, generated diagrams: none of that is the cheap choice. It's the choice that gives the best plan. When you run state-of-the-art models, **make the sacrifices you need to get state-of-the-art results.** Cost, here, is just tokens.
+This is the design axis of the whole skill, and it's why CozyPlan looks "expensive." HTML over markdown, embedded images, rich updatable metadata, generated diagrams: none of that is the cheap choice. It's the choice that gives the best plan. When you run state-of-the-art models, **make the sacrifices you need to get state-of-the-art results.** Cost, here, is just tokens.
 
 ---
 
@@ -227,17 +225,17 @@ This is the design axis of the whole skill, and it's why planf3 looks "expensive
   <img src="images/07_trifecta.png" alt="One plan, three readers — you, your team, and your AI agents" width="750">
 </p>
 
-Every choice in planf3 serves the **agent trifecta**: the engineer (you), the engineering team, and the AI agents. Most planning systems over-index on one: pure agent JSON nobody can read, or a human doc no agent can act on. The HTML-first format, the embedded diagrams, the checklists, and the metadata header exist so a single plan satisfies all three at once.
+Every choice in CozyPlan serves the **agent trifecta**: the engineer (you), the engineering team, and the AI agents. Most planning systems over-index on one: pure agent JSON nobody can read, or a human doc no agent can act on. The HTML-first format, the embedded diagrams, the checklists, and the metadata header exist so a single plan satisfies all three at once.
 
 ---
 
 ## Folder structure
 
 ```
-planf3/                             # the repo IS the plugin (and its own marketplace)
+cozyplan/                           # the repo IS the plugin (and its own marketplace)
 ├── README.md                       # this file
 ├── RAW.md                          # the raw think-out-loud spec that started the build
-├── legacy_v1_meta_plan.md          # the V1 markdown spec planf3 evolved from
+├── legacy_v1_meta_plan.md          # the V1 markdown spec CozyPlan evolved from
 ├── .gitattributes                  # merge=union on specs/*.log.ndjson (clean concurrent appends)
 │
 ├── .claude-plugin/
@@ -248,7 +246,7 @@ planf3/                             # the repo IS the plugin (and its own market
 │   └── hooks.json                  # PreToolUse guard + PostToolUse lint, registered on install
 │
 ├── skills/
-│   ├── planf3/                     # SKILL 1 — the plan layer (fully self-contained)
+│   ├── cozyplan/                   # SKILL 1 — the plan layer (fully self-contained)
 │   │   ├── SKILL.md                # API, instructions, and plan-template conventions
 │   │   ├── templates/
 │   │   │   ├── plan.html           # the HTML plan template — single source of truth (stamped by plan_tool new)
@@ -285,11 +283,11 @@ planf3/                             # the repo IS the plugin (and its own market
 │   └── <plan>.log.ndjson           # per-plan append-only event log (created on first managed write)
 │
 ├── examples/
-│   └── pi-iroh-coms-net/           # a REAL planf3 plan + its synced diagrams — open the .html in a browser
+│   └── pi-iroh-coms-net/           # a REAL CozyPlan plan + its synced diagrams — open the .html in a browser
 │
 └── images/                         # README diagrams
 
-# In a project that uses roles, planf3 also maintains:
+# In a project that uses roles, CozyPlan also maintains:
 #   roles/
 #   ├── <role>.md                   # hand-authored role source of truth (from templates/role.md)
 #   ├── <role>/memory.md            # that role's single-writer durable notes
@@ -302,10 +300,10 @@ planf3/                             # the repo IS the plugin (and its own market
 ## See it in action
 
 <p align="center">
-  <img src="examples/pi-iroh-coms-net/pi-iroh-coms-net/solution.png" alt="A real planf3-generated plan: serverless P2P agent mesh on iroh" width="780">
+  <img src="examples/pi-iroh-coms-net/pi-iroh-coms-net/solution.png" alt="A real CozyPlan-generated plan: serverless P2P agent mesh on iroh" width="780">
 </p>
 
-[`examples/pi-iroh-coms-net/pi-iroh-coms-net.html`](examples/pi-iroh-coms-net/pi-iroh-coms-net.html) is a real, unedited planf3 output. The prompt in [`prompts/pi-iroh-coms.md`](prompts/pi-iroh-coms.md) asked the agent to re-implement an HTTP agent-communication extension as a serverless peer-to-peer mesh on [iroh](https://iroh.computer). One `/planf3` run produced:
+[`examples/pi-iroh-coms-net/pi-iroh-coms-net.html`](examples/pi-iroh-coms-net/pi-iroh-coms-net.html) is a real, unedited CozyPlan output. The prompt in [`prompts/pi-iroh-coms.md`](prompts/pi-iroh-coms.md) asked the agent to re-implement an HTTP agent-communication extension as a serverless peer-to-peer mesh on [iroh](https://iroh.computer). One `/cozyplan` run produced:
 
 - a full HTML plan with metadata, four phases, per-phase checklists, and validation loops
 - eight synced diagrams (hero, problem, solution, one per phase, notes)
@@ -325,30 +323,26 @@ xdg-open examples/pi-iroh-coms-net/pi-iroh-coms-net.html    # Linux
 
 Honest edges to know before you ship plans with this:
 
-- **It's tuned for top-tier models.** Planf3 deliberately spends tokens and time. On smaller models the HTML, metadata, and image steps can overwhelm the budget; it runs, but the payoff curve is steepest on Mythos-class models.
-- **Diagrams need the `excalidraw-diagram` skill.** It's planf3's one external dependency (rendered locally, no API key). Without it the plan still writes; the `{{...IMAGE}}` slots just stay as placeholders until you run the Diagram Generation subworkflow with the skill installed.
+- **It's tuned for top-tier models.** CozyPlan deliberately spends tokens and time. On smaller models the HTML, metadata, and image steps can overwhelm the budget; it runs, but the payoff curve is steepest on Mythos-class models.
+- **Diagrams need the `excalidraw-diagram` skill.** It's CozyPlan's one external dependency (rendered locally, no API key). Without it the plan still writes; the `{{...IMAGE}}` slots just stay as placeholders until you run the Diagram Generation subworkflow with the skill installed.
 - **The agent will sometimes over-reach.** These models take one instruction and run with the whole context, so expect occasional extra edits beyond what you asked. Be surgical in your prompts; review the diff.
 - **Stray context bleeds in.** If other specs sit in `specs/`, a create run may reference them. Keep the output directory clean, or point back references deliberately.
 - **`AI_DOCS/` and `APP_DOCS/` are optional.** The skill reads them if they exist; it won't create them. Add them when you want the plan grounded in your own documentation.
 
 ---
 
+## Origins & credits
+
+CozyPlan is derived from **planf3** by [IndyDevDan](https://www.youtube.com/@indydevdan), released under the MIT license. The HTML-first plan philosophy, the original template and workflow set, and the deterministic-CLI approach all trace back to his work — CozyPlan carries that foundation forward under new maintenance.
+
+- 📺 [Planf3 on YouTube](https://youtu.be/DzbqeO_diOQ) — IndyDevDan's full breakdown of the original codebase
+- Learn tactical agentic coding patterns with [Tactical Agentic Coding](https://agenticengineer.com/tactical-agentic-coding?y=planf3)
+- Follow the [IndyDevDan YouTube channel](https://www.youtube.com/@indydevdan) to improve your agentic coding advantage
+
+> *"Stay Focused and Keep Building"* — IndyDevDan
+
+---
+
 ## License
 
 MIT — see [`LICENSE`](LICENSE).
-
----
-
-## Master Agentic Coding
-
-Prepare for the future of software engineering.
-
-Learn tactical agentic coding patterns with [Tactical Agentic Coding](https://agenticengineer.com/tactical-agentic-coding?y=planf3).
-
-Follow the [IndyDevDan YouTube channel](https://www.youtube.com/@indydevdan) to improve your agentic coding advantage.
-
----
-
-Stay Focused and Keep Building
-
-- IndyDevDan
