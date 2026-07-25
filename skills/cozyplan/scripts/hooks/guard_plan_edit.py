@@ -69,7 +69,7 @@ _SIBLING = Path(__file__).resolve().parents[1] / "plan_tool.py"
 if _SIBLING.exists():
     _TOOL = f'uv run "{_SIBLING}"'
 elif _PLUGIN_ROOT:
-    _TOOL = f'uv run "{_PLUGIN_ROOT}/skills/planf3/scripts/plan_tool.py"'
+    _TOOL = f'uv run "{_PLUGIN_ROOT}/skills/cozyplan/scripts/plan_tool.py"'
 else:
     _TOOL = "uv run scripts/plan_tool.py"
 

@@ -71,4 +71,4 @@ When a component is **added, removed, renamed, or re-owned**, update its one lin
 
 ## 4. Exit
 
-Close by summarizing the resolved decisions as **locked inputs** — the interview is done deciding; the plan does not relitigate them. Hand off to the planf3 skill: greenfield → its Create Plan workflow, a brownfield structural revision → its Update Plan workflow. The plan links the ADRs inline in its phase and task rationale, exactly as a plan authored from a locked design session does.
+Close by summarizing the resolved decisions as **locked inputs** — the interview is done deciding; the plan does not relitigate them. Hand off to the cozyplan skill: greenfield → its Create Plan workflow, a brownfield structural revision → its Update Plan workflow. The plan links the ADRs inline in its phase and task rationale, exactly as a plan authored from a locked design session does.

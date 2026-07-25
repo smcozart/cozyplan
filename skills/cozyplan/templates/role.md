@@ -43,7 +43,7 @@ routes it to them), with a clear summary, the plan `id`, and the commit SHAs. Bl
 and scope questions go to {{REPORTS_TO}} the same way — as a PR comment or an escalation.
 
 ## Session bootstrap
-1. Read the planf3 `SKILL.md` (plugin-supplied — no `.claude/skills/` path).
+1. Read the cozyplan `SKILL.md` (plugin-supplied — no `.claude/skills/` path).
 2. Read this file ({{ROLE_ID}}).
 3. Open `specs/_index.html` filtered to owner={{ROLE_ID}} and your active plan.
 4. Read `roles/{{ROLE_ID}}/memory.md`.

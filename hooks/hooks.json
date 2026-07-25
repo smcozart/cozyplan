@@ -1,5 +1,5 @@
 {
-  "description": "planf3 plan-write hardening. PreToolUse guard steers raw Edit/Write of CLI-managed plan regions (status/metadata/amendments) to plan_tool. PostToolUse lint runs plan_tool validate after any write to specs/*.html and reports failures back to the agent. Both fail open — if uv is missing, enforcement silently disappears.",
+  "description": "cozyplan plan-write hardening. PreToolUse guard steers raw Edit/Write of CLI-managed plan regions (status/metadata/amendments) to plan_tool. PostToolUse lint runs plan_tool validate after any write to specs/*.html and reports failures back to the agent. Both fail open — if uv is missing, enforcement silently disappears.",
   "hooks": {
     "PreToolUse": [
       {
@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run \"${CLAUDE_PLUGIN_ROOT}/skills/planf3/scripts/hooks/guard_plan_edit.py\""
+            "command": "uv run \"${CLAUDE_PLUGIN_ROOT}/skills/cozyplan/scripts/hooks/guard_plan_edit.py\""
           }
         ]
       }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run \"${CLAUDE_PLUGIN_ROOT}/skills/planf3/scripts/hooks/lint_plan.py\""
+            "command": "uv run \"${CLAUDE_PLUGIN_ROOT}/skills/cozyplan/scripts/hooks/lint_plan.py\""
           }
         ]
       }

@@ -30,7 +30,7 @@ def resolve_tool(project_root: Path) -> Path | None:
         return sibling
     plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT")
     if plugin_root:
-        for rel in ("skills/planf3/scripts/plan_tool.py", "scripts/plan_tool.py"):
+        for rel in ("skills/cozyplan/scripts/plan_tool.py", "scripts/plan_tool.py"):
             p = Path(plugin_root) / rel
             if p.exists():
                 return p

@@ -4,13 +4,13 @@ Scope a project (not a single plan) into **roles** — the owners of its plans, 
 docs. Roles are project-scoped: generated once at kickoff and revised as the architecture
 evolves. Each role is one hand-authored source-of-truth file at `roles/<role>.md`; the
 **ownership map** (`roles/_roles.json`) and `.github/CODEOWNERS` are generated from those
-files. planf3 only *compiles* the map — ownership is enforced by git + PR review +
+files. cozyplan only *compiles* the map — ownership is enforced by git + PR review +
 CODEOWNERS, not at edit time, and `git blame` answers "who changed my file." Author role
 files from `templates/role.md`.
 
 **Role mode is opt-in.** Run this workflow only when the user explicitly asks for roles
 (or asks to scope a team). If the user's prompt is ambiguous about wanting roles, ask
-before creating any `roles/` artifacts — some users deliberately run planf3 role-free
+before creating any `roles/` artifacts — some users deliberately run cozyplan role-free
 with their own agentic approach, and that is a fully supported mode.
 
 1. **Derive candidate roles from the plan/project structure.**

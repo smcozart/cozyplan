@@ -16,7 +16,7 @@ Read the standing context before interviewing or orienting, in this order:
 1. `STACK.md` (repo root) — technology defaults and their lanes
 2. `CONTEXT.md` (repo root) — the glossary
 3. `docs/adr/` — scan the ADR titles; open the ones in scope
-4. `specs/_index.html` — the plan catalog, if the repo uses planf3
+4. `specs/_index.html` — the plan catalog, if the repo uses cozyplan
 5. (brownfield) the relevant **code** — the source of truth for how components actually wire and behave
 
 Missing files are normal on a fresh repo; create them lazily when the first thing worth writing appears. Never block on them.
@@ -48,4 +48,4 @@ Discuss interviews, records, and hands off — nothing more. It does not enforce
 
 ## Exit
 
-An interview ends by summarizing its resolved decisions as **locked inputs** and handing them to the planf3 skill: greenfield work → its Create Plan workflow, a brownfield structural revision → its Update Plan workflow. The plan links the ADRs inline in its phase and task rationale.
+An interview ends by summarizing its resolved decisions as **locked inputs** and handing them to the cozyplan skill: greenfield work → its Create Plan workflow, a brownfield structural revision → its Update Plan workflow. The plan links the ADRs inline in its phase and task rationale.

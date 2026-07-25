@@ -1,4 +1,4 @@
-"""Shared fixtures and helpers for the planf3 regression suite.
+"""Shared fixtures and helpers for the cozyplan regression suite.
 
 plan_tool is loaded as an in-process module (fast) and its commands are driven
 through `plan_tool.main(argv)`, which returns the process exit code. The two hooks
@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent
-SCRIPTS = REPO / "skills" / "planf3" / "scripts"
+SCRIPTS = REPO / "skills" / "cozyplan" / "scripts"
 PLAN_TOOL_PY = SCRIPTS / "plan_tool.py"
 GUARD_HOOK = SCRIPTS / "hooks" / "guard_plan_edit.py"
 LINT_HOOK = SCRIPTS / "hooks" / "lint_plan.py"
@@ -118,7 +118,7 @@ def sidecar_events(plan_path: Path) -> list[dict]:
 def run_hook(hook_path: Path, payload: dict, env: dict | None = None):
     """Run a hook script as a subprocess, feeding `payload` as JSON on stdin."""
     e = os.environ.copy()
-    e.pop("PLANF3_ROLE", None)
+    e.pop("COZYPLAN_ROLE", None)
     e.pop("CLAUDE_PLUGIN_ROOT", None)
     if env:
         e.update(env)

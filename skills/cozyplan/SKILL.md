@@ -1,10 +1,10 @@
 ---
-name: planf3
+name: cozyplan
 description: Creates and maintains concise HTML-first engineering implementation plans in the specs directory — scaffold new plans, update or build existing ones, refresh references, and generate role/CODEOWNERS ownership maps. Use when the user wants to plan, spec, or design new work, or to update, implement, or build an existing plan.
 argument-hint: "[user-prompt]"
 ---
 
-# Plan F3
+# CozyPlan
 
 ## Purpose
 
@@ -21,7 +21,7 @@ AI_DOCS: `AI_DOCS/`
 APP_DOCS: `APP_DOCS/`
 IDE: `code`
 BROWSER: `chrome`
-PLAN_TOOL: the deterministic CLI that owns all structured writes to a plan (status, metadata, references, amendments) plus `validate` and `index`. It ships **inside this skill** at `scripts/plan_tool.py`. Resolve it once at session start, in order: (1) if the `CLAUDE_PLUGIN_ROOT` environment variable is set (plugin install — the normal case), use `uv run "${CLAUDE_PLUGIN_ROOT}/skills/planf3/scripts/plan_tool.py"` with the path **quoted** (plugin roots can contain spaces); (2) otherwise use the copy in this skill's own directory — `uv run "<skill-dir>/scripts/plan_tool.py"` where `<skill-dir>` is the directory containing this SKILL.md (bare-skill installs, e.g. `npx skills add` → `.claude/skills/planf3/` or `~/.claude/skills/planf3/`); (3) as a last resort fall back to `uv run scripts/plan_tool.py` (legacy project-local `scripts/`). Every `PLAN_TOOL …` invocation below means that resolved command
+PLAN_TOOL: the deterministic CLI that owns all structured writes to a plan (status, metadata, references, amendments) plus `validate` and `index`. It ships **inside this skill** at `scripts/plan_tool.py`. Resolve it once at session start, in order: (1) if the `CLAUDE_PLUGIN_ROOT` environment variable is set (plugin install — the normal case), use `uv run "${CLAUDE_PLUGIN_ROOT}/skills/cozyplan/scripts/plan_tool.py"` with the path **quoted** (plugin roots can contain spaces); (2) otherwise use the copy in this skill's own directory — `uv run "<skill-dir>/scripts/plan_tool.py"` where `<skill-dir>` is the directory containing this SKILL.md (bare-skill installs, e.g. `npx skills add` → `.claude/skills/cozyplan/` or `~/.claude/skills/cozyplan/`); (3) as a last resort fall back to `uv run scripts/plan_tool.py` (legacy project-local `scripts/`). Every `PLAN_TOOL …` invocation below means that resolved command
 
 ## Instructions
 
@@ -47,13 +47,13 @@ PLAN_TOOL: the deterministic CLI that owns all structured writes to a plan (stat
 - Consider edge cases, error handling, and scalability concerns
 - Save the complete plan to `PLAN_FILE` using a descriptive kebab-case filename
 
-## Scope — planf3 is the plan layer, not the enforcement layer
+## Scope — cozyplan is the plan layer, not the enforcement layer
 
-planf3 owns **plans/intent**: it makes a plan deterministic, browsable, and internally coherent. It does **not** reimplement enforcement, revert points, or accountability — **git does that**: branches + PRs gate merges, CODEOWNERS routes review, `git tag`/commits are your revert points, `git blame` answers "who changed this," and CI is your definition of done. Use planf3 for the plan; use git for everything around it. (An earlier version grew a coordination/enforcement layer — protect-mode role denial, verified checkpoints, acceptance queues, seams, drift dashboards — that presented as guarantees it couldn't keep under real multi-agent use. It was removed; git already does those jobs, and does them for real.)
+cozyplan owns **plans/intent**: it makes a plan deterministic, browsable, and internally coherent. It does **not** reimplement enforcement, revert points, or accountability — **git does that**: branches + PRs gate merges, CODEOWNERS routes review, `git tag`/commits are your revert points, `git blame` answers "who changed this," and CI is your definition of done. Use cozyplan for the plan; use git for everything around it. (An earlier version grew a coordination/enforcement layer — protect-mode role denial, verified checkpoints, acceptance queues, seams, drift dashboards — that presented as guarantees it couldn't keep under real multi-agent use. It was removed; git already does those jobs, and does them for real.)
 
 ## Context Layer
 
-Beside the plans, a project may carry four living context artifacts, **owned and defined by the sibling `discuss` skill** (see its Context artifacts table) — planf3 *reads* them when planning but never manages them, and `PLAN_TOOL` has no role in any of them:
+Beside the plans, a project may carry four living context artifacts, **owned and defined by the sibling `discuss` skill** (see its Context artifacts table) — cozyplan *reads* them when planning but never manages them, and `PLAN_TOOL` has no role in any of them:
 
 | Artifact | Location | Read it for |
 | --- | --- | --- |
@@ -91,7 +91,7 @@ To record which commit implemented a plan, append it with `PLAN_TOOL meta <plan>
 
 ### Roles (ownership map → CODEOWNERS — OPT-IN)
 
-Roles are **optional and off by default** — they activate only when the user runs the `Generate Roles` workflow (or a `roles/` directory already exists); never enable them on your own initiative. Without them, planf3 is a pure planning tool and `owner` is just a free label. They are a **pure ownership-map generator, not an enforcement engine**: `PLAN_TOOL roles build` compiles hand-authored `roles/*.md` into `roles/_roles.json` + `.github/CODEOWNERS`, and enforcement is git's job (PR review routing + branch protection + `git blame`). Full mechanics live in `workflows/generate-roles.md`; the assume-a-role read order lives in each role file's **Session bootstrap** section (from `templates/role.md`) — pass `--role <R>` on `PLAN_TOOL` calls to label your events.
+Roles are **optional and off by default** — they activate only when the user runs the `Generate Roles` workflow (or a `roles/` directory already exists); never enable them on your own initiative. Without them, cozyplan is a pure planning tool and `owner` is just a free label. They are a **pure ownership-map generator, not an enforcement engine**: `PLAN_TOOL roles build` compiles hand-authored `roles/*.md` into `roles/_roles.json` + `.github/CODEOWNERS`, and enforcement is git's job (PR review routing + branch protection + `git blame`). Full mechanics live in `workflows/generate-roles.md`; the assume-a-role read order lives in each role file's **Session bootstrap** section (from `templates/role.md`) — pass `--role <R>` on `PLAN_TOOL` calls to label your events.
 
 ## Workflow
 

@@ -3,12 +3,12 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-"""planf3 plan_tool — deterministic writes, validation, and indexing for specs/*.html plans.
+"""cozyplan plan_tool — deterministic writes, validation, and indexing for specs/*.html plans.
 
 Every structured mutation of a living plan artifact goes through this tool instead of
 free-form edits, so status markers, append-only metadata, references, and amendments stay
 well-formed. Locating regions relies on machine-readable data-* anchors baked into the
-plan template (see .claude/skills/planf3/SKILL.md). Stdlib only — run via `uv run`.
+plan template (see .claude/skills/cozyplan/SKILL.md). Stdlib only — run via `uv run`.
 
 Commands:
   new        scaffold a fresh plan from templates/plan.html
@@ -22,7 +22,7 @@ Commands:
   roles      build: generate roles/_roles.json + .github/CODEOWNERS from roles/*.md
   brief      compact plain-text extract of a plan (or --all for a one-liner index)
 
-Scope: planf3 is the *plan/intent* layer. Enforcement, revert points, and
+Scope: cozyplan is the *plan/intent* layer. Enforcement, revert points, and
 accountability are git's job (branches, PRs, CODEOWNERS, tags, CI) — this tool
 does not reimplement them. Every mutating command appends a one-line JSON event
 to specs/<plan>.log.ndjson (append-only, merge-friendly) and updates the HTML.
@@ -367,7 +367,7 @@ def validate_text(path: Path, text: str) -> tuple[list[str], list[str], bool]:
         if not meta.get(field) or meta[field] in EMPTY_MARKERS or is_placeholder(meta.get(field, "")):
             problems.append(f"metadata field {field!r} is missing or empty")
     if meta.get("schema") and meta["schema"].isdigit() and int(meta["schema"]) > MAX_SCHEMA:
-        problems.append(f"schema {meta['schema']} newer than supported {MAX_SCHEMA}; update planf3")
+        problems.append(f"schema {meta['schema']} newer than supported {MAX_SCHEMA}; update cozyplan")
     if meta.get("status") and meta["status"] not in STATUS_VOCAB:
         problems.append(f"status {meta['status']!r} not in {sorted(STATUS_VOCAB)}")
     if meta.get("created") and "," in meta["created"]:
@@ -451,7 +451,7 @@ def schema_ok(path: Path, text: str) -> bool:
         return True  # tolerate a non-numeric stamp rather than block
     if n > MAX_SCHEMA:
         fail(f"{path.name} declares schema {n} but this plan_tool supports up to "
-             f"{MAX_SCHEMA}; update planf3 before writing this plan")
+             f"{MAX_SCHEMA}; update cozyplan before writing this plan")
         return False
     return True
 
@@ -799,7 +799,7 @@ def render_index_html(plans: list[dict], dangling: list, as_of: str = "") -> str
     return f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>planf3 — Plan Index</title>
+<title>cozyplan — Plan Index</title>
 <style>
   :root {{ --bg:#0E1116; --surface:#161B22; --border:#2A3344; --text:#E6EAF2;
     --muted:#9AA7BD; --violet:#8B7FF7; --amber:#F5B547; --red:#F87171; }}
@@ -1077,8 +1077,8 @@ def template_candidates() -> list[Path]:
     with the in-project `.claude/skills/...` layout and the moved-as-a-unit layout.
     """
     rels = [
-        Path(".claude") / "skills" / "planf3" / "templates" / "plan.html",
-        Path("skills") / "planf3" / "templates" / "plan.html",
+        Path(".claude") / "skills" / "cozyplan" / "templates" / "plan.html",
+        Path("skills") / "cozyplan" / "templates" / "plan.html",
         Path("templates") / "plan.html",
     ]
     roots: list[Path] = []
