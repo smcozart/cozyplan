@@ -21,14 +21,19 @@ HTML_IN_TEXT = re.compile(r'([^\s"\']*specs[\\/][^\s"\']*\.html)')
 
 
 def resolve_tool(project_root: Path) -> Path | None:
-    """Locate plan_tool.py: prefer the bundled plugin copy (CLAUDE_PLUGIN_ROOT),
-    fall back to the project's own scripts/ so the same script runs project-local
-    or plugin-bundled."""
+    """Locate plan_tool.py: prefer the copy that ships beside this hook (the
+    skill directory moves as one unit — plugin install, `npx skills add`, or
+    plain clone all keep scripts/hooks/ next to scripts/plan_tool.py), then the
+    plugin root, then the project's own scripts/ (legacy layout)."""
+    sibling = Path(__file__).resolve().parents[1] / "plan_tool.py"
+    if sibling.exists():
+        return sibling
     plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT")
     if plugin_root:
-        p = Path(plugin_root) / "scripts" / "plan_tool.py"
-        if p.exists():
-            return p
+        for rel in ("skills/planf3/scripts/plan_tool.py", "scripts/plan_tool.py"):
+            p = Path(plugin_root) / rel
+            if p.exists():
+                return p
     p = project_root / "scripts" / "plan_tool.py"
     return p if p.exists() else None
 

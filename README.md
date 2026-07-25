@@ -30,6 +30,16 @@ The first command registers this repo as a plugin marketplace; the second instal
 
 Diagrams are the plugin's one external dependency: the globally-installed [`excalidraw-diagram`](#the-workflows) skill renders them locally, key-free. Without it a plan still writes; the `{{...IMAGE}}` slots stay as placeholders until you run the Diagram Generation subworkflow with the skill present.
 
+### Or: install as bare skills (npx)
+
+The repo is also a valid source for the [`skills` CLI](https://github.com/vercel-labs/skills) — both skill directories are fully self-contained (the `plan_tool.py` CLI and both hook scripts ship inside `skills/planf3/scripts/`, so they travel with the skill):
+
+```
+npx skills add smcozart/planf3
+```
+
+Select `planf3` (and `discuss` — recommended; it's the interview/context half) plus your agent, and the skills install into `.claude/skills/` (`-g` for global). Two differences from the plugin install: the coherence hooks are **not** auto-registered — every `plan_tool` op still self-validates, and the skill will offer to wire the hooks into `.claude/settings.json` if you ask — and updates come from `npx skills update` instead of the plugin marketplace.
+
 ### Migrating from the copy-install
 
 Earlier versions of planf3 were installed by hand-copying the skill and merging hooks into each project. If you did that, undo it when you move to the plugin — otherwise the skill and the hooks each register **twice**:
@@ -148,7 +158,7 @@ The result: plans record *what and when*, ADRs record *why*, the glossary record
 
 A plan is a living artifact many agents (and, soon, many roles) touch over time. To keep those touches deterministic and merge-friendly, every *structured* write goes through one CLI instead of free-form edits.
 
-**`scripts/plan_tool.py`** — a stdlib-only CLI (run with `uv run`) that owns all managed writes. It targets machine-readable `data-*` anchors baked into the template, so it always writes well-formed HTML:
+**`skills/planf3/scripts/plan_tool.py`** — a stdlib-only CLI (run with `uv run`) that owns all managed writes. It targets machine-readable `data-*` anchors baked into the template, so it always writes well-formed HTML:
 
 | Command | What it does |
 |---|---|
@@ -238,18 +248,23 @@ planf3/                             # the repo IS the plugin (and its own market
 │   └── hooks.json                  # PreToolUse guard + PostToolUse lint, registered on install
 │
 ├── skills/
-│   ├── planf3/                     # SKILL 1 — the plan layer
+│   ├── planf3/                     # SKILL 1 — the plan layer (fully self-contained)
 │   │   ├── SKILL.md                # API, instructions, and plan-template conventions
 │   │   ├── templates/
 │   │   │   ├── plan.html           # the HTML plan template — single source of truth (stamped by plan_tool new)
 │   │   │   └── role.md             # source template for a project's role files
-│   │   └── workflows/              # five workflows + one subworkflow
-│   │       ├── create-plan.md      # step 1 invokes the discuss skill by default
-│   │       ├── update-plan.md
-│   │       ├── update-references.md
-│   │       ├── build-plan.md       # close step maintains the SYSTEM.md component map
-│   │       ├── generate-roles.md   # scope a project into roles / who-owns-what
-│   │       └── diagram-generation.md   # subworkflow — local Excalidraw diagrams
+│   │   ├── workflows/              # five workflows + one subworkflow
+│   │   │   ├── create-plan.md      # step 1 invokes the discuss skill by default
+│   │   │   ├── update-plan.md
+│   │   │   ├── update-references.md
+│   │   │   ├── build-plan.md       # close step maintains the SYSTEM.md component map
+│   │   │   ├── generate-roles.md   # scope a project into roles / who-owns-what
+│   │   │   └── diagram-generation.md   # subworkflow — local Excalidraw diagrams
+│   │   └── scripts/                # ships WITH the skill, so bare-skill installs carry the CLI
+│   │       ├── plan_tool.py        # deterministic CLI for all managed plan writes + validate/index/roles
+│   │       └── hooks/
+│   │           ├── guard_plan_edit.py  # PreToolUse — steers raw edits of managed regions to plan_tool
+│   │           └── lint_plan.py        # PostToolUse — validates specs/*.html after any write
 │   └── discuss/                    # SKILL 2 — the understanding loop
 │       ├── SKILL.md                # interview + records + orient
 │       ├── templates/
@@ -260,12 +275,6 @@ planf3/                             # the repo IS the plugin (and its own market
 │           ├── interview.md        # the relentless, depth-scaled interview + capture rules
 │           ├── seed-stack.md       # first-run STACK.md creation
 │           └── orient.md           # understand how the system runs today (never stored)
-│
-├── scripts/
-│   ├── plan_tool.py                # deterministic CLI for all managed plan writes + validate/index/roles
-│   └── hooks/
-│       ├── guard_plan_edit.py      # PreToolUse — steers raw edits of managed regions to plan_tool
-│       └── lint_plan.py            # PostToolUse — validates specs/*.html after any write
 │
 ├── prompts/
 │   └── pi-iroh-coms.md             # the demo prompt

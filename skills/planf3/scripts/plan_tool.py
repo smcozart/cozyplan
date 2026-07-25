@@ -1086,7 +1086,7 @@ def template_candidates() -> list[Path]:
     if pr:
         roots.append(Path(pr))
     roots.append(Path.cwd())
-    roots.append(Path(__file__).resolve().parent.parent)  # <repo>/scripts/ -> <repo>/
+    roots.append(Path(__file__).resolve().parent.parent)  # <skill>/scripts/ -> <skill>/ (templates/ sits beside scripts/)
     seen: list[Path] = []
     for root in roots:
         for rel in rels:

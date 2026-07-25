@@ -20,9 +20,10 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent
-PLAN_TOOL_PY = REPO / "scripts" / "plan_tool.py"
-GUARD_HOOK = REPO / "scripts" / "hooks" / "guard_plan_edit.py"
-LINT_HOOK = REPO / "scripts" / "hooks" / "lint_plan.py"
+SCRIPTS = REPO / "skills" / "planf3" / "scripts"
+PLAN_TOOL_PY = SCRIPTS / "plan_tool.py"
+GUARD_HOOK = SCRIPTS / "hooks" / "guard_plan_edit.py"
+LINT_HOOK = SCRIPTS / "hooks" / "lint_plan.py"
 
 
 def _load_plan_tool():

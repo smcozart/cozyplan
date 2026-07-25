@@ -21,7 +21,7 @@ AI_DOCS: `AI_DOCS/`
 APP_DOCS: `APP_DOCS/`
 IDE: `code`
 BROWSER: `chrome`
-PLAN_TOOL: the deterministic CLI that owns all structured writes to a plan (status, metadata, references, amendments) plus `validate` and `index`. Resolve it once at session start: if the `CLAUDE_PLUGIN_ROOT` environment variable is set (plugin install — the normal case), use `uv run "${CLAUDE_PLUGIN_ROOT}/scripts/plan_tool.py"` with the path **quoted** (plugin roots can contain spaces); otherwise fall back to `uv run scripts/plan_tool.py` (project-local `scripts/`, plain-clone/standalone mode). Every `PLAN_TOOL …` invocation below means that resolved command
+PLAN_TOOL: the deterministic CLI that owns all structured writes to a plan (status, metadata, references, amendments) plus `validate` and `index`. It ships **inside this skill** at `scripts/plan_tool.py`. Resolve it once at session start, in order: (1) if the `CLAUDE_PLUGIN_ROOT` environment variable is set (plugin install — the normal case), use `uv run "${CLAUDE_PLUGIN_ROOT}/skills/planf3/scripts/plan_tool.py"` with the path **quoted** (plugin roots can contain spaces); (2) otherwise use the copy in this skill's own directory — `uv run "<skill-dir>/scripts/plan_tool.py"` where `<skill-dir>` is the directory containing this SKILL.md (bare-skill installs, e.g. `npx skills add` → `.claude/skills/planf3/` or `~/.claude/skills/planf3/`); (3) as a last resort fall back to `uv run scripts/plan_tool.py` (legacy project-local `scripts/`). Every `PLAN_TOOL …` invocation below means that resolved command
 
 ## Instructions
 
@@ -67,6 +67,8 @@ When these files are present, read them during Create/Update so plans challenge 
 ## Managed Writes
 
 The plan HTML is a living artifact. Some regions are **CLI-managed** and should go through `PLAN_TOOL` so writes stay deterministic and well-formed. A `PreToolUse` **coherence guard** steers raw edits of these regions back to `PLAN_TOOL`, and a `PostToolUse` hook validates the file after every write. (The guard is a coherence aid for a cooperative agent — it is **not** tamper-proof: a Bash/`sed`/out-of-tool write bypasses it by design. Correctness comes from `validate`, which every op runs, not from the hook.)
+
+**Bare-skill installs** (e.g. `npx skills add` — no plugin, so the hooks above are not auto-registered): correctness still holds, because every `PLAN_TOOL` op self-validates — route managed writes through `PLAN_TOOL` yourself with extra care. To restore edit-time steering, you may offer (with the user's explicit approval — never silently, since hooks execute commands) to merge the two hook entries into the project's `.claude/settings.json`, pointing `PreToolUse → "uv run \"<skill-dir>/scripts/hooks/guard_plan_edit.py\""` (matcher `Edit|MultiEdit|Write`) and `PostToolUse → "uv run \"<skill-dir>/scripts/hooks/lint_plan.py\""` (matcher `Edit|MultiEdit|Write|Bash`).
 
 **Draft authoring window.** While a plan's `status` is `draft` (the state `new` stamps), the guard permits *structural* authoring via Edit — duplicating and renumbering phase/task blocks together with their `data-*` anchors and status markers — because the Create workflow requires it. Metadata (`data-meta=`) and the amendments region stay CLI-only in every status. Once the plan leaves `draft`, all managed tokens (anchors, markers, metadata, amendments) are CLI-only again.
 

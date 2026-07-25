@@ -60,15 +60,18 @@ DRAFT_HARD_TOKENS = (
     'id="amendments"',
 )
 
-# The hint must point at a plan_tool that actually exists where the agent runs:
-# the plugin-bundled copy when installed via CLAUDE_PLUGIN_ROOT, else the
-# project-local scripts/ copy (plain clone / standalone mode).
+# The hint must point at a plan_tool that actually exists where the agent runs.
+# plan_tool.py ships beside this hook (the skill directory moves as one unit),
+# so the sibling copy is authoritative; fall back to the plugin root, then the
+# legacy project-local scripts/ layout.
 _PLUGIN_ROOT = os.environ.get("CLAUDE_PLUGIN_ROOT", "").rstrip("/\\")
-_TOOL = (
-    f'uv run "{_PLUGIN_ROOT}/scripts/plan_tool.py"'
-    if _PLUGIN_ROOT
-    else "uv run scripts/plan_tool.py"
-)
+_SIBLING = Path(__file__).resolve().parents[1] / "plan_tool.py"
+if _SIBLING.exists():
+    _TOOL = f'uv run "{_SIBLING}"'
+elif _PLUGIN_ROOT:
+    _TOOL = f'uv run "{_PLUGIN_ROOT}/skills/planf3/scripts/plan_tool.py"'
+else:
+    _TOOL = "uv run scripts/plan_tool.py"
 
 CLI_HINT = (
     "This edit touches a CLI-managed region of the plan (status markers, metadata, "

@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/guard_plan_edit.py\""
+            "command": "uv run \"${CLAUDE_PLUGIN_ROOT}/skills/planf3/scripts/hooks/guard_plan_edit.py\""
           }
         ]
       }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/lint_plan.py\""
+            "command": "uv run \"${CLAUDE_PLUGIN_ROOT}/skills/planf3/scripts/hooks/lint_plan.py\""
           }
         ]
       }

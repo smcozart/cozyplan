@@ -1,7 +1,7 @@
 # planf3 regression suite
 
-Regression tests for `scripts/plan_tool.py` and the two hooks
-(`scripts/hooks/guard_plan_edit.py`, `scripts/hooks/lint_plan.py`).
+Regression tests for `skills/planf3/scripts/plan_tool.py` and the two hooks
+(`skills/planf3/scripts/hooks/guard_plan_edit.py`, `skills/planf3/scripts/hooks/lint_plan.py`).
 
 ## Running
 
