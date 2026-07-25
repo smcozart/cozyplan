@@ -36,7 +36,15 @@ The repo is also a valid source for the [`skills` CLI](https://github.com/vercel
 npx skills add smcozart/cozyplan
 ```
 
-Select `cozyplan` (and `discuss` — recommended; it's the interview/context half) plus your agent, and the skills install into `.claude/skills/` (`-g` for global). Two differences from the plugin install: the coherence hooks are **not** auto-registered — every `plan_tool` op still self-validates, and the skill will offer to wire the hooks into `.claude/settings.json` if you ask — and updates come from `npx skills update` instead of the plugin marketplace.
+Select `cozyplan` (and `discuss` — recommended; it's the interview/context half) plus your agent, and the skills install into `.claude/skills/` (`-g` for global). Two differences from the plugin install: the coherence hooks are **not** auto-registered, and updates come from `npx skills update` instead of the plugin marketplace.
+
+**Enable the hooks after an npx install with one command** (from your project root):
+
+```
+uv run .claude/skills/cozyplan/scripts/plan_tool.py hooks install
+```
+
+Add `--global` to register them user-wide (`~/.claude/settings.json`) instead of per-project; `hooks remove` undoes it. The command is idempotent (safe to re-run; it re-points paths rather than duplicating entries), preserves your other settings, and takes effect on the next Claude Code restart. Skipping it is fine too — every `plan_tool` operation still self-validates; the hooks just add edit-time steering and automatic lint feedback.
 
 ### Migrating from the copy-install
 

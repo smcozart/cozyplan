@@ -1250,6 +1250,73 @@ def cmd_brief(args) -> int:
     return 0
 
 
+# ── hooks (register/unregister the coherence hooks in settings.json) ──────────
+# Bare-skill installs (npx skills add) carry the hook scripts but nothing
+# registers them — this command closes that gap. Keyed by script filename so
+# re-running re-points a stale path instead of duplicating the entry.
+HOOK_MATCHERS = {
+    "guard_plan_edit.py": ("PreToolUse", "Edit|MultiEdit|Write"),
+    "lint_plan.py": ("PostToolUse", "Edit|MultiEdit|Write|Bash"),
+}
+
+
+def cmd_hooks(args) -> int:
+    hook_dir = Path(__file__).resolve().parent / "hooks"
+    if args.settings:
+        settings_path = Path(args.settings)
+    elif args.global_:
+        settings_path = Path.home() / ".claude" / "settings.json"
+    else:
+        settings_path = Path(".claude") / "settings.json"
+
+    if args.hooks_cmd == "install":
+        missing = [n for n in HOOK_MATCHERS if not (hook_dir / n).exists()]
+        if missing:
+            return fail(f"hook script(s) not found beside plan_tool: {', '.join(missing)}")
+
+    data = {}
+    if settings_path.exists():
+        try:
+            data = json.loads(settings_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as e:
+            return fail(f"cannot parse {settings_path}: {e}")
+        if not isinstance(data, dict):
+            return fail(f"{settings_path} is not a JSON object")
+
+    hooks = data.setdefault("hooks", {})
+    changed = []
+    for script, (event, matcher) in HOOK_MATCHERS.items():
+        entries = hooks.setdefault(event, [])
+        before = len(entries)
+        entries[:] = [
+            blk for blk in entries
+            if not any(script in (h.get("command") or "")
+                       for h in (blk.get("hooks") or []) if isinstance(h, dict))
+        ]
+        removed = before - len(entries)
+        if args.hooks_cmd == "install":
+            cmd_str = f'uv run "{(hook_dir / script).as_posix()}"'
+            entries.append({"matcher": matcher,
+                            "hooks": [{"type": "command", "command": cmd_str}]})
+            changed.append(f"{event}: {script} registered" + (" (re-pointed)" if removed else ""))
+        elif removed:
+            changed.append(f"{event}: {script} removed")
+        if not entries:
+            hooks.pop(event, None)
+    if not data.get("hooks"):
+        data.pop("hooks", None)
+
+    if not changed:
+        print(f"hooks: nothing to do in {settings_path}")
+        return 0
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    for c in changed:
+        print(f"hooks: {c}")
+    print(f"hooks: wrote {settings_path} — restart Claude Code (or reload settings) to take effect")
+    return 0
+
+
 # ── argparse wiring ───────────────────────────────────────────────────────────
 def build_parser() -> argparse.ArgumentParser:
     parent = argparse.ArgumentParser(add_help=False)
@@ -1318,6 +1385,15 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--dir", default="roles", help="roles directory (default: roles)")
     sp.add_argument("--codeowners", default=None, help="CODEOWNERS output path (default: .github/CODEOWNERS)")
     sp.set_defaults(func=cmd_roles)
+
+    sp = sub.add_parser("hooks", parents=[parent],
+                        help="register/unregister the coherence hooks in .claude/settings.json (for bare-skill installs)")
+    sp.add_argument("hooks_cmd", choices=["install", "remove"], help="install or remove the two hook entries")
+    sp.add_argument("--settings", default=None,
+                    help="explicit settings.json path (default: ./.claude/settings.json)")
+    sp.add_argument("--global", dest="global_", action="store_true",
+                    help="target ~/.claude/settings.json instead of the project settings")
+    sp.set_defaults(func=cmd_hooks)
 
     sp = sub.add_parser("brief", parents=[parent],
                         help="compact plain-text extract of a plan (or --all for a one-liner index)")
