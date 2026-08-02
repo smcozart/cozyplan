@@ -37,6 +37,20 @@ def test_index_flags_dangling_backref(pt, new_plan, specs):
     assert ["idx-dangle.html", "back-refs", "ghost.html"] in [list(d) for d in data["dangling"]]
 
 
+def test_index_reads_past_the_modified_elision_marker(pt, new_plan, specs):
+    # `modified` is compacted to a tail plus a `(+N earlier)` marker; the index
+    # still has to report a real timestamp, not the marker.
+    plan = new_plan("idx-mod", title="Compacted")
+    for i in range(9):
+        pt.main(["meta", str(plan), "--field", "modified",
+                 "--value", f"2026-04-{i + 1:02d}T00:00:00-05:00"])
+    _index(pt, specs)
+    data = json.loads(read(specs / "_index.json"))
+    entry = next(p for p in data["plans"] if p["file"] == "idx-mod.html")
+    assert entry["modified"] == "2026-04-09T00:00:00-05:00"
+    assert data["as_of"] == "2026-04-09T00:00:00-05:00"
+
+
 def test_scan_drift_catches_planted_token(pt, tmp_path):
     root = tmp_path / "proj"
     (root / "docs").mkdir(parents=True)

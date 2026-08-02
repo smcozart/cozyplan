@@ -25,11 +25,15 @@ def _is_deny(result):
     return bool(d) and d.get("permissionDecision") == "deny"
 
 
+def _marker(task="1.1", state=""):
+    return f'<code class="status" data-status-for="{task}">[{state}]</code>'
+
+
 # ── managed-region checks (specs/*.html) ──────────────────────────────────────
 def test_deny_edit_touching_status_marker(tmp_path):
     fp = _specs_html(tmp_path)
     payload = _payload("Edit", fp, tmp_path,
-                       old_string="<code>[]</code>", new_string="<code>[wip]</code>")
+                       old_string=_marker(), new_string=_marker(state="wip"))
     assert _is_deny(run_hook(GUARD_HOOK, payload))
 
 
@@ -141,7 +145,7 @@ def test_capitalized_specs_segment_still_guarded(tmp_path):
 def test_capitalized_html_edit_still_guarded(tmp_path):
     fp = _specs_html(tmp_path)
     payload = _payload("Edit", str(fp).replace("specs", "SPECS"), tmp_path,
-                       old_string='<code>[]</code>', new_string='<code>[wip]</code>')
+                       old_string=_marker(), new_string=_marker(state="wip"))
     assert _is_deny(run_hook(GUARD_HOOK, payload))
 
 
@@ -151,5 +155,74 @@ def test_non_specs_dir_not_guarded(tmp_path):
     fp.parent.mkdir(parents=True, exist_ok=True)
     fp.write_text("<html>notes</html>", encoding="utf-8")
     payload = _payload("Edit", fp, tmp_path,
-                       old_string='<code>[]</code>', new_string='<code>[wip]</code>')
+                       old_string=_marker(), new_string=_marker(state="wip"))
     assert hook_decision(run_hook(GUARD_HOOK, payload)) is None
+
+
+# ── free-form regions stay editable (bracket forms that are not markers) ──────
+# Purpose/Problem/Solution/Notes are prose. A bracket only counts as a status
+# marker inside its <code class="status"> wrapper — code samples, type hints and
+# markdown checkboxes must pass through a non-draft plan untouched.
+def _nondraft(tmp_path):
+    return _draft_plan(tmp_path, status="active")
+
+
+def test_allow_code_sample_with_empty_subscript(tmp_path):
+    fp = _nondraft(tmp_path)
+    payload = _payload("Edit", fp, tmp_path,
+                       old_string="<pre><code>rows = list()</code></pre>",
+                       new_string="<pre><code>rows: list[] = []</code></pre>")
+    assert hook_decision(run_hook(GUARD_HOOK, payload)) is None
+
+
+def test_allow_prose_type_hint(tmp_path):
+    fp = _nondraft(tmp_path)
+    payload = _payload("Edit", fp, tmp_path,
+                       old_string="<p>Returns the row.</p>",
+                       new_string="<p>Returns <code>Optional[x]</code> when absent.</p>")
+    assert hook_decision(run_hook(GUARD_HOOK, payload)) is None
+
+
+def test_allow_markdown_checkbox_in_notes(tmp_path):
+    fp = _nondraft(tmp_path)
+    payload = _payload("Edit", fp, tmp_path,
+                       old_string="<li>- [] chase the flake</li>",
+                       new_string="<li>- [x] chase the flake</li>")
+    assert hook_decision(run_hook(GUARD_HOOK, payload)) is None
+
+
+def test_allow_multiedit_of_prose_brackets(tmp_path):
+    fp = _nondraft(tmp_path)
+    payload = _payload("MultiEdit", fp, tmp_path, edits=[
+        {"old_string": "<p>a</p>", "new_string": "<p>a <code>dict[x]</code></p>"},
+        {"old_string": "<p>b</p>", "new_string": "<p>b <code>tuple[]</code></p>"},
+    ])
+    assert hook_decision(run_hook(GUARD_HOOK, payload)) is None
+
+
+# ── genuine markers are still blocked ─────────────────────────────────────────
+def test_nondraft_denies_wrapped_marker_in_new_string(tmp_path):
+    fp = _nondraft(tmp_path)
+    payload = _payload("Edit", fp, tmp_path,
+                       old_string="<li data-task=\"1.1\">a</li>",
+                       new_string=f'<li data-task="1.1">{_marker(state="x")} a</li>')
+    assert _is_deny(run_hook(GUARD_HOOK, payload))
+
+
+def test_nondraft_denies_wrapped_marker_in_old_string(tmp_path):
+    # Only old_string carries the marker — the guard inspects both sides.
+    fp = _nondraft(tmp_path)
+    payload = _payload("Edit", fp, tmp_path,
+                       old_string=f'<li data-task="1.1">{_marker(state="x")} a</li>',
+                       new_string="<li data-task=\"1.1\">a</li>")
+    assert _is_deny(run_hook(GUARD_HOOK, payload))
+
+
+def test_nondraft_denies_multiedit_with_one_marker(tmp_path):
+    # A single managed edit poisons the batch, even alongside legitimate prose.
+    fp = _nondraft(tmp_path)
+    payload = _payload("MultiEdit", fp, tmp_path, edits=[
+        {"old_string": "<p>a</p>", "new_string": "<p>a <code>list[]</code></p>"},
+        {"old_string": _marker(), "new_string": _marker(state="f")},
+    ])
+    assert _is_deny(run_hook(GUARD_HOOK, payload))

@@ -21,6 +21,9 @@ Commands:
   init-ids   assign data-* anchors to a plan that lacks them (additive, reviewable)
   roles      build: generate roles/_roles.json + .github/CODEOWNERS from roles/*.md
   brief      compact plain-text extract of a plan (or --all for a one-liner index)
+  phase      print one phase in full — its tasks, actions, and Testing Strategy
+  next       print the first status id that is not [x]/[f] (or 'done')
+  addphase   append a correctly-numbered phase block (structure, not content)
 
 Scope: cozyplan is the *plan/intent* layer. Enforcement, revert points, and
 accountability are git's job (branches, PRs, CODEOWNERS, tags, CI) — this tool
@@ -43,6 +46,9 @@ from pathlib import Path
 # ── vocab / field classification ──────────────────────────────────────────────
 STATUS_MARKERS = {"idle": "[]", "wip": "[wip]", "x": "[x]", "f": "[f]"}
 VALID_MARKERS = set(STATUS_MARKERS.values())
+# Terminal = resolved for good: done, or deliberately abandoned with a recorded reason.
+# `next` skips these and `meta --field status --value built` refuses while any remain.
+TERMINAL_MARKERS = {"[x]", "[f]"}
 STATUS_VOCAB = {"draft", "active", "built", "superseded", "archived"}
 LIST_FIELDS = {"modified", "commits", "agent", "session", "back-refs", "forward-refs",
                "provides", "consumes"}
@@ -194,23 +200,32 @@ def glob_overlap(g1: str, g2: str) -> bool:
 
 # ── plan write lock (exclusive, sibling <plan>.lock; Windows-safe) ────────────
 LOCK_STALE_SECONDS = 60
+LOCK_ACQUIRE_SECONDS = 15.0
+
+
+class PlanLockBusy(RuntimeError):
+    """A plan's write lock stayed held past the acquire deadline; nothing was written."""
 
 
 class _PlanLock:
     """Exclusive advisory lock for a plan's read-modify-write cycle.
 
-    Created via O_CREAT|O_EXCL (atomic on Windows too). Retries for ~2s; a lock
-    older than LOCK_STALE_SECONDS is treated as abandoned, broken with a warning,
-    and retried. Always released in __exit__.
+    Created via O_CREAT|O_EXCL (atomic on Windows too). Retries for
+    LOCK_ACQUIRE_SECONDS, then fails *closed* by raising PlanLockBusy — proceeding
+    anyway would permit exactly the lost update the lock exists to prevent. A lock
+    older than LOCK_STALE_SECONDS is a crashed writer rather than a live one: it is
+    broken, recorded as an event in the plan's sidecar, and retried. Always released
+    in __exit__.
     """
 
     def __init__(self, target: Path):
-        self.path = Path(target).with_suffix(".lock")
+        self.target = Path(target)
+        self.path = self.target.with_suffix(".lock")
         self.acquired = False
 
     def acquire(self) -> None:
         import time
-        deadline = time.monotonic() + 2.0
+        deadline = time.monotonic() + LOCK_ACQUIRE_SECONDS
         while True:
             try:
                 fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
@@ -230,11 +245,17 @@ class _PlanLock:
                         self.path.unlink()
                     except OSError:
                         pass
+                    # Recorded so a broken lock stays visible after the fact, not just
+                    # in a stderr line nobody kept.
+                    with contextlib.suppress(OSError):
+                        log_event(self.target, "lock-stale-break", None,
+                                  {"lock": self.path.name, "age_seconds": int(age)})
                     continue
                 if time.monotonic() >= deadline:
-                    print(f"  warn: lock {self.path.name} busy; proceeding without it",
-                          file=sys.stderr)
-                    return  # fail-open: never hard-block a mutation on a busy lock
+                    raise PlanLockBusy(
+                        f"{self.path.name} is held by another plan_tool process "
+                        f"(waited {LOCK_ACQUIRE_SECONDS:g}s); nothing was written — retry in a "
+                        f"moment. If no other process is running, delete {self.path}.")
                 time.sleep(0.05)
 
     def release(self) -> None:
@@ -319,6 +340,51 @@ def log_event(plan_path: Path, event: str, args, details: dict) -> None:
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
+# ── plan structure queries (one matcher per anchor, shared by every consumer) ─
+_STATUS_ANCHOR_RE = re.compile(r'data-status-for="([^"]+)"[^>]*>(\[[^\]]*\])')
+_PHASE_DIV_RE = re.compile(r'<div\b[^>]*\bclass="phase"[^>]*>')
+
+
+def iter_status_markers(text: str) -> list[tuple[str, str]]:
+    """(id, marker) for every data-status-for anchor, in document order."""
+    return [(m.group(1), m.group(2)) for m in _STATUS_ANCHOR_RE.finditer(text)]
+
+
+def phase_numbers(text: str) -> list[str]:
+    """data-phase values of every .phase div, in document order."""
+    out = []
+    for m in _PHASE_DIV_RE.finditer(text):
+        dm = re.search(r'\bdata-phase="([^"]+)"', m.group(0))
+        if dm:
+            out.append(dm.group(1))
+    return out
+
+
+def phase_segment(text: str, pnum: str) -> str | None:
+    """Raw HTML of the phase whose data-phase == pnum, up to the next .phase div.
+
+    The trailing phase has no successor to bound it, so it ends at the </section>
+    that closes the implementation-phases container.
+    """
+    phases = list(_PHASE_DIV_RE.finditer(text))
+    for i, m in enumerate(phases):
+        dm = re.search(r'\bdata-phase="([^"]+)"', m.group(0))
+        if not dm or dm.group(1) != pnum:
+            continue
+        start = m.start()
+        if i + 1 < len(phases):
+            return text[start:phases[i + 1].start()]
+        close = text.find("</section>", start)
+        return text[start:close if close != -1 else len(text)]
+    return None
+
+
+def _fmt_ids(ids: list[str], limit: int = 12) -> str:
+    """Comma-joined id list, truncated with a remainder count so errors stay readable."""
+    shown = ", ".join(ids[:limit])
+    return shown + (f", ... (+{len(ids) - limit} more)" if len(ids) > limit else "")
+
+
 # ── validation ────────────────────────────────────────────────────────────────
 _SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*:")  # github:, http:, etc. (not Windows C:\)
 
@@ -392,6 +458,46 @@ def validate_text(path: Path, text: str) -> tuple[list[str], list[str], bool]:
         if not (path.parent / src).exists():
             problems.append(f"image {src!r} not found on disk")
 
+    # Structural integrity of the hand-duplicated phase/task ids. These are errors,
+    # not warnings: each one breaks machine addressing — a duplicate id makes
+    # `status --id` ambiguous (it now refuses), and a data-task/data-status-for
+    # mismatch means the CLI flips a different box than the checklist item claims.
+    markers = iter_status_markers(text)
+    ids = [sid for sid, _ in markers]
+    dupes = sorted({s for s in ids if ids.count(s) > 1})
+    if dupes:
+        problems.append(f"duplicate data-status-for id(s): {_fmt_ids(dupes)} — status ids must "
+                        f"be unique (use `plan_tool addphase` instead of copying a phase block)")
+
+    for m in re.finditer(r'<li\b[^>]*\bdata-task="([^"]+)"[^>]*>(.*?)</li>', text, re.S):
+        tid = m.group(1)
+        sm = re.search(r'data-status-for="([^"]+)"', m.group(2))
+        if sm and sm.group(1) != tid:
+            problems.append(f'task data-task="{tid}" carries data-status-for="{sm.group(1)}" '
+                            f"— the two ids on a checklist item must match")
+
+    pnums = phase_numbers(text)
+    dupe_phases = sorted({p for p in pnums if pnums.count(p) > 1})
+    if dupe_phases:
+        problems.append(f"duplicate data-phase value(s): {', '.join(dupe_phases)} — "
+                        f"`plan_tool phase --id` cannot address them unambiguously")
+    # Numbering gaps are cosmetic by comparison: every id still addresses exactly one
+    # thing, the sequence just reads wrong. Warning, in line with the other
+    # "correct but suspicious" findings above.
+    if pnums and all(p.isdigit() for p in pnums) and \
+            [int(p) for p in pnums] != list(range(1, len(pnums) + 1)):
+        warns.append(f"phase numbering is not a gapless 1..{len(pnums)} sequence "
+                     f"(found {', '.join(pnums)})")
+
+    # Early notice of the `built` gate (cmd_meta refuses that transition while any
+    # marker is un-terminal). Suppressed while draft, where nothing is built yet by
+    # definition and the notice would be pure noise on every write.
+    if status != "draft":
+        open_ids = [sid for sid, mark in markers if mark not in TERMINAL_MARKERS]
+        if open_ids:
+            warns.append(f"{len(open_ids)} status marker(s) still open (not [x]/[f]): "
+                         f"{_fmt_ids(open_ids)} — status=built is refused until they are terminal")
+
     return problems, warns, True
 
 
@@ -431,8 +537,52 @@ def _require_anchored(path: Path, text: str) -> bool:
     return True
 
 
+# `modified` is stamped on every CLI write, so an unbounded list buries the header a
+# reader opens first — a 40-task build produced 40+ timestamps. Keep the newest
+# MODIFIED_KEEP stamps and elide the rest into a single trailing `(+N earlier)`
+# marker whose count stays exact across repeated compactions. The marker is a
+# distinct list entry, so `split_list` still yields clean timestamps around it and
+# `latest_modified` (the one consumer that wants a date) skips over it.
+MODIFIED_KEEP = 5
+_ELIDED_RE = re.compile(r"^\(\+(\d+) earlier\)$")
+
+
+def compact_modified(entries: list[str], keep: int = MODIFIED_KEEP) -> list[str]:
+    elided = 0
+    kept: list[str] = []
+    for e in entries:
+        m = _ELIDED_RE.match(e)
+        if m:
+            elided += int(m.group(1))  # absorb the marker left by an earlier compaction
+        else:
+            kept.append(e)
+    if len(kept) > keep:
+        elided += len(kept) - keep
+        kept = kept[-keep:]
+    return kept + ([f"(+{elided} earlier)"] if elided else [])
+
+
+def latest_modified(meta: dict) -> str:
+    """Newest real timestamp in a (possibly compacted) `modified` list."""
+    for v in reversed(split_list(meta.get("modified", ""))):
+        if not _ELIDED_RE.match(v):
+            return v
+    return ""
+
+
+def _set_modified(text: str, iso: str) -> tuple[str, int]:
+    cur = get_meta_raw(text, "modified")
+    if cur is None:
+        return text, 0
+    entries = split_list(cur)
+    if iso in entries:
+        return text, 1  # already stamped this second — no-op, but still "found"
+    entries.append(esc(iso))
+    return set_meta(text, "modified", ", ".join(compact_modified(entries)))
+
+
 def stamp_modified(text: str, iso: str) -> str:
-    new, n = append_meta(text, "modified", iso)
+    new, n = _set_modified(text, iso)
     return new if n else text
 
 
@@ -470,9 +620,15 @@ def cmd_status(args) -> int:
             return 1
         marker = STATUS_MARKERS[args.state]
         pat = re.compile(r'(data-status-for="' + re.escape(args.id) + r'"[^>]*>)\[[^\]]*\]')
-        new, n = pat.subn(lambda m: m.group(1) + marker, text, count=1)
+        new, n = pat.subn(lambda m: m.group(1) + marker, text)
         if n == 0:
             return fail(f"no status anchor data-status-for={args.id!r} found (run init-ids?)")
+        # Flipping only the first of several same-id anchors silently reports success
+        # while leaving the others stale, so refuse instead of guessing which was meant.
+        if n > 1:
+            return fail(f"status anchor data-status-for={args.id!r} appears {n} times in "
+                        f"{path.name}; ids must be unique — fix the duplicates "
+                        f"(run: plan_tool validate {path}) before flipping it")
         nl = detect_nl(new)
         new = stamp_modified(new, now_iso())
         if args.state == "f":
@@ -507,6 +663,8 @@ def cmd_meta(args) -> int:
             if args.field in WRITE_ONCE and not is_empty_value(cur) and not args.force:
                 return fail(f"{args.field!r} is write-once (currently {strip_tags(cur)!r}); use --force to override")
             new, n = set_meta(text, args.field, esc(args.value))
+        elif args.field == "modified":
+            new, n = _set_modified(text, args.value)  # compacts like an automatic stamp
         else:
             new, n = append_meta(text, args.field, args.value)
         if n == 0:
@@ -525,6 +683,18 @@ def cmd_meta(args) -> int:
                     f"{len(leftover)} unfilled {{{{}}}} placeholder slot(s) remain. "
                     f"Fill every slot (or strip the braces from any intentionally "
                     f"empty diagram comment) before leaving draft.")
+        # `built` is the one status that asserts the work is finished, so it gates on
+        # the status markers themselves rather than on prose. --force is the deliberate
+        # override for recording a knowingly incomplete build.
+        if args.field == "status" and args.value == "built" and not args.force:
+            open_ids = [sid for sid, mark in iter_status_markers(new)
+                        if mark not in TERMINAL_MARKERS]
+            if open_ids:
+                return fail(
+                    f"cannot move {path.name} to status='built': {len(open_ids)} status "
+                    f"marker(s) are not [x] or [f]: {_fmt_ids(open_ids)}. Resolve each via "
+                    f"`plan_tool status {path} --id <id> --state x|f`, or pass --force to "
+                    f"record the build as deliberately incomplete.")
         if args.field != "modified":
             new = stamp_modified(new, now_iso())
         write(path, new)
@@ -567,6 +737,98 @@ def cmd_amend(args) -> int:
         write(path, text)
         log_event(path, "amend", args, {"summary": args.summary})
     print(f"amend appended to {path.name}")
+    self_validate(path, text)
+    return 0
+
+
+# ── addphase (the tool owns phase structure; the model owns phase content) ────
+# Kept in step with the one example phase in templates/plan.html, but with the three
+# coupled structural attributes (data-phase / data-task / data-status-for) stamped
+# here instead of hand-renumbered by whoever copies a block. Content stays as {{}}
+# slots for the authoring agent — same contract as `new`.
+PHASE_TASK_BLOCK = """\
+      <h4>{{TASK_NUMBER}}. {{TASK_NAME}}</h4>
+      <ul class="checklist">
+        <li data-task="{{PHASE_NUMBER}}.{{TASK_NUMBER}}"><code class="status" data-status-for="{{PHASE_NUMBER}}.{{TASK_NUMBER}}">[]</code> {{SPECIFIC_ACTION}}</li>
+      </ul>"""
+
+PHASE_BLOCK = """\
+    <div class="phase" data-phase="{{PHASE_NUMBER}}">
+      <h3><code class="status" data-status-for="phase-{{PHASE_NUMBER}}">[]</code> Phase {{PHASE_NUMBER}}: {{PHASE_NAME}}</h3>
+      <p>{{PHASE_DESCRIPTION}}</p>
+
+      <!-- Optional focused image for this phase, synced to :root identity -->
+      <figure>
+        <!-- {{PHASE_IMAGE: subject describing this phase's architecture/flow}} -->
+        <figcaption>{{PHASE_IMAGE_CAPTION}}</figcaption>
+      </figure>
+
+{{TASK_BLOCKS}}
+
+      <!-- Final task of every phase: Testing Strategy + validation loop -->
+      <h4>{{LAST_TASK_NUMBER}}. Testing Strategy</h4>
+      <p>{{TESTING_APPROACH: technology used to test/validate, including edge cases}}</p>
+      <ul class="checklist">
+        <li data-task="{{PHASE_NUMBER}}.{{LAST_TASK_NUMBER}}"><code class="status" data-status-for="{{PHASE_NUMBER}}.{{LAST_TASK_NUMBER}}">[]</code> <code>{{VALIDATION_COMMAND}}</code> — {{WHAT_IT_PROVES}}</li>
+      </ul>
+      <div class="loop">
+        🔁 <strong>Do not exit this phase until every box above is <code>[x]</code> or <code>[f]</code>.</strong>
+        If a command fails, fix the cause and re-run; loop until it passes. <code>[f]</code> is terminal — only when a box genuinely cannot be made to pass, mark it <code>[f]</code> (with a one-line reason via <code>PLAN_TOOL status … --state f --reason "…"</code>) and move on.
+      </div>
+    </div>"""
+
+
+def render_phase_block(pnum: int, tasks: int, title: str | None, nl: str) -> str:
+    """Structural HTML for one phase: `tasks` work tasks plus a Testing Strategy task."""
+    blocks = [PHASE_TASK_BLOCK.replace("{{TASK_NUMBER}}", str(t)) for t in range(1, tasks + 1)]
+    out = PHASE_BLOCK.replace("{{TASK_BLOCKS}}", "\n\n".join(blocks))
+    out = out.replace("{{LAST_TASK_NUMBER}}", str(tasks + 1))
+    out = out.replace("{{PHASE_NUMBER}}", str(pnum))
+    if title:
+        out = out.replace("{{PHASE_NAME}}", esc(title))
+    return out.replace("\n", nl)
+
+
+def _phases_insert_at(text: str) -> int | None:
+    """Index of the </section> closing the implementation-phases container."""
+    m = re.search(r'<section\b[^>]*\bid="phases"[^>]*>', text)
+    if not m:
+        return None
+    close = text.find("</section>", m.end())
+    return close if close != -1 else None
+
+
+def cmd_addphase(args) -> int:
+    path = Path(args.plan)
+    if not path.exists():
+        return fail(f"plan not found: {path}")
+    if args.tasks < 1:
+        return fail("--tasks must be >= 1 (the Testing Strategy task is appended on top of it)")
+    with _PlanLock(path):
+        text = read(path)
+        if not _require_anchored(path, text):
+            return 1
+        if not schema_ok(path, text):
+            return 1
+        at = _phases_insert_at(text)
+        if at is None:
+            return fail('no <section id="phases"> ... </section> container to append into '
+                        '(is this a plan scaffolded from templates/plan.html?)')
+        nums = [int(p) for p in phase_numbers(text) if p.isdigit()]
+        pnum = max(nums) + 1 if nums else 1
+        if f'data-status-for="phase-{pnum}"' in text:
+            return fail(f"phase-{pnum} already exists in {path.name}; fix the phase numbering "
+                        f"(run: plan_tool validate {path}) before appending")
+        nl = detect_nl(text)
+        block = render_phase_block(pnum, args.tasks, args.title, nl)
+        text = text[:at].rstrip() + nl + block + nl + "  " + text[at:]
+        text = stamp_modified(text, now_iso())
+        write(path, text)
+        log_event(path, "addphase", args,
+                  {"phase": pnum, "tasks": args.tasks, "title": args.title or ""})
+    print(f"addphase: phase-{pnum} appended to {path.name} "
+          f"({args.tasks} task(s) {pnum}.1-{pnum}.{args.tasks}, "
+          f"Testing Strategy {pnum}.{args.tasks + 1})")
     self_validate(path, text)
     return 0
 
@@ -849,7 +1111,7 @@ def cmd_index(args) -> int:
             "status": meta.get("status", ""),
             "owner": meta.get("owner", ""),
             "created": meta.get("created", ""),
-            "modified": (split_list(meta.get("modified", "")) or [""])[-1],
+            "modified": latest_modified(meta),
             "image_dir": hp.stem + "/" if (specs / hp.stem).is_dir() else "",
             "back_refs": split_list(meta.get("back-refs", "")),
             "forward_refs": split_list(meta.get("forward-refs", "")),
@@ -1250,6 +1512,67 @@ def cmd_brief(args) -> int:
     return 0
 
 
+# ── phase / next (the other half of two-tier recall: brief indexes, phase reads) ─
+# `brief` is the cheap whole-plan index; `phase` is the expensive-but-scoped read of
+# exactly the block being built, so a build agent never re-reads the whole HTML.
+_PHASE_TEXT_RE = re.compile(r"<(?P<tag>h3|h4|p|li)\b[^>]*>(?P<body>.*?)</(?P=tag)>", re.S)
+_STATUS_CODE_RE = re.compile(r'<code\b[^>]*\bclass="status"[^>]*>(\[[^\]]*\])</code>', re.S)
+
+
+def _plain(body: str) -> str:
+    """Readable one-line text for an element body, minus its status marker."""
+    return re.sub(r"\s+", " ", html.unescape(strip_tags(_STATUS_CODE_RE.sub("", body)))).strip()
+
+
+def cmd_phase(args) -> int:
+    path = Path(args.plan)
+    if not path.exists():
+        return fail(f"plan not found: {path}")
+    m = re.fullmatch(r"(?:phase-)?(\d+)", str(args.id).strip())
+    if not m:
+        return fail(f"--id must be 'phase-<n>' or a bare '<n>' (got {args.id!r})")
+    pnum = m.group(1)
+    text = read(path)
+    seg = phase_segment(text, pnum)
+    if seg is None:
+        known = ", ".join(phase_numbers(text)) or "none"
+        return fail(f'no phase with data-phase="{pnum}" in {path.name} '
+                    f"(phases present: {known})")
+
+    title = html.unescape(extract_title(text)) or path.stem
+    lines = [f"# {title} — phase {pnum}  ({path.name})", ""]
+    for b in _PHASE_TEXT_RE.finditer(seg):
+        tag, body = b.group("tag"), b.group("body")
+        sm = _STATUS_CODE_RE.search(body)
+        mark = sm.group(1) if sm else ""
+        am = re.search(r'data-status-for="([^"]+)"', sm.group(0)) if sm else None
+        sid = am.group(1) if am else ""
+        txt = _plain(body)
+        if tag == "h3":
+            lines.append(f"{mark:<6} {sid:<10} {txt}")
+        elif tag == "h4":
+            lines.append("")
+            lines.append(txt)
+        elif tag == "li":
+            lines.append(f"  {mark:<6} {sid:<10} {txt}")
+        elif txt:  # <p>: phase description / testing approach
+            lines.append(f"  {txt}")
+    print("\n".join(lines))
+    return 0
+
+
+def cmd_next(args) -> int:
+    path = Path(args.plan)
+    if not path.exists():
+        return fail(f"plan not found: {path}")
+    for sid, mark in iter_status_markers(read(path)):
+        if mark not in TERMINAL_MARKERS:
+            print(sid)
+            return 0
+    print("done")
+    return 0
+
+
 # ── hooks (register/unregister the coherence hooks in settings.json) ──────────
 # Bare-skill installs (npx skills add) carry the hook scripts but nothing
 # registers them — this command closes that gap. Keyed by script filename so
@@ -1348,7 +1671,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("plan")
     sp.add_argument("--field", required=True)
     sp.add_argument("--value", required=True)
-    sp.add_argument("--force", action="store_true", help="override a write-once field (id/created)")
+    sp.add_argument("--force", action="store_true",
+                    help="override a write-once field (id/created/schema), or set status=built "
+                         "while status markers are still un-terminal")
     sp.set_defaults(func=cmd_meta)
 
     sp = sub.add_parser("amend", parents=[parent], help="append an amendment entry")
@@ -1402,6 +1727,25 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--specs", default="specs", help="specs directory (for --all; default: specs)")
     sp.set_defaults(func=cmd_brief)
 
+    sp = sub.add_parser("phase", parents=[parent],
+                        help="print one phase in full — tasks, actions, Testing Strategy")
+    sp.add_argument("plan")
+    sp.add_argument("--id", required=True, help="phase id, e.g. phase-3 (a bare 3 also works)")
+    sp.set_defaults(func=cmd_phase)
+
+    sp = sub.add_parser("next", parents=[parent],
+                        help="print the first status id that is not [x]/[f] (or 'done')")
+    sp.add_argument("plan")
+    sp.set_defaults(func=cmd_next)
+
+    sp = sub.add_parser("addphase", parents=[parent],
+                        help="append a correctly-numbered phase block (structure, not content)")
+    sp.add_argument("plan")
+    sp.add_argument("--tasks", type=int, required=True,
+                    help="number of work tasks; a Testing Strategy task is numbered after them")
+    sp.add_argument("--title", help="phase name; left as a {{PHASE_NAME}} slot if omitted")
+    sp.set_defaults(func=cmd_addphase)
+
     return p
 
 
@@ -1421,7 +1765,10 @@ def _make_stdio_utf8_safe() -> None:
 def main(argv: list[str] | None = None) -> int:
     _make_stdio_utf8_safe()
     args = build_parser().parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except PlanLockBusy as e:
+        return fail(str(e))  # fail closed: the plan was left exactly as it was
 
 
 if __name__ == "__main__":

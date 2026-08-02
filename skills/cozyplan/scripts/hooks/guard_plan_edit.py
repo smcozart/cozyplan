@@ -13,7 +13,7 @@ well-formed. Prose/diagram edits pass untouched.
   - Allow Write to a NEW plan (Create authoring); deny Write over an existing
     plan (route structured writes through plan_tool).
   - Deny Edit/MultiEdit whose text touches a managed token (data-managed,
-    data-meta=, class="status", amendments, or a bare status bracket).
+    data-meta=, class="status", amendments, or a wrapped status marker).
   - Draft authoring window: while the plan's status is `draft` (the state
     `plan_tool new` stamps), STRUCTURAL authoring is allowed — duplicating /
     renumbering phase/task blocks with their anchors and markers — because the
@@ -47,7 +47,11 @@ MANAGED_TOKENS = (
     'data-amendments-list',
     'id="amendments"',
 )
-STATUS_BRACKET = re.compile(r"\[(?:|wip|x|f)\]")
+# A bracket is only a status marker when it sits in its <code class="status">
+# wrapper. Bare bracket forms are ordinary prose — `list[]` in a code sample,
+# `Optional[x]` in a sentence, a markdown checkbox in Notes — and the guard
+# leaves the free-form regions alone.
+STATUS_BRACKET = re.compile(r'<code\b[^>]*class="status"[^>]*>\s*\[(?:|wip|x|f)\]')
 
 # Tokens that stay CLI-only even while a plan is in draft: metadata and the
 # amendments region. Structure (anchors, markers) is authorable during the

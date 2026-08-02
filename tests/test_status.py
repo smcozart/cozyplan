@@ -50,6 +50,24 @@ def test_status_unknown_id_fails(pt, new_plan, capsys):
     assert "no status anchor" in err
 
 
+def test_status_refuses_a_duplicated_id(pt, new_plan, capsys):
+    import re
+    plan = new_plan("st-dupe")
+    # duplicate a checklist item verbatim — the shape a hand-copied phase produces
+    text = read(plan)
+    m = re.search(r'<li data-task="1\.1".*?</li>', text, re.S)
+    with open(plan, "w", encoding="utf-8", newline="") as f:
+        f.write(text[:m.end()] + m.group(0) + text[m.end():])
+
+    capsys.readouterr()
+    code = pt.main(["status", str(plan), "--id", "1.1", "--state", "x"])
+    err = capsys.readouterr().err
+    assert code != 0, "flipping only the first of two same-id anchors is a silent lie"
+    assert "appears 2 times" in err
+    # nothing was written: both copies are still idle
+    assert read(plan).count('data-status-for="1.1">[]') == 2
+
+
 def test_status_appends_event_each_time(pt, new_plan):
     plan = new_plan("st-events")
     pt.main(["status", str(plan), "--id", "1.1", "--state", "wip"])

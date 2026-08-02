@@ -29,7 +29,7 @@ The render writes a `.png` next to the `.excalidraw` file. The `.excalidraw` sou
 
 ## Create
 
-1. **Find slots** — Grep the plan for `{{...IMAGE` placeholders (hero, problem, solution, per-phase, questionables, notes). Each comment names the intended subject.
+1. **Find slots** — Grep the plan for `{{...IMAGE` placeholders (hero, problem, solution, per-phase, open questions, notes). Each comment names the intended subject.
 2. **Design each diagram** — For each slot, decide the one or two ideas it must convey and the visual pattern (flow, fan-out, convergence, timeline, before/after) that mirrors it. Keep it minimal.
 3. **Author + render** — Invoke the `excalidraw-diagram` skill to build the `.excalidraw` file in `IMAGES_OUTPUT_DIR` using the plan's palette, then render it to PNG with `render_excalidraw.py`. Read the rendered PNG and fix layout (clipping, overlap, spacing) until it looks clean.
 4. **Embed** — Replace each `<!-- {{...IMAGE: ...}} -->` placeholder with `<img src="<plan-name>/<file>.png" alt="...">`, keeping the existing `<figure>`/`<figcaption>`.

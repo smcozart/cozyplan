@@ -13,7 +13,7 @@ Create a detailed, **HTML-first** implementation plan based on the `USER_PROMPT`
 ## Variables
 
 USER_PROMPT: $ARGUMENTS
-QUESTIONABLE: default false — true when the `USER_PROMPT` explicitly asks to surface open questions, assumptions, or risks
+QUESTIONABLE: default true — open questions, assumptions, and risks are recorded in the plan's Open Questions section; false only when the `USER_PROMPT` explicitly asks to leave them out
 PLAN_OUTPUT_DIRECTORY: `specs/`
 PLAN_FILE: `PLAN_OUTPUT_DIRECTORY/<descriptive-kebab-name>.html`
 IMAGES_OUTPUT_DIR: `PLAN_OUTPUT_DIRECTORY/<plan-name>/`
@@ -21,7 +21,7 @@ AI_DOCS: `AI_DOCS/`
 APP_DOCS: `APP_DOCS/`
 IDE: `code`
 BROWSER: `chrome`
-PLAN_TOOL: the deterministic CLI that owns all structured writes to a plan (status, metadata, references, amendments) plus `validate` and `index`. It ships **inside this skill** at `scripts/plan_tool.py`. Resolve it once at session start, in order: (1) if the `CLAUDE_PLUGIN_ROOT` environment variable is set (plugin install — the normal case), use `uv run "${CLAUDE_PLUGIN_ROOT}/skills/cozyplan/scripts/plan_tool.py"` with the path **quoted** (plugin roots can contain spaces); (2) otherwise use the copy in this skill's own directory — `uv run "<skill-dir>/scripts/plan_tool.py"` where `<skill-dir>` is the directory containing this SKILL.md (bare-skill installs, e.g. `npx skills add` → `.claude/skills/cozyplan/` or `~/.claude/skills/cozyplan/`); (3) as a last resort fall back to `uv run scripts/plan_tool.py` (legacy project-local `scripts/`). Every `PLAN_TOOL …` invocation below means that resolved command
+PLAN_TOOL: the deterministic CLI that owns all structured writes to a plan (status, metadata, references, amendments, phase blocks) plus the cheap reads (`brief`, `phase`, `next`), `validate`, and `index`. It ships **inside this skill** at `scripts/plan_tool.py`. Resolve it once at session start, in order: (1) if the `CLAUDE_PLUGIN_ROOT` environment variable is set (plugin install — the normal case), use `uv run "${CLAUDE_PLUGIN_ROOT}/skills/cozyplan/scripts/plan_tool.py"` with the path **quoted** (plugin roots can contain spaces); (2) otherwise use the copy in this skill's own directory — `uv run "<skill-dir>/scripts/plan_tool.py"` where `<skill-dir>` is the directory containing this SKILL.md (bare-skill installs, e.g. `npx skills add` → `.claude/skills/cozyplan/` or `~/.claude/skills/cozyplan/`); (3) as a last resort fall back to `uv run scripts/plan_tool.py` (legacy project-local `scripts/`). Every `PLAN_TOOL …` invocation below means that resolved command
 
 ## Instructions
 
@@ -41,7 +41,8 @@ PLAN_TOOL: the deterministic CLI that owns all structured writes to a plan (stat
 - The metadata header (`schema`, `id`, `owner`, `status`, `created`, `modified`, `commits`, `agent`, `session`, back/forward references) is **stamped by `PLAN_TOOL new`** and updatable across the plan's lifecycle. `schema`, `id`, and `created` are write-once; `status` is a single value; `modified`/`commits`/`agent`/`session`/back-refs/forward-refs are append-only comma-separated lists. `schema` is the artifact's structural-contract version (currently `1`) — leave it as the template sets it; `PLAN_TOOL` refuses to write a plan stamped newer than it understands. Metadata, status markers, and amendments are CLI-managed regions — see `## Managed Writes` for the routing rule
 - **Plan `status`** is a single value from a closed vocabulary: `draft` (authored, not started) → `active` (approved / being built) → `built` (implemented, tests pass); plus `superseded` (replaced — must carry a forward ref to its successor) and `archived` (kept for history). Set it with `PLAN_TOOL meta <plan> --field status --value <state>`. Create sets `draft` (or `active`); Build moves `active`→`built`
 - **`id`** is a short immutable slug set once at Create (references and event logs point at it, so it survives renames). **`owner`** is the role that owns the plan (e.g. `architect`, `engineer-<component>`, `ux`); only the owner edits plan content
-- If `QUESTIONABLE` is true, actively surface open questions/assumptions in the toggleable Q&A section rather than silently deciding
+- **Reading a plan is indexed, not wholesale.** Orient with `PLAN_TOOL brief <plan>` (whole-plan state in a few hundred tokens), pull detail one phase at a time with `PLAN_TOOL phase <plan> --id phase-<n>`, and follow a back reference only when a decision in front of you depends on it. Reading a plan file end to end spends tens of thousands of tokens on state `brief` already renders
+- `QUESTIONABLE` is on by default: actively surface open questions, assumptions, and risks in the toggleable **Open Questions** section rather than silently deciding them. A plan that decided something on a guess must say so there. Drop the section only when the `USER_PROMPT` explicitly asks for no open questions
 - Ensure the plan is detailed enough that another developer (or agent) could follow it to implement the solution
 - Include code examples or pseudo-code where appropriate to clarify complex concepts
 - Consider edge cases, error handling, and scalability concerns
@@ -75,18 +76,21 @@ The plan HTML is a living artifact. Some regions are **CLI-managed** and should 
 | Write | Command |
 | --- | --- |
 | Scaffold a fresh plan (all `data-*` anchors + metadata stamped, `status=draft`) | `PLAN_TOOL new <kebab-name> --title "…" [--owner <role>] [--specs specs]` |
+| Append a correctly-numbered phase block (`data-phase`/`data-task`/`data-status-for` all stamped) | `PLAN_TOOL addphase <plan> --tasks <N> [--title "…"]` |
 | Flip a task/phase status marker | `PLAN_TOOL status <plan> --id <id> --state idle\|wip\|x\|f [--reason "…"]` (`--reason` required for `f`) |
 | Set or append a metadata field (status/owner/modified/commits/agent/session/refs) | `PLAN_TOOL meta <plan> --field <field> --value <v>` |
 | Add a back/forward reference between two plans | `PLAN_TOOL ref --this <plan> --other <plan> --type back\|forward` |
 | Append an amendment | `PLAN_TOOL amend <plan> --summary "…" --detail "…"` |
-| Compact plain-text extract of a plan (or `--all` for a one-liner index) | `PLAN_TOOL brief <plan>` · `PLAN_TOOL brief --all --specs specs` |
+| **Read** the whole-plan index cheaply — metadata, every phase/task with its marker, open `[wip]`/`[f]` items + reasons, recent events (or `--all` for a one-liner index of every plan) | `PLAN_TOOL brief <plan>` · `PLAN_TOOL brief --all --specs specs` |
+| **Read** one phase in full — its tasks, their specific actions, and its Testing Strategy | `PLAN_TOOL phase <plan> --id phase-<n>` |
+| **Read** the re-entry point — the first non-terminal id (marker not `[x]`/`[f]`), or `done` | `PLAN_TOOL next <plan>` |
 | Lint a plan | `PLAN_TOOL validate <plan>` |
 | Assign data-* anchors to an un-anchored/legacy plan | `PLAN_TOOL init-ids <plan>` |
 | Rebuild the specs catalog | `PLAN_TOOL index` |
 | Build the role ownership map + CODEOWNERS from `roles/*.md` | `PLAN_TOOL roles build` |
 | Register/unregister the coherence hooks (bare-skill installs; needs user approval) | `PLAN_TOOL hooks install [--global]` · `PLAN_TOOL hooks remove` |
 
-A plan may only leave `draft` (to `active`/`built`/…) once every `{{}}` placeholder slot is filled — `meta --field status` refuses the transition otherwise. Every mutating command also appends a one-line JSON event to `specs/<plan>.log.ndjson` (the append-only, merge-friendly multi-writer surface) and updates the human-readable HTML. Each read-modify-write op takes an exclusive `<plan>.lock` so concurrent writers to the same plan never lose data. **Free-form regions** — Purpose, Problem, Solution, Notes, Questionables prose, and diagrams — are edited normally. `roles/_roles.json`, `.github/CODEOWNERS`, and `specs/_index.*` are **generated** aggregates — never hand-edit them; rerun the command that builds them.
+A plan may only leave `draft` (to `active`/`built`/…) once every `{{}}` placeholder slot is filled, and may only reach `built` once every status marker is terminal (`[x]` or `[f]`) — `meta --field status` refuses the transition otherwise. `--force` overrides either refusal; use it only when the user explicitly accepts the gap, never to get past your own unfinished work. Every mutating command also appends a one-line JSON event to `specs/<plan>.log.ndjson` (the append-only, merge-friendly multi-writer surface) and updates the human-readable HTML. Each read-modify-write op takes an exclusive `<plan>.lock` so concurrent writers to the same plan never lose data. **Free-form regions** — Purpose, Problem, Solution, Notes, Open Questions prose, and diagrams — are edited normally. `roles/_roles.json`, `.github/CODEOWNERS`, and `specs/_index.*` are **generated** aggregates — never hand-edit them; rerun the command that builds them.
 
 To record which commit implemented a plan, append it with `PLAN_TOOL meta <plan> --field commits --value <sha>`, and tag revert points with plain `git tag`. `--role`/`--agent`/`--session` on any command are optional free-text labels on the event log.
 
@@ -127,7 +131,7 @@ PLAN_TOOL new <kebab-name> --title "<Plan Title>" [--owner <role>] [--specs spec
 ### Conventions (defined in `templates/plan.html`)
 
 - **`{{PLACEHOLDER}}` tokens** are free-form content slots — replace EVERY one with real content. `new` fills the structural slots for you (title, `id`, `created`/`modified`, metadata, and the phase/task/check numbers in the example block); you fill the rest: purpose, problem, solution, file paths, phase names, task names, actions, testing approach, notes, and figure/image subjects.
-- **`<!-- repeat -->` blocks** are duplicated as many times as the plan needs — one per phase, task, checklist item, global check, relevant file, or questionable — then the comment markers are deleted.
+- **`<!-- repeat -->` blocks** are duplicated as many times as the plan needs — one per phase, task, checklist item, global check, relevant file, or open question — then the comment markers are deleted. (Phases are appended with `PLAN_TOOL addphase`, not duplicated by hand.)
 - **`data-*` anchors** are the contract `PLAN_TOOL` (status/meta/amend/validate) targets, so they must be well-formed:
   - `data-region` / `data-managed="cli"` mark the CLI-managed regions (metadata, amendments).
   - `data-meta="<field>"` tags each metadata value.

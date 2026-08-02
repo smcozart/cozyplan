@@ -53,8 +53,9 @@ Earlier versions of CozyPlan were installed by hand-copying the skill and mergin
 - **Delete any hand-copied skill.** Remove `.claude/skills/cozyplan` from any project you copied it into (and `~/.claude/skills/cozyplan` if you installed it globally). The plugin now supplies the skill; a leftover copy shadows it.
 - **Remove the two CozyPlan hook entries** — the `guard_plan_edit.py` PreToolUse block and the `lint_plan.py` PostToolUse block — from any project-local `.claude/settings.json`. The plugin registers these hooks itself, so a project-local copy makes each hook fire twice (plugin + project) on every write.
 
-To surface open decisions in a toggleable Q&A section instead of silently
-deciding, ask for it in the prompt (e.g. "…and flag the open questions").
+Open decisions are surfaced by default: every plan carries an **Open Questions**
+section recording what the agent assumed rather than confirmed. Ask for it to be
+left out in the prompt if you don't want it.
 
 ---
 
@@ -87,7 +88,7 @@ The skill's API is one line:
 | Input | Meaning |
 |---|---|
 | `USER_PROMPT` | What to plan, build, update, or illustrate — this also selects the workflow |
-| `QUESTIONABLE` | `true` surfaces assumptions in a toggleable Q&A section; defaults to `false` |
+| `QUESTIONABLE` | Surfaces open decisions, assumptions, and risks in a toggleable **Open Questions** section; **defaults to `true`** — say so in the prompt to leave it out |
 
 On a create run the agent reads the prompt, explores the codebase (plus `AI_DOCS/` and `APP_DOCS/` if present), authors the HTML plan from the template, generates one Excalidraw diagram per section (authored one at a time, rendered locally), validates and indexes the plan via `plan_tool.py`, and opens the result in your default browser.
 
@@ -108,6 +109,7 @@ The heart of the skill is the **Plan Template** in [`SKILL.md`](skills/cozyplan/
 | **Relevant Files** | Existing files (tagged) vs new files, so the builder knows the blast radius |
 | **Implementation Phases** | Phased work, each phase carrying per-task checklists and a Testing Strategy |
 | **Validation loop** | A closed loop — *do not exit until every box is `[x]` or `[f]` and every command passes* |
+| **Open Questions** | On by default — the decisions the agent assumed rather than confirmed, each with the rationale it proceeded on |
 | **Notes** | Open canvas where the planning agent runs free — matrices, tradeoffs, rejected approaches |
 | **Amendments** | Append-only history of changes made *after* the plan was first built |
 
@@ -135,7 +137,9 @@ CozyPlan is one skill, but the prompt routes to one of **five dedicated workflow
 |---|---|---|
 | **Diagram Generation** | Other workflows (e.g. Create Plan) — authors and renders the embedded Excalidraw diagrams locally via the `excalidraw-diagram` skill (no API key) | [`diagram-generation.md`](skills/cozyplan/workflows/diagram-generation.md) |
 
-The **Build Plan** workflow is the payoff: a fresh agent reads the full plan (every image, every back reference at depth 1), then executes phases top to bottom, looping on each phase's tests until they pass, marking `[x]` or `[f]` (via `plan_tool.py`) as it goes.
+The **Build Plan** workflow is the payoff — and it reads the plan as an *index, not a store*. A fresh agent orients with `plan_tool brief` (the whole plan's state in a few hundred tokens), pulls one phase at a time with `plan_tool phase`, and follows a back reference or an embedded image only when the work in front of it needs one. A build session costs O(current phase), not O(whole plan + every back ref + every image).
+
+It also **resumes**. `plan_tool next` returns the first non-terminal id, so re-entry is mechanical rather than a judgment call: `[x]` phases are skipped outright, a `[wip]` marker is treated as a session interrupted mid-task (re-verified against the codebase, never assumed done *or* undone), and any `[f]` halts the build and surfaces its recorded reason to you. From there it executes phases top to bottom, looping on each phase's tests until they pass, marking `[x]` or `[f]` (via `plan_tool.py`) as it goes.
 
 ---
 
@@ -169,11 +173,14 @@ A plan is a living artifact many agents (and, soon, many roles) touch over time.
 | Command | What it does |
 |---|---|
 | `new` | Scaffold a fresh plan from `templates/plan.html` — stamps every `data-*` anchor + metadata (`status=draft`); refuses to overwrite |
+| `addphase` | Append a correctly-numbered phase block (`--tasks N [--title …]`) so the agent never hand-authors structural HTML |
 | `status` | Flip a task/phase marker (`idle`/`wip`/`x`/`f`; `f` requires `--reason`) |
-| `meta` | Set or append a metadata field (`id`/`owner`/`status`, or the append-only lists — `modified`, `commits`, `agent`, `session`) |
+| `meta` | Set or append a metadata field (`id`/`owner`/`status`, or the append-only lists — `modified`, `commits`, `agent`, `session`); refuses `status=built` while any marker is un-terminal (`--force` overrides) |
 | `ref` | Add a reference between two plans — `--type back\|forward` (dedupes, updates both sides) |
 | `amend` | Append an amendment entry |
-| `brief` | Compact plain-text extract of a plan (or `--all` for a one-liner index) |
+| `brief` | The cheap whole-plan index — metadata, every phase/task with its marker, open `[wip]`/`[f]` items + reasons, recent events (or `--all` for a one-liner index of every plan) |
+| `phase` | One phase in full — its tasks, their specific actions, and its Testing Strategy (`--id phase-<n>`) |
+| `next` | The first non-terminal id, or `done` — the build's re-entry point |
 | `validate` | Lint a plan (leftover `{{}}` tokens, markers, metadata, images, refs) |
 | `index` | Scan `specs/` → `_index.json` + `_index.html`, flag dangling refs and doc drift |
 | `init-ids` | Backfill `data-*` anchors on a legacy/un-anchored plan (also stamps the schema) |
@@ -181,7 +188,7 @@ A plan is a living artifact many agents (and, soon, many roles) touch over time.
 
 Every mutating command also appends a one-line JSON event to **`specs/<plan>.log.ndjson`** — an append-only, `merge=union` sidecar (see `.gitattributes`) so concurrent writes from different agents/roles combine cleanly instead of colliding — and holds an exclusive `<plan>.lock` for its read-modify-write so two agents touching the same plan never lose an update. (The `--role`/`--agent`/`--session` labels on any command are just free-text tags in that log.)
 
-**Lifecycle.** Each plan carries a single-value `status`: `draft` → `active` → `built`, plus `superseded` (replaced — carries a forward ref to its successor) and `archived` (kept for history). The generated `specs/_index.html` catalog lets `specs/` stay navigable as plans accumulate.
+**Lifecycle.** Each plan carries a single-value `status`: `draft` → `active` → `built`, plus `superseded` (replaced — carries a forward ref to its successor) and `archived` (kept for history). Two gates keep the status honest: a plan leaves `draft` only once every `{{}}` placeholder is filled, and reaches `built` only once every status marker is terminal (`[x]` or `[f]`) — so "built" can't mean "the agent stopped halfway." `--force` overrides either gate when *you* decide to accept the gap. The generated `specs/_index.html` catalog lets `specs/` stay navigable as plans accumulate.
 
 **Schema stamp.** Every plan carries a write-once `schema` version (currently `1`) recording its structural contract. `plan_tool.py` refuses to write a plan stamped newer than it understands (so an older tool never corrupts a newer artifact) and `init-ids` stamps the schema on older/legacy plans to migrate them forward.
 
