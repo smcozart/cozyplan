@@ -1,6 +1,6 @@
 ---
 name: cozyplan
-description: Creates and maintains concise HTML-first engineering implementation plans in the specs directory — scaffold new plans, update or build existing ones, refresh references, and generate role/CODEOWNERS ownership maps. Use when the user wants to plan, spec, or design new work, or to update, implement, or build an existing plan.
+description: Creates and maintains concise HTML-first engineering implementation plans in the specs directory, plus a living state layer for the whole project. Use when the user wants to plan, spec, or design new work; update, implement, or build an existing plan; refresh plan references; generate role/CODEOWNERS ownership maps; initialize state tracking in a repo; record a decision (ADR), feature, or issue; or sync/report the project's current working state.
 argument-hint: "[user-prompt]"
 ---
 
@@ -21,6 +21,8 @@ AI_DOCS: `AI_DOCS/`
 APP_DOCS: `APP_DOCS/`
 IDE: `code`
 BROWSER: `chrome`
+STATE_FILE: `STATE.md` (repo root) — the SOT snapshot; see `## State Layer`
+JOURNAL: `docs/journal.md` — the append-only ledger; records in `docs/adr/`, `docs/features/`, `docs/issues/`
 PLAN_TOOL: the deterministic CLI that owns all structured writes to a plan (status, metadata, references, amendments, phase blocks) plus the cheap reads (`brief`, `phase`, `next`), `validate`, and `index`. It ships **inside this skill** at `scripts/plan_tool.py`. Resolve it once at session start, in order: (1) if the `CLAUDE_PLUGIN_ROOT` environment variable is set (plugin install — the normal case), use `uv run "${CLAUDE_PLUGIN_ROOT}/skills/cozyplan/scripts/plan_tool.py"` with the path **quoted** (plugin roots can contain spaces); (2) otherwise use the copy in this skill's own directory — `uv run "<skill-dir>/scripts/plan_tool.py"` where `<skill-dir>` is the directory containing this SKILL.md (bare-skill installs, e.g. `npx skills add` → `.claude/skills/cozyplan/` or `~/.claude/skills/cozyplan/`); (3) as a last resort fall back to `uv run scripts/plan_tool.py` (legacy project-local `scripts/`). Every `PLAN_TOOL …` invocation below means that resolved command
 
 ## Instructions
@@ -64,6 +66,21 @@ Beside the plans, a project may carry four living context artifacts, **owned and
 | `docs/adr/` | `docs/adr/NNNN-title.md` | The "why" behind standing decisions — link the relevant ones inline in phase/task rationale |
 
 When these files are present, read them during Create/Update so plans challenge and reflect the recorded context rather than re-deriving it.
+
+## State Layer
+
+Beside the plans, cozyplan can maintain a project-wide **snapshot + ledger** so anyone who clones the repo knows the exact working state, what is in development, who changed what and why, and how to verify every claim themselves:
+
+- **`STATE_FILE`** — the SOT snapshot. Its sections describe the system *now* and are overwritten on every sync; stale lines are removed, not accumulated. The front door for a fresh clone.
+- **`JOURNAL`** — the append-only ledger: one entry per meaningful change (who — from `git config user.name`/`user.email`, plus agent name and session id when an agent did the work — what, why, the resulting state, refs). The entry format is documented once, in the journal file's own header.
+- **Records** — feature (`docs/features/FEAT-NNN-*.md`) and issue (`docs/issues/ISSUE-NNN-*.md`) docs with status frontmatter and append-only status histories; decisions land in `docs/adr/NNNN-title.md` (the same directory and naming the Context Layer reads — shared with the `discuss` skill).
+
+This is **observability, not enforcement** — consistent with `## Scope`: git still owns revert points, blame, and acceptance; the state layer records *why* and the *current verified state*, which git history alone doesn't surface. Two disciplines bind it:
+
+- **Ledger discipline** — journal entries and record status histories are append-only: never overwrite or remove an existing entry. Only `STATE_FILE` snapshot sections are overwritten (by Sync State).
+- **Verified-state discipline** — a claim enters `STATE_FILE`'s Current Working State only with its proof: the command or test that verified it, and when. Unverified claims go to Known Gaps / Risks or an issue record.
+
+State artifacts are plain markdown maintained by the workflows directly — `PLAN_TOOL` has no role in them. Their scaffolds live in `templates/` (`STATE.md`, `journal.md`, `adr.md`, `feature.md`, `issue.md`): copy, then replace every `{{PLACEHOLDER}}` (none may remain) and duplicate `<!-- repeat -->` blocks as needed. State-layer workflows require `STATE_FILE`; when it is missing, run Init State first (or skip state steps when the user only wants a plan).
 
 ## Managed Writes
 
@@ -109,6 +126,9 @@ Based on the `USER_PROMPT`, select the single best-matching workflow below and r
 | Update References | The prompt asks to refresh plan metadata or back/forward references (created, modified, commits, agent, session) | `workflows/update-references.md` |
 | Build Plan | The prompt asks to implement, execute, or carry out the work described in an existing plan | `workflows/build-plan.md` |
 | Generate Roles | The prompt asks to scope a whole project/team into roles, define ownership, or set up who-owns-what (not a single plan) | `workflows/generate-roles.md` |
+| Init State | The prompt asks to set up state tracking / living artifacts in a repo | `workflows/init-state.md` |
+| Track Record | The prompt asks to record a decision (ADR), register a feature, or open/update/close an issue | `workflows/track-record.md` |
+| Sync State | The prompt asks to sync, refresh, reconcile, or report the project's current state | `workflows/sync-state.md` |
 
 ### Subworkflow
 
@@ -117,6 +137,8 @@ Called by other workflows rather than selected directly from the `USER_PROMPT`.
 | Subworkflow | When it's called | File to read |
 | --- | --- | --- |
 | Diagram Generation | Invoked by other workflows (e.g. Create Plan) to generate, fill, or regenerate the embedded Excalidraw diagrams in a plan | `workflows/diagram-generation.md` |
+| Sync State | Also invoked as the closing step of Create, Update, and Build Plan when `STATE_FILE` exists | `workflows/sync-state.md` |
+| Track Record | Also invoked by Build/Sync when decisions or failures surface without a record | `workflows/track-record.md` |
 
 ## Plan Template
 

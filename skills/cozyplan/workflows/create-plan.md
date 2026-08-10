@@ -12,5 +12,6 @@
 10. Surface Open Questions - Keep the Open Questions section (`QUESTIONABLE` defaults true) and populate it with the open decisions, assumptions, and risks this plan carries — every judgment call you made without confirmation belongs there, one `<details>` each, with the assumption or rationale you proceeded on. A plan with no open questions is rare; if the plan genuinely has none, say so in one line rather than leaving `{{}}` slots. Delete the section only when the `USER_PROMPT` explicitly asks for no open questions
 11. Validate - Run `PLAN_TOOL validate PLAN_FILE` and fix any failures. While the plan is `draft`, unfilled `{{}}` slots report a placeholder *warning* (not a failure) — but replace every slot before the plan leaves `draft`.
 12. Index - Run `PLAN_TOOL index` to refresh `specs/_index.json` / `specs/_index.html` and surface any dangling references or doc drift
-13. Open in Browser - Open the saved plan in the default browser using the platform-appropriate command: Windows `start "" PLAN_FILE`, macOS `open PLAN_FILE`, Linux `xdg-open PLAN_FILE`
-14. Report - Provide a summary of the plan's key components
+13. Register - If `STATE_FILE` exists, run the `workflows/sync-state.md` subworkflow to register the plan under In Development and append the ledger entry. If it doesn't and the user wants state tracking, mention that Init State is available and move on.
+14. Open in Browser - Open the saved plan in the default browser using the platform-appropriate command: Windows `start "" PLAN_FILE`, macOS `open PLAN_FILE`, Linux `xdg-open PLAN_FILE`
+15. Report - Provide a summary of the plan's key components

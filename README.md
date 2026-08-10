@@ -123,7 +123,7 @@ Status markers (`[]` idle · `[wip]` in progress · `[x]` complete · `[f]` fail
   <img src="images/05_five_workflows.png" alt="CozyPlan routes one prompt to one of five dedicated workflows plus a diagram subworkflow" width="780">
 </p>
 
-CozyPlan is one skill, but the prompt routes to one of **five dedicated workflows**, backed by **one subworkflow** for diagrams. This keeps the plan a living artifact across the whole lifecycle of the codebase, not a write-once document.
+CozyPlan is one skill, but the prompt routes to one of **eight dedicated workflows**, backed by subworkflows for diagrams and state sync. This keeps the plan a living artifact across the whole lifecycle of the codebase, not a write-once document.
 
 | Workflow | Trigger | File |
 |---|---|---|
@@ -132,10 +132,14 @@ CozyPlan is one skill, but the prompt routes to one of **five dedicated workflow
 | **Update References** | Refresh metadata or wire bidirectional back/forward references | [`update-references.md`](skills/cozyplan/workflows/update-references.md) |
 | **Build Plan** | Implement the work in an existing plan, updating status markers as it goes | [`build-plan.md`](skills/cozyplan/workflows/build-plan.md) |
 | **Generate Roles** | Scope a whole project/team into roles and set up who-owns-what (not a single plan) | [`generate-roles.md`](skills/cozyplan/workflows/generate-roles.md) |
+| **Init State** | Set up the project state layer (`STATE.md` + journal + records) in a repo | [`init-state.md`](skills/cozyplan/workflows/init-state.md) |
+| **Track Record** | Record a decision (ADR), register a feature, or open/update/close an issue | [`track-record.md`](skills/cozyplan/workflows/track-record.md) |
+| **Sync State** | Sync, reconcile, or report the project's current working state | [`sync-state.md`](skills/cozyplan/workflows/sync-state.md) |
 
 | Subworkflow | Called by | File |
 |---|---|---|
 | **Diagram Generation** | Other workflows (e.g. Create Plan) — authors and renders the embedded Excalidraw diagrams locally via the `excalidraw-diagram` skill (no API key) | [`diagram-generation.md`](skills/cozyplan/workflows/diagram-generation.md) |
+| **Sync State** | The closing step of Create/Update/Build Plan when `STATE.md` exists — registers plans, promotes verified results, appends the journal | [`sync-state.md`](skills/cozyplan/workflows/sync-state.md) |
 
 The **Build Plan** workflow is the payoff — and it reads the plan as an *index, not a store*. A fresh agent orients with `plan_tool brief` (the whole plan's state in a few hundred tokens), pulls one phase at a time with `plan_tool phase`, and follows a back reference or an embedded image only when the work in front of it needs one. A build session costs O(current phase), not O(whole plan + every back ref + every image).
 
@@ -161,6 +165,18 @@ The plugin's second skill, [`discuss`](skills/discuss/SKILL.md), runs the **unde
 **Read side — Orient.** For the engineer who inherits the system in eighteen months (or the architect slotting new work): Orient reads the component map, glossary, stack, and ADRs, then reads the **actual code** of the components in scope and walks you through how the system runs *today*. The walkthrough is never written to a file — a stored description of current behavior drifts on every commit; the map stores the slow-changing nodes, the code is always the source of the edges.
 
 The result: plans record *what and when*, ADRs record *why*, the glossary records *what words mean*, the stack records *what world you build in*, and the map + Orient answer *what runs and how* — a complete picture that survives team turnover.
+
+---
+
+## The state layer — snapshot + ledger
+
+One question the artifacts above still don't answer at a glance: **what is the exact working state of this system right now?** The state layer answers it with two complementary files plus records:
+
+- **`STATE.md`** (repo root) — the single-source-of-truth **snapshot**. Overwritten on every sync, it carries only *verified* claims: every line in Current Working State names the command or test that proved it and when (**verified-state discipline** — anything unproven goes to Known Gaps or an issue record, never the snapshot). It's the front door for anyone who clones the repo.
+- **`docs/journal.md`** — the append-only **ledger**: who changed what (from `git config`, plus agent name + session id when an agent did the work), why, and the resulting state. History is never lost even as the snapshot stays clean (**ledger discipline** — entries are never edited or removed).
+- **Records** — features (`docs/features/`) and issues (`docs/issues/`) with status frontmatter and append-only status histories; decisions land in the same `docs/adr/` the discuss skill writes.
+
+`Init State` scaffolds it (idempotently — it adopts what exists), `Sync State` keeps it honest (and runs automatically at the end of Create/Update/Build Plan), and `Track Record` files the decisions, features, and issues. It's observability, not enforcement — git still owns revert points, blame, and acceptance; the state layer records what git history alone can't surface: *why*, and *what verifiably works right now*.
 
 ---
 
@@ -265,13 +281,21 @@ cozyplan/                           # the repo IS the plugin (and its own market
 │   │   ├── SKILL.md                # API, instructions, and plan-template conventions
 │   │   ├── templates/
 │   │   │   ├── plan.html           # the HTML plan template — single source of truth (stamped by plan_tool new)
-│   │   │   └── role.md             # source template for a project's role files
-│   │   ├── workflows/              # five workflows + one subworkflow
+│   │   │   ├── role.md             # source template for a project's role files
+│   │   │   ├── STATE.md            # SOT snapshot scaffold (verified claims + proofs)
+│   │   │   ├── journal.md          # append-only ledger seed — its header defines the entry format
+│   │   │   ├── adr.md              # decision record (docs/adr/NNNN-title.md)
+│   │   │   ├── feature.md          # feature record with acceptance criteria + status history
+│   │   │   └── issue.md            # issue record with repro + resolution + status history
+│   │   ├── workflows/              # eight workflows + subworkflows
 │   │   │   ├── create-plan.md      # step 1 invokes the discuss skill by default
 │   │   │   ├── update-plan.md
 │   │   │   ├── update-references.md
-│   │   │   ├── build-plan.md       # close step maintains the SYSTEM.md component map
+│   │   │   ├── build-plan.md       # close steps maintain SYSTEM.md + sync the state layer
 │   │   │   ├── generate-roles.md   # scope a project into roles / who-owns-what
+│   │   │   ├── init-state.md       # scaffold STATE.md + journal + record dirs (idempotent)
+│   │   │   ├── sync-state.md       # snapshot + ledger update (also closes Create/Update/Build)
+│   │   │   ├── track-record.md     # file/advance ADR, feature, and issue records
 │   │   │   └── diagram-generation.md   # subworkflow — local Excalidraw diagrams
 │   │   └── scripts/                # ships WITH the skill, so bare-skill installs carry the CLI
 │   │       ├── plan_tool.py        # deterministic CLI for all managed plan writes + validate/index/roles
@@ -308,6 +332,11 @@ cozyplan/                           # the repo IS the plugin (and its own market
 #   ├── <role>/memory.md            # that role's single-writer durable notes
 #   └── _roles.json                 # GENERATED ownership map (plan_tool roles build)
 #   .github/CODEOWNERS              # GENERATED from roles/*.md for review-time ownership
+
+# In a project that uses the state layer, CozyPlan also maintains:
+#   STATE.md                        # SOT snapshot — verified working state, in-development, gaps
+#   docs/journal.md                 # append-only ledger — who changed what, why, resulting state
+#   docs/features/ docs/issues/     # feature/issue records (docs/adr/ is shared with discuss)
 ```
 
 ---

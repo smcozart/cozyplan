@@ -5,4 +5,5 @@
 3. Apply the Change - Edit the relevant free-form sections (Purpose, Problem, Solution, Notes, Open Questions prose) in place, preserving existing structure. Record any new assumption the revision rests on in Open Questions. Add new phases with `PLAN_TOOL addphase PLAN_FILE --tasks <N> --title "<phase name>"` — never hand-write phase/task HTML outside the draft window. Do NOT hand-edit status markers, metadata, or amendments — those go through `PLAN_TOOL` (next steps). To flip a status marker use `PLAN_TOOL status PLAN_FILE --id <id> --state <state>`
 4. Update Metadata - `PLAN_TOOL meta PLAN_FILE --field agent --value <name>` and `--field session --value <id>` (each appends; `modified` is stamped automatically on every CLI write). Never overwrite existing entries
 5. Record Amendment - `PLAN_TOOL amend PLAN_FILE --summary "<what changed>" --detail "<what and why>"` (appends newest at the bottom). If the change supersedes the plan, also `PLAN_TOOL meta PLAN_FILE --field status --value superseded` and add the forward ref (see Update References)
-6. Report - Summarize the change made and the amendment recorded
+6. Sync State - If `STATE_FILE` exists, run the `workflows/sync-state.md` subworkflow (ledger entry; refresh the plan's In Development row if its scope or status changed)
+7. Report - Summarize the change made and the amendment recorded
