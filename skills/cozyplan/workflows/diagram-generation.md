@@ -17,8 +17,6 @@ cd ~/.claude/skills/excalidraw-diagram-skill/references && uv run python render_
 
 The render writes a `.png` next to the `.excalidraw` file. The `.excalidraw` source is the editable artifact — the user can open and tweak it in the **Excalidraw VS Code extension** (`pomdtr.excalidraw-editor`), then re-render.
 
-**If the skill is not installed** (`~/.claude/skills/excalidraw-diagram-skill/` absent): do not improvise a renderer. For each `{{...IMAGE: subject}}` slot, **strip the `{{ }}` braces** and leave a plain descriptive comment (e.g. `<!-- diagram TODO: <subject> -->`), keep the authored `<figcaption>`, and report the missing dependency to the user. Stripping the braces matters: a leftover `{{...}}` token is a validation *warning* while `draft` but a *failure* outside it, and `PLAN_TOOL meta … --field status` refuses to move a plan off `draft` while any `{{}}` slot remains — so de-tokenizing the comment is what lets an otherwise-complete plan leave `draft` before the diagrams exist. Diagrams can be generated later by re-running this sub-workflow once the skill is installed.
-
 ## Shared rules for every diagram
 
 - Keep it **simple and straightforward**: one or two core ideas per diagram, boxes + arrows + short labels. Default to the `excalidraw-diagram` skill's Simple/Conceptual mode, not the comprehensive/evidence-artifact mode.
@@ -29,7 +27,7 @@ The render writes a `.png` next to the `.excalidraw` file. The `.excalidraw` sou
 
 ## Create
 
-1. **Find slots** — Grep the plan for `{{...IMAGE` placeholders (hero, problem, solution, per-phase, open questions, notes). Each comment names the intended subject.
+1. **Find slots** — Grep the plan for `{{...IMAGE` placeholders (hero, problem, solution, per-phase, questionables, notes). Each comment names the intended subject.
 2. **Design each diagram** — For each slot, decide the one or two ideas it must convey and the visual pattern (flow, fan-out, convergence, timeline, before/after) that mirrors it. Keep it minimal.
 3. **Author + render** — Invoke the `excalidraw-diagram` skill to build the `.excalidraw` file in `IMAGES_OUTPUT_DIR` using the plan's palette, then render it to PNG with `render_excalidraw.py`. Read the rendered PNG and fix layout (clipping, overlap, spacing) until it looks clean.
 4. **Embed** — Replace each `<!-- {{...IMAGE: ...}} -->` placeholder with `<img src="<plan-name>/<file>.png" alt="...">`, keeping the existing `<figure>`/`<figcaption>`.

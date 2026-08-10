@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plan: {{PLAN_TITLE}}</title>
+</head>
+<body>
+<main>
+
+  <!-- ===== HEADER + UPDATABLE METADATA ===== -->
+  <header>
+    <h1>Plan: {{PLAN_TITLE}}</h1>
+    <details class="meta">
+      <summary>Metadata</summary>
+      <dl>
+        <dt>created</dt>      <dd>{{CREATED_ISO}}</dd>
+        <dt>modified</dt>     <dd>{{MODIFIED_ISO_LIST}}</dd>
+        <dt>commits</dt>      <dd>{{COMMIT_SHA_LIST}}</dd>
+        <dt>agent name</dt>        <dd>{{AGENT_NAME_LIST}}</dd>
+        <dt>session id</dt>      <dd>{{SESSION_ID_LIST}}</dd>
+        <dt>back refs</dt>    <dd>{{BACK_REFERENCES}}</dd>
+        <dt>forward refs</dt> <dd>{{FORWARD_REFERENCES}}</dd>
+      </dl>
+    </details>
+  </header>
+
+  <!-- Hero image — synced to the :root visual identity. Replace with <img> once generated. -->
+  <figure>
+    <!-- {{HERO_IMAGE: subject describing the plan at a glance}} -->
+    <figcaption>{{HERO_IMAGE_CAPTION}}</figcaption>
+  </figure>
+
+  <!-- ===== PURPOSE / PROBLEM / SOLUTION ===== -->
+  <section id="purpose">
+    <h2>Purpose</h2>
+    <p>{{PURPOSE}}</p>
+  </section>
+
+  <section id="problem">
+    <h2>Problem</h2>
+    <p>{{PROBLEM}}</p>
+    <figure>
+      <!-- {{PROBLEM_IMAGE: subject visualizing the problem this plan addresses}} -->
+      <figcaption>{{PROBLEM_IMAGE_CAPTION}}</figcaption>
+    </figure>
+  </section>
+
+  <section id="solution">
+    <h2>Solution</h2>
+    <p>{{SOLUTION}}</p>
+    <figure>
+      <!-- {{SOLUTION_IMAGE: subject visualizing the proposed solution}} -->
+      <figcaption>{{SOLUTION_IMAGE_CAPTION}}</figcaption>
+    </figure>
+  </section>
+
+  <!-- ===== RELEVANT FILES ===== -->
+  <section id="files" class="files">
+    <h2>Relevant Files</h2>
+
+    <h3>Existing Files</h3>
+    <ul>
+      <!-- repeat -->
+      <li><span class="tag existing">existing</span> <code>{{EXISTING_FILE_PATH}}</code> — {{WHY_RELEVANT}}</li>
+    </ul>
+
+    <h3>New Files</h3>
+    <ul>
+      <!-- repeat -->
+      <li><span class="tag new">new</span> <code>{{NEW_FILE_PATH}}</code> — {{WHY_NEEDED}}</li>
+    </ul>
+  </section>
+
+  <!-- ===== IMPLEMENTATION PHASES ===== -->
+  <section id="phases">
+    <h2>Implementation Phases</h2>
+    <p><strong>IMPORTANT:</strong> Execute every phase and task step by step, in order, top to bottom.</p>
+    <p>Status markers: <code>[]</code> idle · <code>[wip]</code> in progress · <code>[x]</code> complete · <code>[f]</code> failed. All start as <code>[]</code>; the Build Plan workflow updates them as it works.</p>
+
+    <!-- repeat: one .phase block per phase -->
+    <div class="phase">
+      <h3><code class="status">[]</code> Phase {{PHASE_NUMBER}}: {{PHASE_NAME}}</h3>
+      <p>{{PHASE_DESCRIPTION}}</p>
+
+      <!-- Optional focused image for this phase, synced to :root identity -->
+      <figure>
+        <!-- {{PHASE_IMAGE: subject describing this phase's architecture/flow}} -->
+        <figcaption>{{PHASE_IMAGE_CAPTION}}</figcaption>
+      </figure>
+
+      <!-- repeat: one <h4> + checklist per task -->
+      <h4>{{TASK_NUMBER}}. {{TASK_NAME}}</h4>
+      <ul class="checklist">
+        <!-- repeat -->
+        <li><code class="status">[]</code> {{SPECIFIC_ACTION}}</li>
+      </ul>
+
+      <!-- Final task of every phase: Testing Strategy + validation loop -->
+      <h4>{{LAST_TASK_NUMBER}}. Testing Strategy</h4>
+      <p>{{TESTING_APPROACH: technology used to test/validate, including edge cases}}</p>
+      <ul class="checklist">
+        <!-- repeat -->
+        <li><code class="status">[]</code> <code>{{VALIDATION_COMMAND}}</code> — {{WHAT_IT_PROVES}}</li>
+      </ul>
+      <div class="loop">
+        🔁 <strong>Do not exit this phase until every box above is checked.</strong>
+        If any command fails, fix the cause and re-run — loop until all pass.
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== GLOBAL VALIDATION ===== -->
+  <section id="validation">
+    <h2>Validation Commands</h2>
+    <p>Execute these commands to validate the entire plan is complete:</p>
+    <ul class="checklist">
+      <!-- repeat -->
+      <li><code class="status">[]</code> <code>{{VALIDATION_COMMAND}}</code> — {{WHAT_IT_PROVES}}</li>
+    </ul>
+    <div class="loop">
+      🔁 <strong>The plan is not complete until every box is checked and every command passes. If for some reason a step is not possible to complete, mark it with [f] and move on if possible.</strong>
+    </div>
+  </section>
+
+  <!-- ===== QUESTIONABLES (only include this section if QUESTIONABLE is true) ===== -->
+  <section id="questionables">
+    <h2>Questionables</h2>
+    <!-- Optional image for this section, synced to :root identity -->
+    <figure>
+      <!-- {{QUESTIONABLES_IMAGE: subject visualizing the key open question/risk}} -->
+      <figcaption>{{QUESTIONABLES_IMAGE_CAPTION}}</figcaption>
+    </figure>
+    <!-- repeat: one <details> per questionable decision / assumption / risk -->
+    <details>
+      <summary>{{QUESTIONABLE}}</summary>
+      <p class="qa-answer">{{ASSUMPTION_OR_RATIONALE}}</p>
+    </details>
+  </section>
+
+  <!-- ===== NOTES ===== -->
+  <!-- Open canvas — the planning agent runs free here. There is no fixed shape:
+       use whatever HTML best serves the plan (prose, lists, tables, code blocks,
+       diagrams, callouts, decision logs, alternatives considered, open threads,
+       links, anything). Embed as many image slots as the plan benefits from. -->
+  <section id="notes">
+    <h2>Notes</h2>
+    {{NOTES: free-form. Capture anything that helps the trifecta understand, build,
+      or extend this plan — context, dependencies (new libraries via `uv add`),
+      tradeoffs, rejected approaches, risks, future work, references. Author rich,
+      bespoke HTML as needed.}}
+    <!-- repeat: add as many of these image slots as the notes warrant including the image block below -->
+    <figure>
+      <!-- {{NOTES_IMAGE: subject for a note worth visualizing}} -->
+      <figcaption>{{NOTES_IMAGE_CAPTION}}</figcaption>
+    </figure>
+  </section>
+
+  <!-- ===== AMENDMENTS ===== -->
+  <!-- Running history of changes made AFTER the plan was first executed. Append-only.
+       Populated by the Update Plan and Update References workflows — never edited during Create. -->
+  <section id="amendments">
+    <h2>Amendments</h2>
+    <!-- repeat: one entry per amendment, newest at the bottom -->
+    <details>
+      <summary>{{AMEND_ISO}} — {{AMEND_SUMMARY}}</summary>
+      <p>{{AMEND_DETAIL: what changed and why}}</p>
+    </details>
+  </section>
+
+</main>
+</body>
+</html>
