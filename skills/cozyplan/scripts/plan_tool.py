@@ -39,6 +39,7 @@ import html
 import json
 import os
 import re
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -1129,11 +1130,26 @@ def cmd_index(args) -> int:
                 if rr.endswith((".html", ".md")) and not (specs / rr).exists():
                     dangling.append((p["file"], fld_name, rr))
 
+    # Unprovided consumption: a contract some plan consumes that no plan provides.
+    # A dead edge only wastes a lookup; a MISSING edge makes an impact answer read
+    # "nothing depends on this" with confidence, so this is the half worth flagging.
+    # `external:` marks a contract owned outside the repo, which nothing here provides.
+    provided = {c for p in plans for c in p["provides"] if c and c != "\u2014"}
+    unprovided = []
+    for p in plans:
+        for c in p["consumes"]:
+            c = c.strip()
+            if not c or c == "\u2014" or c.startswith("external:"):
+                continue
+            if c not in provided:
+                unprovided.append((p["file"], c))
+
     # Deterministic output: stamp with the newest content timestamp, not the run
     # time, so re-running index on unchanged inputs produces a byte-identical file.
     as_of = max((p["modified"] or p["created"] for p in plans), default="")
     (specs / "_index.json").write_text(
-        json.dumps({"as_of": as_of, "plans": plans, "dangling": dangling},
+        json.dumps({"as_of": as_of, "plans": plans, "dangling": dangling,
+                    "unprovided": unprovided},
                    indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
@@ -1640,6 +1656,175 @@ def cmd_hooks(args) -> int:
     return 0
 
 
+# ── state check (STATE.md against git reality) ────────────────────────────────
+# The snapshot claims things about the repo; git knows whether they still hold.
+# This check is deliberately STATIC — it never executes a proof command it found
+# in a file (that would be arbitrary code execution from repo content, and slow
+# in CI). It verifies shape, anchoring, and freshness, and reports what it cannot
+# know. Per ADR-0004 the derivation tolerates gaps: missing anchors narrow the
+# report to a warning rather than failing the run.
+
+# "- <capability> — verified by `<command>` (<when>)" where <when> is an ISO date
+# optionally followed by the short sha the proof was true at.
+STATE_CLAIM_RE = re.compile(
+    r"^-\s+(?P<what>.+?)\s+[—-]\s+verified by\s+`(?P<cmd>[^`]+)`\s+"
+    r"\((?P<when>[^)]+)\)\s*$"
+)
+STATE_WHEN_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})(?:\s*,\s*(?P<sha>[0-9a-f]{7,40}))?$")
+REPO_STATE_RE = re.compile(r"^\|\s*Repo state\s*\|\s*(?P<branch>\S+)\s*@\s*(?P<sha>[0-9a-f]{7,40})\s*\|",
+                           re.M)
+LAST_SYNCED_RE = re.compile(r"^\|\s*Last synced\s*\|\s*(?P<ts>[^|]+?)\s*\|", re.M)
+ADR_FILE_RE = re.compile(r"^(?P<num>\d{4})-")
+
+
+def git(root: Path, *argv: str) -> tuple[bool, str]:
+    """Run a git command, returning (ok, stripped stdout). Never raises: a missing
+    git binary or a non-repo is a condition the caller reports, not a crash."""
+    try:
+        r = subprocess.run(["git", *argv], cwd=str(root), capture_output=True,
+                           text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return False, ""
+    return r.returncode == 0, r.stdout.strip()
+
+
+def section_body(text: str, heading: str) -> str:
+    """The lines under a `## heading`, up to the next heading of the same level."""
+    m = re.search(rf"^##\s+{re.escape(heading)}\s*$(?P<body>.*?)(?=^##\s|\Z)",
+                  text, re.M | re.S)
+    return m.group("body") if m else ""
+
+
+def check_state(state_path: Path, root: Path, adr_dir: Path, journal: Path,
+                max_drift: int | None) -> tuple[list[str], list[str], list[str]]:
+    """Return (problems, warns, notes). Problems fail the run; warns and notes do not."""
+    problems: list[str] = []
+    warns: list[str] = []
+    notes: list[str] = []
+
+    text = read(state_path)
+
+    # 1. No unfilled scaffold slots. A placeholder in a snapshot is a lie with a
+    #    template's face on it.
+    tokens = re.findall(r"\{\{.*?\}\}", text, re.S)
+    if tokens:
+        problems.append(f"{len(tokens)} unfilled {{{{}}}} placeholder token(s) in {state_path.name}")
+
+    # 2. The sync block must be parseable — everything downstream keys off it.
+    m_repo = REPO_STATE_RE.search(text)
+    m_sync = LAST_SYNCED_RE.search(text)
+    if not m_sync:
+        problems.append("no parseable 'Last synced' row in the Sync block")
+    if not m_repo:
+        problems.append("no parseable 'Repo state | <branch> @ <sha>' row in the Sync block")
+
+    in_git, _ = git(root, "rev-parse", "--is-inside-work-tree")
+    if not in_git:
+        notes.append("not a git work tree (or git unavailable) — freshness checks skipped")
+
+    # 3. Snapshot freshness. The sha is recorded today but never read back; reading
+    #    it is the whole point of this check.
+    if in_git and m_repo:
+        sha = m_repo.group("sha")
+        ok_obj, _ = git(root, "cat-file", "-e", f"{sha}^{{commit}}")
+        if not ok_obj:
+            problems.append(f"Repo state names {sha}, which is not a commit in this repo")
+        else:
+            ok_anc, _ = git(root, "merge-base", "--is-ancestor", sha, "HEAD")
+            if not ok_anc:
+                problems.append(
+                    f"Repo state {sha} is not an ancestor of HEAD — the snapshot was taken "
+                    "on a branch this one does not contain")
+            else:
+                ok_cnt, out = git(root, "rev-list", "--count", f"{sha}..HEAD")
+                behind = int(out or 0) if ok_cnt else 0
+                notes.append(f"snapshot is {behind} commit(s) behind HEAD")
+                if max_drift is not None and behind > max_drift:
+                    problems.append(f"snapshot is {behind} commit(s) behind HEAD (max-drift {max_drift})")
+        ok_st, dirty = git(root, "status", "--porcelain")
+        if ok_st and dirty:
+            warns.append(f"working tree has {len(dirty.splitlines())} uncommitted change(s); "
+                         "any claim proved against it is not reproducible from HEAD")
+
+    # 4. Every Current Working State line carries its proof, in a shape a machine
+    #    can read. A claim whose proof cannot be parsed cannot be checked later.
+    body = section_body(text, "Current Working State")
+    claims = [ln for ln in body.splitlines()
+              if ln.strip().startswith("- ") and "<!--" not in ln]
+    if not claims:
+        notes.append("Current Working State is empty")
+    for ln in claims:
+        m = STATE_CLAIM_RE.match(ln.strip())
+        if not m:
+            problems.append(f"claim does not name its proof: {ln.strip()[:90]}")
+            continue
+        mw = STATE_WHEN_RE.match(m.group("when").strip())
+        if not mw:
+            problems.append(
+                f"claim's proof timestamp is not '<YYYY-MM-DD>' or '<YYYY-MM-DD>, <sha>': "
+                f"{m.group('when').strip()[:60]}")
+            continue
+        sha = mw.group("sha")
+        if not sha:
+            warns.append(f"claim is date-anchored but not commit-anchored, so staleness "
+                         f"cannot be computed: {m.group('what')[:60]}")
+            continue
+        if in_git:
+            ok_obj, _ = git(root, "cat-file", "-e", f"{sha}^{{commit}}")
+            if not ok_obj:
+                problems.append(f"claim cites {sha}, which is not a commit in this repo: "
+                                f"{m.group('what')[:60]}")
+                continue
+            ok_cnt, out = git(root, "rev-list", "--count", f"{sha}..HEAD")
+            if ok_cnt and int(out or 0):
+                notes.append(f"claim proved {out} commit(s) ago: {m.group('what')[:60]}")
+
+    # 5. The ADR register is a hand-maintained copy of a directory listing, so it
+    #    drifts. Comparing the two is cheap and catches it immediately.
+    if adr_dir.is_dir():
+        on_disk = {m.group("num") for f in adr_dir.glob("*.md")
+                   if (m := ADR_FILE_RE.match(f.name))}
+        registers = section_body(text, "Registers")
+        listed = set(re.findall(r"ADR-(\d{4})", registers))
+        for num in sorted(on_disk - listed):
+            problems.append(f"ADR-{num} exists in {adr_dir}/ but is missing from the Registers index")
+        for num in sorted(listed - on_disk):
+            problems.append(f"Registers index lists ADR-{num}, which has no file in {adr_dir}/")
+    else:
+        notes.append(f"no {adr_dir}/ directory — ADR register check skipped")
+
+    # 6. The ledger. Its entry format is prose owned by the journal's own header,
+    #    so this checks presence and agreement only — never tries to parse it.
+    if not journal.exists():
+        warns.append(f"no ledger at {journal} — history has nowhere to accumulate")
+    elif m_sync:
+        ts = m_sync.group("ts").strip()
+        if ts and ts not in read(journal):
+            warns.append(f"ledger has no entry stamped '{ts}' — the newest sync may be unrecorded")
+
+    return problems, warns, notes
+
+
+def cmd_state(args) -> int:
+    state_path = Path(args.file)
+    if not state_path.exists():
+        return fail(f"state file not found: {state_path} - run the Init State workflow first")
+    root = Path(args.root)
+    problems, warns, notes = check_state(
+        state_path, root, Path(args.adr_dir), Path(args.journal), args.max_drift)
+    for n in notes:
+        print(f"  note: {n}")
+    for w in warns:
+        print(f"  warn: {w}")
+    if problems:
+        print(f"FAIL {state_path.name}: {len(problems)} problem(s)")
+        for p in problems:
+            print(f"  - {p}")
+        return 1
+    print(f"OK {state_path.name}: consistent with git")
+    return 0
+
+
 # ── argparse wiring ───────────────────────────────────────────────────────────
 def build_parser() -> argparse.ArgumentParser:
     parent = argparse.ArgumentParser(add_help=False)
@@ -1719,6 +1904,17 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--global", dest="global_", action="store_true",
                     help="target ~/.claude/settings.json instead of the project settings")
     sp.set_defaults(func=cmd_hooks)
+
+    sp = sub.add_parser("state", parents=[parent],
+                        help="check STATE.md against git reality (freshness, proofs, registers)")
+    sp.add_argument("state_cmd", choices=["check"], help="subcommand (only 'check')")
+    sp.add_argument("--file", default="STATE.md", help="state file (default: STATE.md)")
+    sp.add_argument("--root", default=".", help="repo root (default: .)")
+    sp.add_argument("--adr-dir", default="docs/adr", help="ADR directory (default: docs/adr)")
+    sp.add_argument("--journal", default="docs/journal.md", help="ledger (default: docs/journal.md)")
+    sp.add_argument("--max-drift", type=int, default=None,
+                    help="fail when the snapshot is more than N commits behind HEAD")
+    sp.set_defaults(func=cmd_state)
 
     sp = sub.add_parser("brief", parents=[parent],
                         help="compact plain-text extract of a plan (or --all for a one-liner index)")

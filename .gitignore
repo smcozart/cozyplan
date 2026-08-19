@@ -13,3 +13,7 @@
 # Curated images that the README and example plans depend on stay tracked
 !images/
 !specs/
+
+# Test cache — never versioned.
+.pytest_cache/
+__pycache__/
