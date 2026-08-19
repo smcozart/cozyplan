@@ -6,23 +6,23 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-19T18:35:34-05:00 |
-| Repo state | baseline-audit @ e38dff5 |
+| Last synced | 2026-08-19T18:36:55-05:00 |
+| Repo state | baseline-audit @ 9bfb3fe |
 
 ## Current Working State
 
-- plan_tool CLI and both hooks pass their suite — verified by `python3 -m pytest tests` (2026-08-18, 5345dfe)
-  ↳ session:s-audit-01 path:tests path:skills/cozyplan/scripts
 - plan_tool init takes a greenfield repo from five doctor gaps to zero, and adopts a brownfield one without overwriting anything — verified by `python3 -m pytest tests/test_init.py` (2026-08-19, e38dff5)
   ↳ session:s-audit-03 adr:0004 adr:0007 path:skills/cozyplan/scripts/plan_tool.py path:skills/cozyplan/templates path:tests/test_init.py
 - state render cannot silently destroy a hand-authored STATE.md, and state migrate carries one into the log while naming what it could not carry — verified by `python3 -m pytest tests/test_state_migrate.py` (2026-08-19, e38dff5)
   ↳ session:s-audit-03 adr:0005 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_state_migrate.py
-- Plan validation runs without uv installed — verified by `python3 skills/cozyplan/scripts/plan_tool.py validate` (2026-08-18, 5345dfe)
-  ↳ session:s-audit-01 adr:0004 path:skills/cozyplan/scripts/hooks
-- The provides/consumes graph flags unprovided contracts — verified by `plan_tool index --specs specs` (2026-08-18, 5345dfe)
-  ↳ session:s-audit-01 adr:0003 path:skills/cozyplan/scripts/plan_tool.py
+- plan_tool CLI and both hooks pass their suite — verified by `python3 -m pytest tests` (2026-08-19, 9bfb3fe)
+  ↳ session:s-audit-03 path:tests path:skills/cozyplan/scripts
 - commit-msg trailer injection survives an interpreter path containing spaces, and doctor tests the runner the clone actually recorded — verified by `python3 -m pytest tests/test_trailers.py` (2026-08-19, e38dff5)
   ↳ session:s-audit-03 adr:0004 adr:0007 path:skills/cozyplan/scripts/plan_tool.py path:.githooks
+- Plan validation runs without uv installed — verified by `python3 skills/cozyplan/scripts/plan_tool.py validate` (2026-08-19, 9bfb3fe)
+  ↳ session:s-audit-03 path:skills/cozyplan/scripts
+- The provides/consumes graph flags unprovided contracts — verified by `plan_tool index --specs specs` (2026-08-19, 9bfb3fe)
+  ↳ session:s-audit-03 path:specs
 
 ## In Development
 
