@@ -33,21 +33,14 @@
 <!-- repeat -->
 | {{ITEM}} | {{feature / issue / plan-phase}} | {{STATUS}} | {{OWNER}} | {{RELATIVE_LINK}} |
 
-## System Map
-
-| Component | Status | Notes |
-|---|---|---|
-<!-- repeat -->
-| {{COMPONENT}} | {{working / in-development / planned / broken}} | {{NOTE}} |
-
 ## Registers
 
-- **Plans** — [specs/](specs/)
+- **Plans** — [specs/_index.html](specs/_index.html)
 - **Decisions (ADRs)** — [docs/adr/](docs/adr/)
   <!-- repeat: one line per ADR — keep this index current -->
   - {{ADR_ID}} — {{ADR_TITLE}} ({{ADR_STATUS}})
-- **Features** — [docs/features/](docs/features/)
-- **Issues** — [docs/issues/](docs/issues/)
+- **Work items** — the repo's issue tracker (see `docs/agents/issue-tracker.md`)
+- **Components** — [SYSTEM.md](SYSTEM.md)
 - **Ledger** — [docs/journal.md](docs/journal.md)
 
 ## Known Gaps / Risks

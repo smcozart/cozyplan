@@ -6,9 +6,9 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-18T20:20:00-05:00 |
-| Repo state | baseline-audit @ cb950d6 |
-| Vs origin/main | 0 behind, 7 ahead |
+| Last synced | 2026-08-18T21:10:00-05:00 |
+| Repo state | baseline-audit @ 9214a76 |
+| Vs origin/main | 0 behind, 8 ahead |
 
 ## Current Working State
 
@@ -32,6 +32,7 @@
   ↳ adr:0006
 - Each clone must run `plan_tool hooks git-install` once; .git/hooks is not cloned
   ↳ adr:0007
+- The README ADR table is hand-maintained and will drift from docs/adr/
 
 ## Registers
 

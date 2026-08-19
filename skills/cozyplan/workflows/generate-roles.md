@@ -1,5 +1,7 @@
 # Generate Roles
 
+Roles are **optional and off by default** — they activate only when the user runs this workflow, or a `roles/` directory already exists. Without them cozyplan is a pure planning tool and `owner` is just a free label. This is a **pure ownership-map generator, not an enforcement engine**: `PLAN_TOOL roles build` compiles hand-authored `roles/*.md` into `roles/_roles.json` and `.github/CODEOWNERS`, and enforcement stays git's job — PR review routing, branch protection, `git blame`. Pass `--role <R>` on `PLAN_TOOL` calls to label your events.
+
 Scope a project (not a single plan) into **roles** — the owners of its plans, code, and
 docs. Roles are project-scoped: generated once at kickoff and revised as the architecture
 evolves. Each role is one hand-authored source-of-truth file at `roles/<role>.md`; the
