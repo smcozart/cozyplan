@@ -2211,6 +2211,121 @@ def cmd_doctor(args) -> int:
     return 1 if (gaps and args.strict) else 0
 
 
+# ── trailers + git hooks (ADR-0004: hooks advise by injecting, never rejecting) ─
+# A commit-msg hook that REJECTS teaches people to type --no-verify, and then you
+# have neither the trailer nor the habit. So this only ever adds what it can
+# demonstrate: ADRs from the staged files, and a plan whose id matches the branch.
+# Anything it cannot prove, it leaves alone. It fails open on every error — a
+# hook that blocks a commit because it could not read a file is worse than a
+# missing trailer.
+
+GIT_HOOK_NAMES = ("commit-msg", "pre-push")
+
+COMMIT_MSG_HOOK = """#!/bin/sh
+# cozyplan: add the trailers that can be demonstrated from this commit.
+# Advisory by design — never blocks, never rejects (ADR-0004).
+TOOL=$(git config cozyplan.plantool 2>/dev/null) || exit 0
+[ -n "$TOOL" ] || exit 0
+RUN=$(git config cozyplan.runner 2>/dev/null)
+[ -n "$RUN" ] || RUN=python3
+$RUN "$TOOL" trailers --message-file "$1" >/dev/null 2>&1 || true
+exit 0
+"""
+
+PRE_PUSH_HOOK = """#!/bin/sh
+# cozyplan: report snapshot drift before a push. Never blocks (ADR-0004).
+TOOL=$(git config cozyplan.plantool 2>/dev/null) || exit 0
+[ -n "$TOOL" ] || exit 0
+RUN=$(git config cozyplan.runner 2>/dev/null)
+[ -n "$RUN" ] || RUN=python3
+$RUN "$TOOL" state check 2>/dev/null | grep -E "behind HEAD|FAIL" || true
+exit 0
+"""
+
+
+def infer_trailers(root: Path) -> list[str]:
+    """Trailers this commit can prove. Never a guess: an ADR is inferred only from
+    a staged ADR file, and a plan only from a branch segment that names a real
+    plan in specs/."""
+    out: list[str] = []
+
+    ok, staged = git(root, "diff", "--cached", "--name-only")
+    if ok and staged:
+        nums = []
+        for path in staged.split("\n"):
+            name = Path(path).name
+            if "docs/adr/" in path.replace("\\", "/"):
+                m = ADR_FILE_RE.match(name)
+                if m and m.group("num") not in nums:
+                    nums.append(m.group("num"))
+        if nums:
+            out.append("ADR: " + ",".join(sorted(nums)))
+
+    ok_b, branch = git(root, "rev-parse", "--abbrev-ref", "HEAD")
+    if ok_b and branch and branch != "HEAD":
+        # feat/streaming-ingest, streaming-ingest, or bug/streaming-ingest-2 all
+        # get a chance; only an id with a real plan file behind it is used.
+        for seg in [branch] + branch.split("/"):
+            if (root / "specs" / f"{seg}.html").exists():
+                out.append(f"Plan: {seg}")
+                break
+    return out
+
+
+def cmd_trailers(args) -> int:
+    root = Path(args.root)
+    trailers = infer_trailers(root)
+    if args.print_only:
+        for t in trailers:
+            print(t)
+        return 0
+    if not args.message_file:
+        return fail("--message-file or --print is required")
+    msg = Path(args.message_file)
+    if not msg.exists() or not trailers:
+        return 0
+    argv = ["interpret-trailers", "--in-place", "--if-exists", "doNothing"]
+    for t in trailers:
+        argv += ["--trailer", t]
+    argv.append(str(msg))
+    # git owns the trailer grammar (last paragraph, no blank lines inside the
+    # block). Hand-rolling it is how the first pass at this silently dropped
+    # every trailer behind a Co-Authored-By line.
+    git(root, *argv)
+    return 0
+
+
+def cmd_hooks_git(args) -> int:
+    root = Path(args.root)
+    hooks_dir = root / args.dir
+    if args.hooks_cmd == "git-remove":
+        for name in GIT_HOOK_NAMES:
+            (hooks_dir / name).unlink(missing_ok=True)
+        git(root, "config", "--unset", "core.hooksPath")
+        git(root, "config", "--unset", "cozyplan.plantool")
+        git(root, "config", "--unset", "cozyplan.runner")
+        print(f"hooks: removed {args.dir}/ hooks and unset core.hooksPath")
+        return 0
+
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    for name, body in (("commit-msg", COMMIT_MSG_HOOK), ("pre-push", PRE_PUSH_HOOK)):
+        p = hooks_dir / name
+        with open(p, "w", encoding="utf-8", newline="\n") as f:
+            f.write(body)
+        p.chmod(0o755)
+    # .git/hooks is not cloned, so the hooks live in a TRACKED directory and each
+    # clone opts in with one command. doctor reports when that has not happened.
+    git(root, "config", "core.hooksPath", args.dir)
+    git(root, "config", "cozyplan.plantool", str(Path(__file__).resolve()))
+    git(root, "config", "cozyplan.runner",
+        "uv run" if shutil.which("uv") else sys.executable)
+    print(f"hooks: wrote {args.dir}/commit-msg and {args.dir}/pre-push, "
+          f"set core.hooksPath={args.dir}")
+    print("       commit these — .git/hooks is not cloned, so each clone runs "
+          "`plan_tool hooks git-install` once (doctor reports when it has not).")
+    return 0
+
+
 # ── argparse wiring ───────────────────────────────────────────────────────────
 def build_parser() -> argparse.ArgumentParser:
     parent = argparse.ArgumentParser(add_help=False)
@@ -2284,12 +2399,25 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("hooks", parents=[parent],
                         help="register/unregister the coherence hooks in .claude/settings.json (for bare-skill installs)")
-    sp.add_argument("hooks_cmd", choices=["install", "remove"], help="install or remove the two hook entries")
+    sp.add_argument("hooks_cmd", choices=["install", "remove", "git-install", "git-remove"],
+                    help="install/remove the Claude Code hooks, or git-install/git-remove "
+                         "the tracked .githooks (commit-msg trailer injection, pre-push drift)")
+    sp.add_argument("--dir", dest="dir", default=".githooks",
+                    help="git-install: tracked hooks directory (default: .githooks)")
+    sp.add_argument("--root", default=".", help="repo root (default: .)")
     sp.add_argument("--settings", default=None,
                     help="explicit settings.json path (default: ./.claude/settings.json)")
     sp.add_argument("--global", dest="global_", action="store_true",
                     help="target ~/.claude/settings.json instead of the project settings")
-    sp.set_defaults(func=cmd_hooks)
+    sp.set_defaults(func=lambda a: cmd_hooks_git(a) if a.hooks_cmd.startswith("git-") else cmd_hooks(a))
+
+    sp = sub.add_parser("trailers", parents=[parent],
+                        help="add the commit trailers this commit can demonstrate (advisory)")
+    sp.add_argument("--message-file", default=None, help="commit message file to amend in place")
+    sp.add_argument("--print", dest="print_only", action="store_true",
+                    help="print the inferred trailers instead of writing them")
+    sp.add_argument("--root", default=".", help="repo root (default: .)")
+    sp.set_defaults(func=cmd_trailers)
 
     sp = sub.add_parser("doctor", parents=[parent],
                         help="report what is actually wired in this clone (ADR-0004)")

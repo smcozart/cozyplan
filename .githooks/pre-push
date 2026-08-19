@@ -1,0 +1,8 @@
+#!/bin/sh
+# cozyplan: report snapshot drift before a push. Never blocks (ADR-0004).
+TOOL=$(git config cozyplan.plantool 2>/dev/null) || exit 0
+[ -n "$TOOL" ] || exit 0
+RUN=$(git config cozyplan.runner 2>/dev/null)
+[ -n "$RUN" ] || RUN=python3
+$RUN "$TOOL" state check 2>/dev/null | grep -E "behind HEAD|FAIL" || true
+exit 0
