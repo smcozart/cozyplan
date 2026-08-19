@@ -6,9 +6,9 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-18T18:45:00-05:00 |
-| Repo state | baseline-audit @ 5345dfe |
-| Vs origin/main | 0 behind, 4 ahead |
+| Last synced | 2026-08-18T20:20:00-05:00 |
+| Repo state | baseline-audit @ cb950d6 |
+| Vs origin/main | 0 behind, 7 ahead |
 
 ## Current Working State
 
@@ -30,6 +30,8 @@
   ↳ adr:0004
 - ground and its presets are decided but unimplemented; backward grounding needs trailer coverage that barely exists
   ↳ adr:0006
+- Each clone must run `plan_tool hooks git-install` once; .git/hooks is not cloned
+  ↳ adr:0007
 
 ## Registers
 
@@ -41,5 +43,6 @@
   - ADR-0004 — Hooks advise, CI enforces, and derivation tolerates gaps
   - ADR-0005 — State is a union-merged log projected into capped views
   - ADR-0006 — Grounding is a traversal with a declared stopping rule
+  - ADR-0007 — Git hooks are tracked and opted into per clone
 - **Components** — [SYSTEM.md](SYSTEM.md)
 - **Ledger** — [docs/journal.md](docs/journal.md)
