@@ -6,9 +6,9 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-18T21:10:00-05:00 |
-| Repo state | baseline-audit @ 9214a76 |
-| Vs origin/main | 0 behind, 8 ahead |
+| Last synced | 2026-08-19T09:03:00-05:00 |
+| Repo state | baseline-audit @ 54fea3f |
+| Vs origin/main | 0 behind, 9 ahead |
 
 ## Current Working State
 
@@ -21,6 +21,11 @@
 
 ## In Development
 
+- OPEN DECISION: how to build ground (ADR-0006) — hybrid `plan_tool ground --resolve` + workflows/ground.md, pure CLI, or pure workflow — needs-decision · architect
+  ↳ adr:0006
+- OPEN DECISION: baseline-audit is 9 commits ahead of main and unpushed; state-check.yml has never run on a runner, only dry-run locally — needs-decision · architect
+- OPEN DECISION: plugin.json still says 2.2.0. Removing docs/features+docs/issues and making STATE.md generated strands existing 2.2.0 users — 2.3.0 or breaking 3.0.0 with a migration note — needs-decision · architect
+  ↳ adr:0001 adr:0005
 - state check wired as a CI gate — in-development · architect
   ↳ session:s-audit-01 adr:0004
 
@@ -28,6 +33,8 @@
 
 - The CI check is not marked required yet, so it reports without gating
   ↳ adr:0004
+- Commit trailers must be one contiguous final block — a blank line before Co-Authored-By makes git parse only that line and silently drop ADR:/Session:/Verified:
+  ↳ adr:0007
 - ground and its presets are decided but unimplemented; backward grounding needs trailer coverage that barely exists
   ↳ adr:0006
 - Each clone must run `plan_tool hooks git-install` once; .git/hooks is not cloned
