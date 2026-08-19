@@ -36,6 +36,8 @@ Fail-open: any unexpected error exits 0 so the hook never hard-blocks the agent.
 import json
 import os
 import re
+import shlex
+import shutil
 import sys
 from pathlib import Path
 
@@ -64,6 +66,11 @@ DRAFT_HARD_TOKENS = (
     'id="amendments"',
 )
 
+# plan_tool declares `dependencies = []`, so a plain interpreter runs it. Prefer
+# uv when it is on PATH; otherwise name this interpreter, so the hint stays a
+# command the agent can actually run rather than a block with no remedy.
+_RUN = "uv run" if shutil.which("uv") else shlex.quote(sys.executable)
+
 # The hint must point at a plan_tool that actually exists where the agent runs.
 # plan_tool.py ships beside this hook (the skill directory moves as one unit),
 # so the sibling copy is authoritative; fall back to the plugin root, then the
@@ -71,11 +78,11 @@ DRAFT_HARD_TOKENS = (
 _PLUGIN_ROOT = os.environ.get("CLAUDE_PLUGIN_ROOT", "").rstrip("/\\")
 _SIBLING = Path(__file__).resolve().parents[1] / "plan_tool.py"
 if _SIBLING.exists():
-    _TOOL = f'uv run "{_SIBLING}"'
+    _TOOL = f'{_RUN} "{_SIBLING}"'
 elif _PLUGIN_ROOT:
-    _TOOL = f'uv run "{_PLUGIN_ROOT}/skills/cozyplan/scripts/plan_tool.py"'
+    _TOOL = f'{_RUN} "{_PLUGIN_ROOT}/skills/cozyplan/scripts/plan_tool.py"'
 else:
-    _TOOL = "uv run scripts/plan_tool.py"
+    _TOOL = f"{_RUN} scripts/plan_tool.py"
 
 CLI_HINT = (
     "This edit touches a CLI-managed region of the plan (status markers, metadata, "
