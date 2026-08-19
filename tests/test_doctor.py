@@ -65,11 +65,12 @@ def test_union_merge_attribute_is_detected(pt, git_repo, capsys):
 
 def test_hook_interpreter_is_executed_not_assumed(pt, git_repo, capsys):
     """The uv bug shipped because registration was checked and execution was not.
-    doctor runs the interpreter the hooks would use."""
+    doctor runs the path the hooks run: `--help` passed happily while the commit-msg
+    hook was dead, because the break was in the runner rather than in the tool."""
     run(pt, git_repo)
     out = capsys.readouterr().out
     assert "hook interpreter" in out
-    assert "runs plan_tool" in out
+    assert "runs the trailer path" in out
 
 
 def test_claude_hooks_registration_is_detected(pt, git_repo, capsys):
@@ -125,3 +126,31 @@ def test_state_log_event_count_is_reported(pt, git_repo, capsys):
     capsys.readouterr()
     run(pt, git_repo)
     assert "1 event(s)" in capsys.readouterr().out
+
+
+def test_reports_when_prose_names_a_command_the_parser_lacks(pt, git_repo, tmp_path, capsys):
+    """Docs drifting from the CLI sent readers to run commands that do not exist, for a
+    whole release. It is a grep, so it should never have been a manual check."""
+    skill = tmp_path / "skill"
+    (skill / "workflows").mkdir(parents=True)
+    (skill / "SKILL.md").write_text("# S\n", encoding="utf-8")
+    (skill / "workflows" / "w.md").write_text(
+        "Run `PLAN_TOOL brief <plan>` then `PLAN_TOOL ground --review`.\n", encoding="utf-8")
+    drift = pt.doc_command_drift(skill)
+    assert ("w.md", "ground") in drift
+    assert not any(v == "brief" for _, v in drift), "brief is a real command"
+
+
+def test_prose_naming_only_real_commands_is_clean(pt, tmp_path):
+    skill = tmp_path / "skill"
+    (skill / "workflows").mkdir(parents=True)
+    (skill / "SKILL.md").write_text("Use `PLAN_TOOL doctor` and `PLAN_TOOL state add`.\n",
+                                    encoding="utf-8")
+    assert pt.doc_command_drift(skill) == []
+
+
+def test_the_command_list_is_read_off_the_parser(pt):
+    """Hardcoding it would let the very drift this checks for happen here."""
+    names = pt.subcommand_names()
+    assert {"init", "doctor", "state", "brief", "validate"} <= names
+    assert "ground" not in names

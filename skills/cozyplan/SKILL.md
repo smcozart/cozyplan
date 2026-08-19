@@ -38,7 +38,7 @@ Four **context artifacts** are owned and defined by the sibling `discuss` skill 
 
 The **state layer** is cozyplan's, and it is derived rather than authored:
 
-- `STATE_FILE` is **generated** by `PLAN_TOOL state render` from `STATE_LOG`, capped and ranked by importance. Never hand-edit it — append an event and re-render. Each entry is a pointer trail (`plan:` `phase:` `adr:` `issue:` `session:` `path:`), not the detail itself. `render` refuses to overwrite a `STATE_FILE` it did not write; a hand-authored one is carried over with `PLAN_TOOL state migrate` first.
+- `STATE_FILE` is **generated** by `PLAN_TOOL state render` from `STATE_LOG`, ordered by commit position. Never hand-edit it — append an event and re-render. Each entry is a pointer trail (`plan:` `phase:` `adr:` `issue:` `session:` `path:`), not the detail itself. `render` refuses to overwrite a `STATE_FILE` it did not write; a hand-authored one is carried over with `PLAN_TOOL state migrate` first.
 - `STATE_LOG` is append-only and union-merged, so concurrent sessions combine instead of clobbering. The projection is last-write-wins per key, ordered by the commit that introduced each line (ADR-0005).
 - **Decisions** live in `docs/adr/`. **Work items live on the repo's issue tracker**, not in files — see `docs/agents/issue-tracker.md`; cozyplan cross-references them by number in commit trailers (ADR-0001).
 - A claim enters `STATE_FILE` only with its proof: the command that demonstrated it, when, and the commit it was true at. Unverified claims are gaps, not claims.

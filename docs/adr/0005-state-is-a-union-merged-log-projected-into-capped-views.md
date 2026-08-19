@@ -70,7 +70,8 @@ are ordered by the commit that introduced them, with an in-file sequence for tie
 whether to follow it — `plan:` `phase:` `adr:` `issue:` `session:` — never the detail
 itself. Truncating a projection therefore costs immediacy, never reachability.
 
-**Caps rank by importance, not recency alone.** Events carry a weight so a capped view
+**Caps rank by importance, not recency alone.** *(Superseded by ADR-0008: weight and the
+cap are removed. The cap never fired, and weight had no moment where anyone set it.)* Events carry a weight so a capped view
 shows the most significant state rather than the most recent, with the remainder reachable
 behind an explicit "show all". A cap that drops the least important is a summary; a cap
 that drops the oldest is data loss with extra steps.
@@ -110,3 +111,5 @@ which the current `state check` already accepts in both anchored and unanchored 
 
 - 2026-08-18 — proposed by Sean Cozart
 - 2026-08-18 — accepted by Sean Cozart
+- 2026-08-19 — the capping and weight-ranking clause superseded by ADR-0008; the log,
+  the tiers, the id space, and commit ordering all stand unchanged

@@ -1,8 +1,8 @@
-"""`state add` / `render` / `show`: the append-only log and its capped projection.
+"""`state add` / `render` / `show`: the append-only log and its projection.
 
 ADR-0005: the log is Tier 1 (append-only, union-merged), STATE.md is Tier 2
-(generated, capped, ranked by importance), and ordering is commit order — not
-file order, which union merge does not preserve, and not wall clock, which skews.
+(generated), and ordering is commit order — not file order, which union merge
+does not preserve, and not wall clock, which skews.
 """
 
 from __future__ import annotations
@@ -102,15 +102,6 @@ def test_uncommitted_events_sort_last(pt, git_repo):
     assert "uncommitted" in read(git_repo / "STATE.md")
 
 
-def test_weight_ranks_and_cap_reports_the_remainder(pt, git_repo):
-    for i, w in enumerate([1, 5, 3]):
-        add(pt, git_repo, kind="gap", key=f"g{i}", what=f"gap-w{w}", weight=w)
-    render(pt, git_repo, "--cap", "1")
-    out = read(git_repo / "STATE.md")
-    assert "gap-w5" in out, "the heaviest survives the cap"
-    assert "gap-w1" not in out
-    assert "2 more" in out, "a cap must say what it dropped"
-
 
 def test_refs_render_as_a_pointer_trail(pt, git_repo):
     add(pt, git_repo, kind="claim", key="k", what="it works", proof="pytest",
@@ -157,13 +148,3 @@ def test_rendered_state_passes_state_check(pt, git_repo, capsys):
     assert code == 0, capsys.readouterr().out
 
 
-def test_show_respects_cap_and_all(pt, git_repo, capsys):
-    for i in range(3):
-        add(pt, git_repo, kind="gap", key=f"g{i}", what=f"gap-{i}")
-    pt.main(["state", "show", "--root", str(git_repo),
-             "--log", str(git_repo / "docs" / "state.ndjson"), "--cap", "1"])
-    assert "2 more" in capsys.readouterr().out
-    pt.main(["state", "show", "--root", str(git_repo),
-             "--log", str(git_repo / "docs" / "state.ndjson"), "--all"])
-    out = capsys.readouterr().out
-    assert "gap-0" in out and "gap-1" in out and "gap-2" in out

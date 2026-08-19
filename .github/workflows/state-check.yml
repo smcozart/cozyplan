@@ -62,4 +62,7 @@ jobs:
         # No --max-drift: on a pull request STATE.md is always behind HEAD by at
         # least that PR's commits, so failing on drift would make this unusable.
         # Drift is reported; only structural problems fail (ADR-0004 gap tolerance).
-        run: python skills/cozyplan/scripts/plan_tool.py state check
+        run: python skills/cozyplan/scripts/plan_tool.py state check --max-claim-age 50
+        # Generous on purpose. It is not here to nag on every PR; it is here so a
+        # claim that has gone fifty commits without anyone re-running its proof
+        # stops being a note nobody reads (ADR-0004).

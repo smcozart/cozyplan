@@ -1697,7 +1697,8 @@ def section_body(text: str, heading: str) -> str:
 
 
 def check_state(state_path: Path, root: Path, adr_dir: Path, journal: Path,
-                max_drift: int | None) -> tuple[list[str], list[str], list[str]]:
+                max_drift: int | None,
+                max_claim_age: int | None = None) -> tuple[list[str], list[str], list[str]]:
     """Return (problems, warns, notes). Problems fail the run; warns and notes do not."""
     problems: list[str] = []
     warns: list[str] = []
@@ -1777,8 +1778,16 @@ def check_state(state_path: Path, root: Path, adr_dir: Path, journal: Path,
                                 f"{m.group('what')[:60]}")
                 continue
             ok_cnt, out = git(root, "rev-list", "--count", f"{sha}..HEAD")
-            if ok_cnt and int(out or 0):
-                notes.append(f"claim proved {out} commit(s) ago: {m.group('what')[:60]}")
+            age = int(out or 0) if ok_cnt else 0
+            if age:
+                # A claim nobody re-proves is the thing this layer exists to prevent,
+                # so it can be made fatal rather than only mentioned.
+                msg = f"claim proved {age} commit(s) ago: {m.group('what')[:60]}"
+                if max_claim_age is not None and age > max_claim_age:
+                    problems.append(f"{msg} (limit {max_claim_age}) — re-run its proof "
+                                    f"and re-anchor it, or record it as a gap")
+                else:
+                    notes.append(msg)
 
     # 5. The ADR register is a hand-maintained copy of a directory listing, so it
     #    drifts. Comparing the two is cheap and catches it immediately.
@@ -1879,8 +1888,8 @@ def read_state_log(root: Path, log_path: Path) -> list[dict]:
 
 def project_state(events: list[dict]) -> dict:
     """Reduce the log to current truth: last write wins per (kind, key), and an
-    event marked cleared removes the key. Ranked by weight first so a capped view
-    keeps the most significant state, not merely the most recent."""
+    event marked cleared removes the key. Ordered by commit position, which every
+    writer already shares — the one total order available without a clock."""
     current: dict = {}
     for ev in events:
         k = (ev["kind"], ev.get("key") or ev.get("what", ""))
@@ -1892,7 +1901,7 @@ def project_state(events: list[dict]) -> dict:
     for (kind, _), ev in current.items():
         out[kind].append(ev)
     for kind in out:
-        out[kind].sort(key=lambda e: (-int(e.get("weight", 3) or 3), e["_ord"]))
+        out[kind].sort(key=lambda e: e["_ord"])
     return out
 
 
@@ -1914,7 +1923,7 @@ def refs_line(ev: dict) -> str:
     return "  ↳ " + " ".join(bits) if bits else ""
 
 
-def render_state(root: Path, projected: dict, cap: int, adr_dir: Path,
+def render_state(root: Path, projected: dict, adr_dir: Path,
                  specs: str, journal: Path, origin, project: str | None = None) -> str:
     ok_b, branch = git(root, "rev-parse", "--abbrev-ref", "HEAD")
     ok_s, sha = git(root, "rev-parse", "--short", "HEAD")
@@ -1924,7 +1933,7 @@ def render_state(root: Path, projected: dict, cap: int, adr_dir: Path,
     lines = [f"# {project or root.resolve().name} — State", "",
              f"<!-- {STATE_GENERATED_MARKER} from docs/state.ndjson.",
              "     Do not hand-edit: append with `plan_tool state add`, then re-render.",
-             "     History lives in the log; this file is the capped current view. -->", "",
+             "     History lives in the log; this file is the current view. -->", "",
              "| Sync | |", "|---|---|",
              f"| Last synced | {newest or '(no events)'} |",
              f"| Repo state | {branch if ok_b else '?'} @ {sha if ok_s else '?'} |"]
@@ -1941,13 +1950,11 @@ def render_state(root: Path, projected: dict, cap: int, adr_dir: Path,
         if not items:
             lines.extend(["_none recorded_", ""])
             return
-        for ev in items[:cap]:
+        for ev in items:
             lines.append(fmt(ev))
             rl = refs_line(ev)
             if rl:
                 lines.append(rl)
-        if len(items) > cap:
-            lines.extend(["", f"_{len(items) - cap} more — `plan_tool state show --all`_"])
         lines.append("")
 
     section("Current Working State", "claim", lambda e: (
@@ -1980,14 +1987,12 @@ def render_state(root: Path, projected: dict, cap: int, adr_dir: Path,
 def migrate_state(text: str, who: str) -> tuple[list[dict], list[str]]:
     """Parse a hand-authored STATE.md into events, plus a list of what could not be
     carried. Honest by construction: it never invents a field the old format has no
-    source for. weight defaults to 3 for everything, so ranking is a human's job
-    afterwards — a migrated cap that dropped entries by guessed importance would be
-    worse than one that says it guessed nothing (ADR-0005)."""
+    source for (ADR-0005)."""
     events: list[dict] = []
     lost: list[str] = []
 
     def ev(kind: str, what: str, **extra) -> None:
-        e = {"kind": kind, "key": what[:60], "what": what, "weight": 3, "by": who,
+        e = {"kind": kind, "key": what[:60], "what": what, "by": who,
              "ts": extra.pop("ts", None) or now_iso()}
         e["date"] = e["ts"][:10]
         e.update({k: v for k, v in extra.items() if v})
@@ -2043,9 +2048,6 @@ def migrate_state(text: str, who: str) -> tuple[list[dict], list[str]]:
         lost.append("the `Synced by` row — the schema has no email field and `by` is "
                     "never rendered; migrated events are attributed to you")
     if events:
-        lost.append(f"weight on all {len(events)} event(s) — the old format has no "
-                    f"importance signal, so every one defaults to 3; re-weight what "
-                    f"matters or the cap will drop entries arbitrarily")
         lost.append("paths on every claim — no source in the old format, so the "
                     "path-intersection sync trigger cannot fire for migrated claims")
     return events, lost
@@ -2220,7 +2222,7 @@ def cmd_init(args) -> int:
                           "then `plan_tool state render`")
     else:
         ns = argparse.Namespace(state_cmd="render", root=args.root, log=STATE_LOG_DEFAULT,
-                                file=str(state_file), cap=20, adr_dir=str(root / "docs" / "adr"),
+                                file=str(state_file), adr_dir=str(root / "docs" / "adr"),
                                 specs=args.specs, journal=str(root / "docs" / "journal.md"),
                                 origin=None, project=None, force=False, dry_run=False)
         if cmd_state(ns) == 0:
@@ -2256,7 +2258,7 @@ def cmd_state(args) -> int:
             return fail("--what is required")
         _, who = git(root, "config", "user.name")
         ev = {"kind": args.kind, "key": args.key or args.what[:60], "what": args.what,
-              "weight": args.weight, "by": who or "",
+              "by": who or "",
               "ts": args.ts or datetime.now().astimezone().isoformat(timespec="seconds")}
         # The proof date is the event's own date — one field, never disagreeing
         # with the timestamp beside it.
@@ -2330,12 +2332,9 @@ def cmd_state(args) -> int:
         if args.state_cmd == "show":
             for kind in STATE_KINDS:
                 items = projected[kind]
-                shown = items if args.all else items[:args.cap]
                 print(f"{kind} ({len(items)}):")
-                for ev in shown:
-                    print(f"  [w{ev.get('weight', 3)}] {ev.get('what', '')}")
-                if len(items) > len(shown):
-                    print(f"  ... {len(items) - len(shown)} more (--all)")
+                for ev in items:
+                    print(f"  {ev.get('what', '')}")
             return 0
         out = Path(args.file)
         # render TRUNCATES. A STATE.md without the marker was written by hand (or by
@@ -2350,7 +2349,7 @@ def cmd_state(args) -> int:
                 f"so rendering would overwrite hand-authored content.\n"
                 f"       Migrate it first:  plan_tool state migrate --file {out}\n"
                 f"       Or discard it:     plan_tool state render --force")
-        rendered = render_state(root, projected, args.cap, Path(args.adr_dir),
+        rendered = render_state(root, projected, Path(args.adr_dir),
                                 args.specs, Path(args.journal), args.origin, args.project)
         if args.dry_run:
             print(rendered, end="")
@@ -2364,7 +2363,8 @@ def cmd_state(args) -> int:
     if not state_path.exists():
         return fail(f"state file not found: {state_path} - run the Init State workflow first")
     problems, warns, notes = check_state(
-        state_path, root, Path(args.adr_dir), Path(args.journal), args.max_drift)
+        state_path, root, Path(args.adr_dir), Path(args.journal), args.max_drift,
+        args.max_claim_age)
     for note in notes:
         print(f"  note: {note}")
     for w in warns:
@@ -2392,6 +2392,41 @@ def cmd_state(args) -> int:
 OK, WARN, GAP = "ok", "warn", "gap"
 _MARK = {OK: "  ok  ", WARN: " warn ", GAP: " gap  "}
 
+
+
+# A command named in prose but absent from the parser sends a reader (or an agent)
+# to run something that does not exist. This drifted twice already: init-state.md and
+# sync-state.md described the 2.x model for a whole release. Checking it is a grep.
+_DOC_CMD_RE = re.compile(r"(?:^|`)(?:PLAN_TOOL|plan_tool(?:\.py)?)\s+([a-z][a-z0-9-]*)", re.M)
+
+
+def subcommand_names() -> set:
+    """The verbs the parser actually accepts, read off the parser itself so this can
+    never disagree with it."""
+    for act in build_parser()._actions:
+        if isinstance(act, argparse._SubParsersAction):
+            return set(act.choices)
+    return set()
+
+
+def doc_command_drift(skill_root: Path) -> list:
+    """(file, verb) for every command named in the skill's prose that does not exist."""
+    known = subcommand_names()
+    if not known:
+        return []
+    docs = [skill_root / "SKILL.md"]
+    for sub in ("workflows", "reference"):
+        d = skill_root / sub
+        if d.is_dir():
+            docs.extend(sorted(d.glob("*.md")))
+    out = []
+    for f in docs:
+        if not f.exists():
+            continue
+        for verb in set(_DOC_CMD_RE.findall(read(f))):
+            if verb not in known:
+                out.append((f.name, verb))
+    return sorted(out)
 
 def _hook_runner_parts() -> tuple[str, str]:
     """(executable, extra arg) for the hooks — kept as parts, never joined into one
@@ -2465,16 +2500,18 @@ def doctor_checks(root: Path, commits: int) -> list[tuple[str, str, str, str]]:
     tool = Path(__file__).resolve()
     stored = _stored_hook_runner(root)
     runner = stored or _hook_runner()
+    # Run what the hook runs, not a proxy for it. `--help` passed happily while the
+    # commit-msg hook was dead, because the break was in the runner, not the tool.
     try:
-        r = subprocess.run(runner + [str(tool), "--help"],
+        r = subprocess.run(runner + [str(tool), "trailers", "--print", "--root", str(root)],
                            capture_output=True, text=True, timeout=30, cwd=str(root))
         runs = r.returncode == 0
     except (OSError, subprocess.SubprocessError):
         runs = False
     src = " (recorded by git-install)" if stored else " (not wired here; this is what it would use)"
     add("enforcement", OK if runs else GAP, "hook interpreter",
-        f"`{' '.join(runner)}` runs plan_tool{src}" if runs
-        else f"`{' '.join(runner)}` cannot run plan_tool{src} — hooks fail open, silently")
+        f"`{' '.join(runner)}` runs the trailer path{src}" if runs
+        else f"`{' '.join(runner)}` cannot run the trailer path{src} — hooks fail open, silently")
 
     ok_hp, hooks_path = git(root, "config", "core.hooksPath")
     if ok_hp and hooks_path:
@@ -2486,6 +2523,14 @@ def doctor_checks(root: Path, commits: int) -> list[tuple[str, str, str, str]]:
     else:
         add("enforcement", WARN, "git hooks",
             "core.hooksPath unset — .git/hooks is not cloned, so nothing is installed here")
+
+    skill_root = Path(__file__).resolve().parent.parent
+    if (skill_root / "SKILL.md").exists():
+        drift = doc_command_drift(skill_root)
+        add("enforcement", OK if not drift else GAP, "docs match the CLI",
+            "every command named in the skill prose exists" if not drift
+            else "prose names commands the parser does not have: "
+                 + ", ".join(f"{f}:{v}" for f, v in drift))
 
     wf = root / ".github" / "workflows"
     ci = [f.name for f in wf.glob("*.yml")] + [f.name for f in wf.glob("*.yaml")] if wf.is_dir() else []
@@ -2810,55 +2855,70 @@ def build_parser() -> argparse.ArgumentParser:
                     help="skip registering the Claude Code hooks in .claude/settings.json")
     sp.set_defaults(func=cmd_init, claude_hooks=True)
 
-    sp = sub.add_parser("state", parents=[parent],
-                        help="append to / render / inspect / check the state layer")
-    sp.add_argument("state_cmd", choices=["add", "render", "show", "check", "migrate"],
-                    help="add an event, render STATE.md, show the projection, check it, "
-                         "or migrate a hand-authored STATE.md into the event log")
-    sp.add_argument("--force", action="store_true",
-                    help="render: overwrite a STATE.md that carries no generated marker "
-                         "(discards hand-authored content)")
-    sp.add_argument("--dry-run", action="store_true",
-                    help="render: print the result instead of writing it. "
-                         "migrate: print the events instead of appending them")
-    sp.add_argument("--file", default="STATE.md", help="rendered state file (default: STATE.md)")
-    sp.add_argument("--log", default=STATE_LOG_DEFAULT,
-                    help=f"append-only event log (default: {STATE_LOG_DEFAULT})")
-    sp.add_argument("--root", default=".", help="repo root (default: .)")
-    sp.add_argument("--adr-dir", default="docs/adr", help="ADR directory (default: docs/adr)")
-    sp.add_argument("--journal", default="docs/journal.md", help="ledger (default: docs/journal.md)")
-    sp.add_argument("--specs", default="specs", help="specs directory (default: specs)")
-    sp.add_argument("--max-drift", type=int, default=None,
-                    help="check: fail when the snapshot is more than N commits behind HEAD")
-    sp.add_argument("--cap", type=int, default=20,
-                    help="render/show: max entries per section (default: 20)")
-    sp.add_argument("--all", action="store_true", help="show: every entry, ignoring --cap")
-    sp.add_argument("--origin", default=None,
-                    help="render: also report position vs this ref, e.g. origin/main")
-    sp.add_argument("--project", default=None,
-                    help="render: project name for the heading (default: the repo directory)")
-    # add
-    sp.add_argument("--kind", choices=list(STATE_KINDS), default="claim",
-                    help="add: event kind (default: claim)")
-    sp.add_argument("--key", default=None,
-                    help="add: stable identity for last-write-wins (default: derived from --what)")
-    sp.add_argument("--what", default=None, help="add: the capability, item, or gap")
-    sp.add_argument("--proof", default=None, help="add: the command that demonstrated a claim")
-    sp.add_argument("--sha", default=None, help="add: the commit the proof was true at")
-    sp.add_argument("--paths", default=None,
-                    help="add: comma-separated paths this entry depends on")
-    sp.add_argument("--weight", type=int, default=3,
-                    help="add: importance 1-5; a capped view keeps the heaviest (default: 3)")
-    sp.add_argument("--status", default=None, help="add: status, for --kind indev")
-    sp.add_argument("--owner", default=None, help="add: owner, for --kind indev")
-    sp.add_argument("--plan", default=None, help="add: plan id ref")
-    sp.add_argument("--phase", default=None, help="add: phase/task id ref")
-    sp.add_argument("--adr", default=None, help="add: comma-separated ADR numbers")
-    sp.add_argument("--issue", default=None, help="add: comma-separated issue numbers")
-    sp.add_argument("--ts", default=None, help="add: explicit ISO timestamp (default: now)")
-    sp.add_argument("--clear", action="store_true",
-                    help="add: retract this key from the projection (the log keeps the history)")
-    sp.set_defaults(func=cmd_state)
+    # One subparser per verb. A single shared flag list meant `state render --proof x`
+    # parsed happily and did nothing, which is the kind of defect a 32-flag command hides.
+    sp = sub.add_parser("state", help="append to / render / inspect / check the state layer")
+    state_common = argparse.ArgumentParser(add_help=False)
+    state_common.add_argument("--root", default=".", help="repo root (default: .)")
+    state_common.add_argument("--log", default=STATE_LOG_DEFAULT,
+                              help=f"append-only event log (default: {STATE_LOG_DEFAULT})")
+    ssub = sp.add_subparsers(dest="state_cmd", metavar="{add,render,show,check,migrate}")
+    ssub.required = True
+
+    q = ssub.add_parser("add", parents=[parent, state_common], help="append one event to the log")
+    q.add_argument("--kind", choices=list(STATE_KINDS), default="claim", help="event kind (default: claim)")
+    q.add_argument("--key", default=None,
+                   help="stable identity for last-write-wins (default: derived from --what)")
+    q.add_argument("--what", default=None, help="the capability, item, or gap")
+    q.add_argument("--proof", default=None, help="the command that demonstrated a claim")
+    q.add_argument("--sha", default=None, help="the commit the proof was true at")
+    q.add_argument("--paths", default=None, help="comma-separated paths this entry depends on")
+    q.add_argument("--status", default=None, help="status, for --kind indev")
+    q.add_argument("--owner", default=None, help="owner, for --kind indev")
+    q.add_argument("--plan", default=None, help="plan id ref")
+    q.add_argument("--phase", default=None, help="phase/task id ref")
+    q.add_argument("--adr", default=None, help="comma-separated ADR numbers")
+    q.add_argument("--issue", default=None, help="comma-separated issue numbers")
+    q.add_argument("--ts", default=None, help="explicit ISO timestamp (default: now)")
+    q.add_argument("--clear", action="store_true",
+                   help="retract this key from the projection (the log keeps the history)")
+    q.set_defaults(func=cmd_state)
+
+    q = ssub.add_parser("render", parents=[parent, state_common],
+                        help="rebuild STATE.md from the log")
+    q.add_argument("--file", default="STATE.md", help="rendered state file (default: STATE.md)")
+    q.add_argument("--adr-dir", default="docs/adr", help="ADR directory (default: docs/adr)")
+    q.add_argument("--journal", default="docs/journal.md", help="ledger (default: docs/journal.md)")
+    q.add_argument("--specs", default="specs", help="specs directory (default: specs)")
+    q.add_argument("--origin", default=None,
+                   help="also report position vs this ref, e.g. origin/main")
+    q.add_argument("--project", default=None,
+                   help="project name for the heading (default: the repo directory)")
+    q.add_argument("--force", action="store_true",
+                   help="overwrite a STATE.md carrying no generated marker (discards it)")
+    q.add_argument("--dry-run", action="store_true", help="print the result instead of writing it")
+    q.set_defaults(func=cmd_state)
+
+    q = ssub.add_parser("show", parents=[parent, state_common], help="print the projection")
+    q.set_defaults(func=cmd_state)
+
+    q = ssub.add_parser("check", parents=[parent, state_common],
+                        help="verify STATE.md against git")
+    q.add_argument("--file", default="STATE.md", help="rendered state file (default: STATE.md)")
+    q.add_argument("--adr-dir", default="docs/adr", help="ADR directory (default: docs/adr)")
+    q.add_argument("--journal", default="docs/journal.md", help="ledger (default: docs/journal.md)")
+    q.add_argument("--max-drift", type=int, default=None,
+                   help="fail when the snapshot is more than N commits behind HEAD")
+    q.add_argument("--max-claim-age", type=int, default=None,
+                   help="fail when a claim was last proved more than N commits ago")
+    q.set_defaults(func=cmd_state)
+
+    q = ssub.add_parser("migrate", parents=[parent, state_common],
+                        help="carry a hand-authored STATE.md into the event log")
+    q.add_argument("--file", default="STATE.md", help="the file to migrate (default: STATE.md)")
+    q.add_argument("--dry-run", action="store_true",
+                   help="print the events instead of appending them")
+    q.set_defaults(func=cmd_state)
 
     sp = sub.add_parser("brief", parents=[parent],
                         help="compact plain-text extract of a plan (or --all for a one-liner index)")

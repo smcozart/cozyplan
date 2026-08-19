@@ -166,3 +166,23 @@ def test_ledger_missing_the_newest_sync_warns(pt, git_repo, capsys):
 
 def test_missing_state_file_is_an_error(pt, tmp_path):
     assert pt.main(["state", "check", "--file", str(tmp_path / "nope.md")]) == 1
+
+
+def test_a_stale_claim_can_be_made_fatal(pt, git_repo, capsys):
+    """A claim nobody re-proves is what this layer exists to prevent, so it must be
+    able to fail rather than only appear as a note nobody reads."""
+    sha = head(git_repo)
+    write_state(git_repo, sha)
+    for i in range(3):
+        (git_repo / f"f{i}.txt").write_text("x\n", encoding="utf-8")
+        git(git_repo, "add", "-A")
+        git(git_repo, "commit", "-m", f"c{i}")
+    assert run(pt, git_repo) == 0, "stale claims stay a note by default"
+    capsys.readouterr()
+    assert run(pt, git_repo, "--max-claim-age", "1") == 1
+    assert "re-run its proof" in capsys.readouterr().out
+
+
+def test_a_fresh_claim_passes_the_age_limit(pt, git_repo):
+    write_state(git_repo, head(git_repo))
+    assert run(pt, git_repo, "--max-claim-age", "0") == 0

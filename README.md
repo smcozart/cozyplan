@@ -82,7 +82,7 @@ Everything here exists to make these answerable from a clone, by a human or an a
 
 **Structured writes go through the CLI.** Status markers, metadata, and amendments are CLI-owned so they stay well-formed; prose and diagrams are edited normally. Every mutation appends to a union-merged event log and takes a lock, so concurrent writers never lose data.
 
-**State is derived, not remembered.** `STATE.md` is *generated* from an append-only log by `plan_tool state render`, capped and ranked by importance. Entries are pointer trails (`plan:` `adr:` `issue:` `session:` `path:`) rather than content, so capping costs immediacy and never reachability.
+**State is derived, not remembered.** `STATE.md` is *generated* from an append-only log by `plan_tool state render`. Entries are pointer trails (`plan:` `adr:` `issue:` `session:` `path:`) rather than content, so an entry carries the ids needed to decide whether to follow it, never the detail itself.
 
 **Enforcement is layered honestly.** Local hooks *advise* — the `commit-msg` hook **injects** the trailers it can prove and never rejects, because rejection just teaches `--no-verify`. CI *enforces*. The derivation *tolerates gaps*: an untrailered commit is reported as unattributed work, never a corrupted answer.
 
@@ -113,7 +113,7 @@ Its read side, **Orient**, narrates how the system runs today from the code and 
 
 ```
 docs/state.ndjson   append-only, union-merged event log     ← the source
-STATE.md            generated, capped, importance-ranked    ← the view
+STATE.md            generated, ordered by commit position   ← the view
 docs/adr/           decisions, versioned, immutable         ← the why
 git trailers        Plan: Phase: Refs: ADR: Verified:       ← the join
 ```
@@ -176,6 +176,7 @@ The architecture is recorded in `docs/adr/`, and the repo runs on its own baseli
 | 0003 | The system map records cross-boundary contracts only |
 | 0004 | Hooks advise, CI enforces, and derivation tolerates gaps |
 | 0005 | State is a union-merged log projected into capped views |
+| 0008 | The state view shows everything until it cannot |
 | 0006 | Grounding is a traversal with a declared stopping rule |
 | 0007 | Git hooks are tracked and opted into per clone |
 
