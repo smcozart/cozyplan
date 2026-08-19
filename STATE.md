@@ -6,8 +6,8 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-19T18:36:55-05:00 |
-| Repo state | baseline-audit @ c0f977a |
+| Last synced | 2026-08-19T18:56:20-05:00 |
+| Repo state | baseline-audit @ 2f0e12e |
 
 ## Current Working State
 
@@ -23,6 +23,8 @@
   ↳ session:s-audit-03 path:skills/cozyplan/scripts
 - The provides/consumes graph flags unprovided contracts — verified by `plan_tool index --specs specs` (2026-08-19, 9bfb3fe)
   ↳ session:s-audit-03 path:specs
+- doctor catches a dead hook runner and prose naming commands that do not exist; state check can fail on a claim nobody re-proved — verified by `python3 -m pytest tests/test_doctor.py tests/test_state_check.py` (2026-08-19, 2f0e12e)
+  ↳ session:s-audit-03 adr:0004 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_doctor.py path:tests/test_state_check.py
 
 ## In Development
 
@@ -34,6 +36,8 @@
   ↳ session:s-audit-03 adr:0004
 - DEFERRED: ground (ADR-0006) is not being built in 3.0. The shape question went unanswered across two sessions, which read as the spec being too large rather than as missing input. If revived, start with the situational fallback alone — branch, uncommitted changes, position vs remote, wip plans, last session — which ADR-0006 already requires always work, and add presets only once one is missed — deferred · architect
   ↳ session:s-audit-03 adr:0006
+- DECIDED: features earn their place only when deletion breaks something nameable. weight and --cap failed that test and were removed (ADR-0008); roles/CODEOWNERS is the next candidate if it stays unused — decided · architect
+  ↳ session:s-audit-03 adr:0008
 
 ## Known Gaps / Risks
 
