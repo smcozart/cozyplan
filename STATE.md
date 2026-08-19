@@ -6,9 +6,9 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-19T09:03:00-05:00 |
-| Repo state | baseline-audit @ 54fea3f |
-| Vs origin/main | 0 behind, 9 ahead |
+| Last synced | 2026-08-19T09:30:00-05:00 |
+| Repo state | baseline-audit @ d032078 |
+| Vs origin/main | 0 behind, 10 ahead |
 
 ## Current Working State
 
@@ -21,11 +21,11 @@
 
 ## In Development
 
-- OPEN DECISION: how to build ground (ADR-0006) — hybrid `plan_tool ground --resolve` + workflows/ground.md, pure CLI, or pure workflow — needs-decision · architect
-  ↳ adr:0006
 - OPEN DECISION: baseline-audit is 9 commits ahead of main and unpushed; state-check.yml has never run on a runner, only dry-run locally — needs-decision · architect
 - OPEN DECISION: plugin.json still says 2.2.0. Removing docs/features+docs/issues and making STATE.md generated strands existing 2.2.0 users — 2.3.0 or breaking 3.0.0 with a migration note — needs-decision · architect
   ↳ adr:0001 adr:0005
+- OPEN DECISION: how to build ground (ADR-0006) — hybrid CLI+workflow, pure CLI, or pure workflow. New input: if ground ships as a WORKFLOW, then a standalone 'Ground skill' and the --review preset converge, giving discoverability via CLAUDE.md without a fifth always-loaded description competing with discuss Orient, cozyreview Drill, and doctor — needs-decision · architect
+  ↳ adr:0006
 - state check wired as a CI gate — in-development · architect
   ↳ session:s-audit-01 adr:0004
 
