@@ -49,11 +49,15 @@ python3 .claude/skills/cozyplan/scripts/plan_tool.py hooks install
 ### Wire a repo
 
 ```
+python3 <plan_tool> init              # wire everything doctor checks for
 python3 <plan_tool> doctor            # what is actually wired here
-python3 <plan_tool> hooks git-install # tracked .githooks + core.hooksPath
 ```
 
-`doctor` is the one to run first in any clone. `.git/hooks` is never cloned, so `git-install` is a per-clone step — and `doctor` tells you when a clone has skipped it, rather than letting it fail silently.
+`init` is idempotent and additive — it creates only what is missing, never overwrites content, refuses to take over a `core.hooksPath` another hook manager owns, and prints the steps no command can take (branch protection, `gh` auth, the origin remote). On an existing repo it adopts rather than clobbers.
+
+`doctor` is the one to run in any clone you did not wire yourself. `.git/hooks` is never cloned, so `hooks git-install` is a per-clone step — and `doctor` tells you when a clone has skipped it, rather than letting it fail silently.
+
+**Upgrading from 2.x?** See [`docs/migrating-to-3.0.md`](docs/migrating-to-3.0.md) — `STATE.md` is generated now, and `state render` refuses to overwrite an authored one.
 
 ---
 
@@ -115,9 +119,11 @@ git trailers        Plan: Phase: Refs: ADR: Verified:       ← the join
 ```
 
 ```bash
+plan_tool init                  # wire a repo (idempotent, additive)
 plan_tool state add --kind claim --what "ingest works" \
     --proof "pytest tests/ingest" --sha a1b2c3d --paths src/ingest --adr 0007
 plan_tool state render          # rebuild STATE.md
+plan_tool state migrate         # carry a hand-authored STATE.md into the log
 plan_tool state check           # verify it against git
 plan_tool doctor                # verify the wiring itself
 ```
@@ -142,7 +148,7 @@ Marking that check **required** needs a human with repo admin. Nothing here clai
 skills/cozyplan/
 ├── SKILL.md              the router
 ├── workflows/            one per branch, each with a checkable completion criterion
-├── templates/            plan.html · STATE.md · journal.md · adr.md · role.md
+├── templates/            plan.html · journal.md · adr.md · role.md · state-check.yml
 ├── reference/            plan-tool.md — full CLI surface, metadata contract, install paths
 └── scripts/              plan_tool.py + the two Claude Code hooks
 
@@ -179,6 +185,7 @@ The architecture is recorded in `docs/adr/`, and the repo runs on its own baseli
 - **A stale edge table is worse than none.** With nodes only, a reader knows to read the code. With a table present, they stop at it — so a *missing* edge is a confident wrong answer. The map declares itself a floor, not a ceiling.
 - **Local hooks are advisory.** `--no-verify` bypasses them, `.git/hooks` is not cloned, and Claude Code hooks fire for one tool on one machine. CI is the only layer a contributor cannot route around.
 - **Branch protection is invisible from a clone.** `doctor` says so rather than implying a gate exists.
+- **`state render` truncates.** It refuses to overwrite a `STATE.md` without the generated marker, because the users at risk are exactly those who do not know the semantics changed. `state migrate` is the way across, and it names everything it could not carry.
 
 ---
 

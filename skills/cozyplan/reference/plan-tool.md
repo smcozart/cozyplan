@@ -27,13 +27,15 @@ The full CLI surface, the plan metadata contract, and the install paths. Reached
 | State layer | Command |
 | --- | --- |
 | Append an event | `PLAN_TOOL state add --kind claim\|indev\|gap --what "…" [--proof "…"] [--sha X] [--paths a,b] [--weight 1-5] [--adr N] [--issue N] [--plan P] [--clear]` |
-| Rebuild `STATE_FILE` from the log | `PLAN_TOOL state render [--cap N] [--origin origin/main] [--project NAME]` |
+| Rebuild `STATE_FILE` from the log | `PLAN_TOOL state render [--cap N] [--origin origin/main] [--project NAME] [--dry-run] [--force]` |
+| Carry a hand-authored `STATE_FILE` into the log | `PLAN_TOOL state migrate [--dry-run]` |
 | Inspect the projection | `PLAN_TOOL state show [--all]` |
 | Check `STATE_FILE` against git | `PLAN_TOOL state check [--max-drift N]` |
 | Add the trailers this commit can prove | `PLAN_TOOL trailers --message-file <f>` · `--print` |
 
 | Install | Command |
 | --- | --- |
+| Wire a whole repo (idempotent; implements `doctor`'s check list) | `PLAN_TOOL init [--git-init] [--force-hooks] [--no-claude-hooks]` |
 | Claude Code hooks (needs user approval — hooks execute commands) | `PLAN_TOOL hooks install [--global]` · `hooks remove` |
 | Tracked git hooks + `core.hooksPath` | `PLAN_TOOL hooks git-install [--dir .githooks]` · `hooks git-remove` |
 
@@ -76,5 +78,9 @@ The `PreToolUse` guard steers raw edits of CLI-owned regions back to `PLAN_TOOL`
 **Bare-skill installs** (`npx skills add`, no plugin) do not auto-register those hooks. Correctness still holds because every op self-validates. To restore edit-time steering, offer `PLAN_TOOL hooks install` — with the user's explicit approval, never silently, since hooks execute commands. It is idempotent (re-running re-points stale paths rather than duplicating entries), preserves unrelated settings, and `hooks remove` undoes it. A Claude Code restart is needed before they fire.
 
 **Git hooks** are separate and tracked: `hooks git-install` writes `.githooks/` and sets `core.hooksPath`. `.git/hooks` is not cloned, so each clone opts in once — `doctor` reports when one has not. (ADR-0007)
+
+**`init` does all of the above at once**, plus the records, the event log, the union-merge attribute, the CI workflow, and a `CLAUDE.md` stub. It is additive: every write is create-if-absent or append-if-missing, so it is safe on a repo that is already partly wired. It refuses to take over a `core.hooksPath` another hook manager owns, and it never renders over a hand-authored `STATE_FILE`. Steps no command can take — branch protection, `gh` auth, the origin remote, git identity — are printed as **needs a human** rather than attempted. (ADR-0004)
+
+**`state render` will not overwrite a `STATE_FILE` it did not write.** The generated file carries a marker; a file without one was authored by hand or by a pre-3.0 cozyplan, and rendering over it would destroy every claim and gap with no error. Run `state migrate` first — it carries what it can into the log, names everything it cannot (weights, path sets, the How to Run block), and keeps the original at `STATE.md.pre-migration`. (ADR-0005)
 
 Run `PLAN_TOOL doctor` to see which of these are actually live in this clone rather than assuming.

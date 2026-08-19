@@ -38,7 +38,7 @@ Four **context artifacts** are owned and defined by the sibling `discuss` skill 
 
 The **state layer** is cozyplan's, and it is derived rather than authored:
 
-- `STATE_FILE` is **generated** by `PLAN_TOOL state render` from `STATE_LOG`, capped and ranked by importance. Never hand-edit it — append an event and re-render. Each entry is a pointer trail (`plan:` `phase:` `adr:` `issue:` `session:` `path:`), not the detail itself.
+- `STATE_FILE` is **generated** by `PLAN_TOOL state render` from `STATE_LOG`, capped and ranked by importance. Never hand-edit it — append an event and re-render. Each entry is a pointer trail (`plan:` `phase:` `adr:` `issue:` `session:` `path:`), not the detail itself. `render` refuses to overwrite a `STATE_FILE` it did not write; a hand-authored one is carried over with `PLAN_TOOL state migrate` first.
 - `STATE_LOG` is append-only and union-merged, so concurrent sessions combine instead of clobbering. The projection is last-write-wins per key, ordered by the commit that introduced each line (ADR-0005).
 - **Decisions** live in `docs/adr/`. **Work items live on the repo's issue tracker**, not in files — see `docs/agents/issue-tracker.md`; cozyplan cross-references them by number in commit trailers (ADR-0001).
 - A claim enters `STATE_FILE` only with its proof: the command that demonstrated it, when, and the commit it was true at. Unverified claims are gaps, not claims.
@@ -51,7 +51,7 @@ Metadata, status markers, and amendments are **CLI-owned**: route them through `
 
 Full CLI surface, the metadata contract, the gates, and the install paths: [`reference/plan-tool.md`](reference/plan-tool.md).
 
-Run `PLAN_TOOL doctor` to see what is actually wired in this clone rather than assuming it.
+`PLAN_TOOL init` wires a repo in one idempotent command and prints the steps that need a human. `PLAN_TOOL doctor` shows what is actually wired in this clone rather than assuming it.
 
 ## Workflow
 
@@ -63,7 +63,7 @@ Select the single best-matching workflow and read its file before acting.
 | Update Plan | Change, extend, or revise an existing plan — including refreshing its references | `workflows/update-plan.md` |
 | Build Plan | Implement, execute, or carry out the work an existing plan describes | `workflows/build-plan.md` |
 | Generate Roles | Scope a project into roles and ownership (opt-in; never enable on your own initiative) | `workflows/generate-roles.md` |
-| Init State | Set up the state layer in a repo | `workflows/init-state.md` |
+| Init State | Set up the state layer in a repo, or adopt an existing one | `workflows/init-state.md` |
 | Track Record | Record a decision as an ADR, or file a work item on the tracker | `workflows/track-record.md` |
 | Sync State | Sync, refresh, reconcile, or report the project's current state. Also the closing step of Create, Update, and Build | `workflows/sync-state.md` |
 | Diagram Generation | Generate, fill, or regenerate a plan's embedded diagrams. Also called by Create | `workflows/diagram-generation.md` |
