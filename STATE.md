@@ -6,28 +6,34 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-19T09:30:00-05:00 |
-| Repo state | baseline-audit @ d032078 |
-| Vs origin/main | 0 behind, 10 ahead |
+| Last synced | 2026-08-19T18:35:34-05:00 |
+| Repo state | baseline-audit @ e38dff5 |
 
 ## Current Working State
 
 - plan_tool CLI and both hooks pass their suite — verified by `python3 -m pytest tests` (2026-08-18, 5345dfe)
   ↳ session:s-audit-01 path:tests path:skills/cozyplan/scripts
+- plan_tool init takes a greenfield repo from five doctor gaps to zero, and adopts a brownfield one without overwriting anything — verified by `python3 -m pytest tests/test_init.py` (2026-08-19, e38dff5)
+  ↳ session:s-audit-03 adr:0004 adr:0007 path:skills/cozyplan/scripts/plan_tool.py path:skills/cozyplan/templates path:tests/test_init.py
+- state render cannot silently destroy a hand-authored STATE.md, and state migrate carries one into the log while naming what it could not carry — verified by `python3 -m pytest tests/test_state_migrate.py` (2026-08-19, e38dff5)
+  ↳ session:s-audit-03 adr:0005 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_state_migrate.py
 - Plan validation runs without uv installed — verified by `python3 skills/cozyplan/scripts/plan_tool.py validate` (2026-08-18, 5345dfe)
   ↳ session:s-audit-01 adr:0004 path:skills/cozyplan/scripts/hooks
 - The provides/consumes graph flags unprovided contracts — verified by `plan_tool index --specs specs` (2026-08-18, 5345dfe)
   ↳ session:s-audit-01 adr:0003 path:skills/cozyplan/scripts/plan_tool.py
+- commit-msg trailer injection survives an interpreter path containing spaces, and doctor tests the runner the clone actually recorded — verified by `python3 -m pytest tests/test_trailers.py` (2026-08-19, e38dff5)
+  ↳ session:s-audit-03 adr:0004 adr:0007 path:skills/cozyplan/scripts/plan_tool.py path:.githooks
 
 ## In Development
 
-- OPEN DECISION: baseline-audit is 9 commits ahead of main and unpushed; state-check.yml has never run on a runner, only dry-run locally — needs-decision · architect
-- OPEN DECISION: plugin.json still says 2.2.0. Removing docs/features+docs/issues and making STATE.md generated strands existing 2.2.0 users — 2.3.0 or breaking 3.0.0 with a migration note — needs-decision · architect
-  ↳ adr:0001 adr:0005
-- OPEN DECISION: how to build ground (ADR-0006) — hybrid CLI+workflow, pure CLI, or pure workflow. New input: if ground ships as a WORKFLOW, then a standalone 'Ground skill' and the --review preset converge, giving discoverability via CLAUDE.md without a fifth always-loaded description competing with discuss Orient, cozyreview Drill, and doctor — needs-decision · architect
-  ↳ adr:0006
 - state check wired as a CI gate — in-development · architect
   ↳ session:s-audit-01 adr:0004
+- DECIDED: released as 3.0.0, not 2.3.0 — v2.2.0 is a published tag and this removes file-based work items and changes who owns STATE.md. Migration note at docs/migrating-to-3.0.md — decided · architect
+  ↳ session:s-audit-03 adr:0001 adr:0005
+- DECIDED: baseline-audit stays local and unpushed until items 4-8 are complete. state-check.yml has still never run on a runner, so a PR is the first real test of it — decided · architect
+  ↳ session:s-audit-03 adr:0004
+- DEFERRED: ground (ADR-0006) is not being built in 3.0. The shape question went unanswered across two sessions, which read as the spec being too large rather than as missing input. If revived, start with the situational fallback alone — branch, uncommitted changes, position vs remote, wip plans, last session — which ADR-0006 already requires always work, and add presets only once one is missed — deferred · architect
+  ↳ session:s-audit-03 adr:0006
 
 ## Known Gaps / Risks
 
@@ -35,10 +41,10 @@
   ↳ adr:0004
 - Commit trailers must be one contiguous final block — a blank line before Co-Authored-By makes git parse only that line and silently drop ADR:/Session:/Verified:
   ↳ adr:0007
-- ground and its presets are decided but unimplemented; backward grounding needs trailer coverage that barely exists
-  ↳ adr:0006
 - Each clone must run `plan_tool hooks git-install` once; .git/hooks is not cloned
   ↳ adr:0007
+- ground (ADR-0006) is decided but deliberately unbuilt — the ADR stands as the design, nothing implements it
+  ↳ session:s-audit-03 adr:0006
 - The README ADR table is hand-maintained and will drift from docs/adr/
 
 ## Registers
