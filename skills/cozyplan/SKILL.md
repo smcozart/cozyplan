@@ -103,6 +103,8 @@ The plan HTML is a living artifact. Some regions are **CLI-managed** and should 
 | **Read** one phase in full — its tasks, their specific actions, and its Testing Strategy | `PLAN_TOOL phase <plan> --id phase-<n>` |
 | **Read** the re-entry point — the first non-terminal id (marker not `[x]`/`[f]`), or `done` | `PLAN_TOOL next <plan>` |
 | Lint a plan | `PLAN_TOOL validate <plan>` |
+| **Read** what is actually wired in this clone — git identity, hook registration *and whether the hook interpreter runs*, CI, `gh`, the state layer, union-merge, trailer coverage | `PLAN_TOOL doctor [--strict]` |
+| Append a state event · rebuild `STATE_FILE` · inspect the projection · check it against git | `PLAN_TOOL state add --kind claim\|indev\|gap --what "…"` · `state render` · `state show [--all]` · `state check` |
 | Assign data-* anchors to an un-anchored/legacy plan | `PLAN_TOOL init-ids <plan>` |
 | Rebuild the specs catalog | `PLAN_TOOL index` |
 | Build the role ownership map + CODEOWNERS from `roles/*.md` | `PLAN_TOOL roles build` |

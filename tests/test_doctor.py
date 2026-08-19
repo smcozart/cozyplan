@@ -1,0 +1,127 @@
+"""`doctor`: what is actually wired in this clone (ADR-0004).
+
+The failure being guarded against is silent misconfiguration, so these tests
+assert that an unwired clone SAYS it is unwired — a doctor that reports OK on a
+broken clone is worse than no doctor at all.
+"""
+
+from __future__ import annotations
+
+import json
+
+from conftest import git
+
+
+def run(pt, repo, *extra):
+    return pt.main(["doctor", "--root", str(repo), *extra])
+
+
+def test_bare_repo_reports_gaps_not_ok(pt, git_repo, capsys):
+    assert run(pt, git_repo) == 0          # diagnostic by default, never a gate
+    out = capsys.readouterr().out
+    assert "gap" in out
+    for expected in ("issue tracker", "agent doc", "STATE.md", "union merge", "ci workflow"):
+        assert expected in out
+
+
+def test_strict_exits_nonzero_on_gaps(pt, git_repo, capsys):
+    assert run(pt, git_repo, "--strict") == 1
+    assert "gaps are wiring that is absent" in capsys.readouterr().out
+
+
+def test_non_git_directory_stops_early(pt, tmp_path, capsys):
+    assert run(pt, tmp_path) == 0
+    out = capsys.readouterr().out
+    assert "not a git repository" in out
+    # nothing below git can be meaningfully checked, so it must not pretend to
+    assert "union merge" not in out
+
+
+def test_missing_git_identity_warns_but_never_fails_strict(pt, git_repo, capsys):
+    """Attribution config, not wiring: a CI runner has no identity, and failing
+    --strict there would be a false positive."""
+    git(git_repo, "config", "--unset", "user.name")
+    git(git_repo, "config", "--unset", "user.email")
+    (git_repo / ".gitattributes").write_text("docs/state.ndjson merge=union\n", encoding="utf-8")
+    run(pt, git_repo)
+    out = capsys.readouterr().out
+    assert "user.name/user.email unset" in out
+    assert "[ warn ] identity" in out
+
+
+def test_identity_present_reads_ok(pt, git_repo, capsys):
+    run(pt, git_repo)
+    assert "Test <t@example.com>" in capsys.readouterr().out
+
+
+def test_union_merge_attribute_is_detected(pt, git_repo, capsys):
+    run(pt, git_repo)
+    assert "missing from .gitattributes" in capsys.readouterr().out
+
+    (git_repo / ".gitattributes").write_text("docs/state.ndjson merge=union\n", encoding="utf-8")
+    run(pt, git_repo)
+    assert "state log is union-merged" in capsys.readouterr().out
+
+
+def test_hook_interpreter_is_executed_not_assumed(pt, git_repo, capsys):
+    """The uv bug shipped because registration was checked and execution was not.
+    doctor runs the interpreter the hooks would use."""
+    run(pt, git_repo)
+    out = capsys.readouterr().out
+    assert "hook interpreter" in out
+    assert "runs plan_tool" in out
+
+
+def test_claude_hooks_registration_is_detected(pt, git_repo, capsys):
+    run(pt, git_repo)
+    assert "not registered" in capsys.readouterr().out
+
+    settings = git_repo / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text(json.dumps({"hooks": {"PreToolUse": [
+        {"hooks": [{"command": "uv run guard_plan_edit.py"}]}],
+        "PostToolUse": [{"hooks": [{"command": "uv run lint_plan.py"}]}]}}), encoding="utf-8")
+    run(pt, git_repo)
+    assert "guard + lint registered" in capsys.readouterr().out
+
+
+def test_ci_workflow_must_actually_run_state_check(pt, git_repo, capsys):
+    wf = git_repo / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    # a workflow that exists but does not run the check is not the enforcing layer
+    (wf / "other.yml").write_text("name: lint\njobs: {}\n", encoding="utf-8")
+    run(pt, git_repo)
+    assert "no workflow runs `state check`" in capsys.readouterr().out
+
+    (wf / "state-check.yml").write_text("name: state check\njobs: {}\n", encoding="utf-8")
+    run(pt, git_repo)
+    assert "state-check.yml" in capsys.readouterr().out
+
+
+def test_required_check_is_never_claimed(pt, git_repo, capsys):
+    """Branch protection is invisible from a clone, so doctor must not imply a gate."""
+    run(pt, git_repo)
+    assert "not verifiable from a clone" in capsys.readouterr().out
+
+
+def test_trailer_coverage_is_reported(pt, git_repo, capsys):
+    for i in range(2):
+        (git_repo / f"f{i}.txt").write_text("x\n", encoding="utf-8")
+        git(git_repo, "add", "-A")
+        git(git_repo, "commit", "-m", f"plain {i}")
+    (git_repo / "g.txt").write_text("x\n", encoding="utf-8")
+    git(git_repo, "add", "-A")
+    git(git_repo, "commit", "-m", "trailered\n\nADR: 0001")
+    run(pt, git_repo)
+    out = capsys.readouterr().out
+    assert "trailer coverage" in out
+    assert "1/4" in out, out       # seed commit + 2 plain + 1 trailered
+
+
+def test_state_log_event_count_is_reported(pt, git_repo, capsys):
+    pt.main(["state", "add", "--root", str(git_repo),
+             "--log", str(git_repo / "docs" / "state.ndjson"),
+             "--kind", "claim", "--what", "it works", "--proof", "pytest"])
+    capsys.readouterr()
+    run(pt, git_repo)
+    assert "1 event(s)" in capsys.readouterr().out

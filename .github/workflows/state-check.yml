@@ -52,6 +52,12 @@ jobs:
             exit 1
           fi
 
+      - name: Wiring
+        # ADR-0004: the failure mode is silent misconfiguration, so the wiring is
+        # asserted rather than assumed. --strict fails on gaps (absent wiring);
+        # warns — no uv, unregistered local hooks — are expected on a runner.
+        run: python skills/cozyplan/scripts/plan_tool.py doctor --strict
+
       - name: State check
         # No --max-drift: on a pull request STATE.md is always behind HEAD by at
         # least that PR's commits, so failing on drift would make this unusable.

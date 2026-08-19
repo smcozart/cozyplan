@@ -39,6 +39,7 @@ import html
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from datetime import datetime
@@ -2042,6 +2043,174 @@ def cmd_state(args) -> int:
     return 0
 
 
+# ── doctor (ADR-0004: wiring is observable) ──────────────────────────────────
+# The failure this guards against is SILENT misconfiguration. hooks.json shipped
+# a note saying "if uv is missing, enforcement silently disappears", and that is
+# exactly what happened — for months, on any machine without uv. So doctor does
+# not ask whether a hook is *registered*; it runs the interpreter that hook would
+# use and reports whether it actually works.
+#
+# It never claims protection it cannot verify. Whether a CI check is *required*
+# lives in GitHub branch protection, which is not visible from a clone, so doctor
+# says so instead of implying a gate exists.
+
+OK, WARN, GAP = "ok", "warn", "gap"
+_MARK = {OK: "  ok  ", WARN: " warn ", GAP: " gap  "}
+
+
+def _hook_runner() -> list[str]:
+    """The same resolution the hooks use: prefer uv, fall back to this interpreter."""
+    return ["uv", "run"] if shutil.which("uv") else [sys.executable]
+
+
+def doctor_checks(root: Path, commits: int) -> list[tuple[str, str, str, str]]:
+    """(section, status, name, detail) for every wiring fact worth knowing."""
+    out: list[tuple[str, str, str, str]] = []
+
+    def add(section, status, name, detail=""):
+        out.append((section, status, name, detail))
+
+    # ── git ──────────────────────────────────────────────────────────────────
+    in_git, _ = git(root, "rev-parse", "--is-inside-work-tree")
+    if not in_git:
+        add("git", GAP, "work tree", "not a git repository — nothing below can be wired")
+        return out
+    _, branch = git(root, "rev-parse", "--abbrev-ref", "HEAD")
+    _, sha = git(root, "rev-parse", "--short", "HEAD")
+    add("git", OK, "work tree", f"{branch} @ {sha}")
+
+    ok_r, remote = git(root, "remote", "get-url", "origin")
+    add("git", OK if ok_r else WARN, "remote",
+        remote if ok_r else "no origin — GitHub-backed workflows have no target")
+
+    _, name = git(root, "config", "user.name")
+    _, email = git(root, "config", "user.email")
+    if name and email:
+        add("git", OK, "identity", f"{name} <{email}>")
+    else:
+        # A warn, not a gap: identity is attribution config, not wiring. It is
+        # routinely unset on a CI runner, and failing --strict there would be a
+        # false positive — the fastest way to teach a team to delete the check.
+        add("git", WARN, "identity",
+            "user.name/user.email unset — journal entries and ADR authorship land blank")
+
+    # ── enforcement layering (ADR-0004) ──────────────────────────────────────
+    settings = root / ".claude" / "settings.json"
+    registered = False
+    if settings.exists():
+        try:
+            blob = json.dumps(json.loads(read(settings)))
+            registered = "guard_plan_edit" in blob and "lint_plan" in blob
+        except (json.JSONDecodeError, ValueError):
+            registered = False
+    add("enforcement", OK if registered else WARN, "claude hooks",
+        "guard + lint registered in .claude/settings.json" if registered
+        else "not registered — run `plan_tool hooks install` (advisory layer only)")
+
+    # The check that matters: does the interpreter those hooks name actually run?
+    tool = Path(__file__).resolve()
+    runner = _hook_runner()
+    try:
+        r = subprocess.run(runner + [str(tool), "--help"],
+                           capture_output=True, text=True, timeout=30, cwd=str(root))
+        runs = r.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        runs = False
+    add("enforcement", OK if runs else GAP, "hook interpreter",
+        f"`{' '.join(runner)}` runs plan_tool" if runs
+        else f"`{' '.join(runner)}` cannot run plan_tool — hooks would fail open, silently")
+
+    ok_hp, hooks_path = git(root, "config", "core.hooksPath")
+    if ok_hp and hooks_path:
+        d = root / hooks_path
+        n = len([f for f in d.iterdir() if f.is_file()]) if d.is_dir() else 0
+        add("enforcement", OK if n else WARN, "git hooks",
+            f"core.hooksPath={hooks_path} ({n} hook(s))" if n
+            else f"core.hooksPath={hooks_path} but no hooks in it")
+    else:
+        add("enforcement", WARN, "git hooks",
+            "core.hooksPath unset — .git/hooks is not cloned, so nothing is installed here")
+
+    wf = root / ".github" / "workflows"
+    ci = [f.name for f in wf.glob("*.yml")] + [f.name for f in wf.glob("*.yaml")] if wf.is_dir() else []
+    has_state_ci = any("state check" in read(wf / f) or "state_check" in read(wf / f) for f in ci) if ci else False
+    add("enforcement", OK if has_state_ci else GAP, "ci workflow",
+        f"{', '.join(ci)}" if has_state_ci else "no workflow runs `state check` — no enforcing layer exists")
+    add("enforcement", WARN, "required check",
+        "not verifiable from a clone — confirm in GitHub Settings > Branches, or CI only reports")
+
+    # ── tooling ──────────────────────────────────────────────────────────────
+    if shutil.which("gh"):
+        authed = subprocess.run(["gh", "auth", "status"], capture_output=True,
+                                text=True).returncode == 0
+        add("tooling", OK if authed else WARN, "gh",
+            "installed and authenticated" if authed else "installed but not authenticated (`gh auth login`)")
+    else:
+        add("tooling", WARN, "gh",
+            "not installed — issue operations queue to .scratch/ instead (ADR-0001)")
+    add("tooling", OK if shutil.which("uv") else WARN, "uv",
+        "present" if shutil.which("uv") else "absent — plan_tool runs on plain python3, so this is fine")
+    add("tooling", OK, "python", sys.version.split()[0])
+
+    # ── state layer (ADR-0005) ───────────────────────────────────────────────
+    state_md, log = root / "STATE.md", root / STATE_LOG_DEFAULT
+    add("state", OK if state_md.exists() else GAP, "STATE.md",
+        "present" if state_md.exists() else "missing — run the Init State workflow")
+    n_ev = len([l for l in read(log).split("\n") if l.strip()]) if log.exists() else 0
+    add("state", OK if log.exists() else WARN, "event log",
+        f"{STATE_LOG_DEFAULT} ({n_ev} event(s))" if log.exists()
+        else f"no {STATE_LOG_DEFAULT} — STATE.md is still hand-authored")
+    ok_at, attr = git(root, "check-attr", "merge", "--", STATE_LOG_DEFAULT)
+    union = ok_at and attr.strip().endswith(": union")
+    add("state", OK if union else GAP, "union merge",
+        "state log is union-merged" if union
+        else f"`{STATE_LOG_DEFAULT} merge=union` missing from .gitattributes — concurrent appends will conflict")
+    adr = root / "docs" / "adr"
+    n_adr = len(list(adr.glob("*.md"))) if adr.is_dir() else 0
+    add("state", OK if n_adr else WARN, "ADRs", f"{n_adr} recorded" if n_adr else "none recorded")
+
+    # ── skill adapter ────────────────────────────────────────────────────────
+    tracker = root / "docs" / "agents" / "issue-tracker.md"
+    add("adapter", OK if tracker.exists() else GAP, "issue tracker",
+        "docs/agents/issue-tracker.md" if tracker.exists()
+        else "missing — to-spec/to-tickets/triage/wayfinder halt; run /setup-matt-pocock-skills")
+    agent_doc = next((f for f in ("CLAUDE.md", "AGENTS.md") if (root / f).exists()), None)
+    add("adapter", OK if agent_doc else GAP, "agent doc",
+        f"{agent_doc} present" if agent_doc else "no CLAUDE.md or AGENTS.md — a clone has no entry point")
+
+    # ── trailer coverage (what backward grounding depends on, ADR-0006) ──────
+    ok_l, log_out = git(root, "log", f"-{commits}", "--format=%H%x1f%(trailers:key=Plan,valueonly)"
+                        "%x1f%(trailers:key=ADR,valueonly)%x1e")
+    if ok_l and log_out:
+        recs = [r for r in log_out.split("\x1e") if r.strip()]
+        with_tr = sum(1 for r in recs if any(p.strip() for p in r.split("\x1f")[1:]))
+        pct = round(100 * with_tr / len(recs)) if recs else 0
+        add("grounding", OK if pct >= 50 else WARN, "trailer coverage",
+            f"{with_tr}/{len(recs)} of the last {len(recs)} commits carry Plan:/ADR: ({pct}%)"
+            + ("" if pct >= 50 else " — backward grounding will return thin answers"))
+    return out
+
+
+def cmd_doctor(args) -> int:
+    root = Path(args.root)
+    rows = doctor_checks(root, args.commits)
+    print(f"cozyplan doctor — {root.resolve()}\n")
+    section = None
+    for sec, status, name, detail in rows:
+        if sec != section:
+            print(f"{sec}")
+            section = sec
+        print(f"  [{_MARK[status]}] {name:<18} {detail}")
+    gaps = [r for r in rows if r[1] == GAP]
+    warns = [r for r in rows if r[1] == WARN]
+    print(f"\n{len(rows) - len(gaps) - len(warns)} ok, {len(warns)} warn, {len(gaps)} gap")
+    if gaps:
+        print("gaps are wiring that is absent, not merely unconfigured:")
+        for _, _, name, detail in gaps:
+            print(f"  - {name}: {detail}")
+    return 1 if (gaps and args.strict) else 0
+
+
 # ── argparse wiring ───────────────────────────────────────────────────────────
 def build_parser() -> argparse.ArgumentParser:
     parent = argparse.ArgumentParser(add_help=False)
@@ -2121,6 +2290,15 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--global", dest="global_", action="store_true",
                     help="target ~/.claude/settings.json instead of the project settings")
     sp.set_defaults(func=cmd_hooks)
+
+    sp = sub.add_parser("doctor", parents=[parent],
+                        help="report what is actually wired in this clone (ADR-0004)")
+    sp.add_argument("--root", default=".", help="repo root (default: .)")
+    sp.add_argument("--commits", type=int, default=20,
+                    help="commits to sample for trailer coverage (default: 20)")
+    sp.add_argument("--strict", action="store_true",
+                    help="exit non-zero when any gap is found (for CI)")
+    sp.set_defaults(func=cmd_doctor)
 
     sp = sub.add_parser("state", parents=[parent],
                         help="append to / render / inspect / check the state layer")
