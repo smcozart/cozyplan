@@ -71,7 +71,8 @@ When these files are present, read them during Create/Update so plans challenge 
 
 Beside the plans, cozyplan can maintain a project-wide **snapshot + ledger** so anyone who clones the repo knows the exact working state, what is in development, who changed what and why, and how to verify every claim themselves:
 
-- **`STATE_FILE`** — the SOT snapshot. Its sections describe the system *now* and are overwritten on every sync; stale lines are removed, not accumulated. The front door for a fresh clone.
+- **`STATE_FILE`** — the **generated** current view. `PLAN_TOOL state render` projects it from the event log; never hand-edit it, append an event and re-render. Capped and ranked by importance, so it stays readable as the project grows; each entry is a pointer trail (`plan:` `phase:` `adr:` `issue:` `session:` `path:`) rather than the detail itself. The front door for a fresh clone.
+- **`STATE_LOG`** (`docs/state.ndjson`) — the append-only, union-merged event log behind it. `PLAN_TOOL state add --kind claim|indev|gap …` appends; the projection is last-write-wins per key, ordered by the commit that introduced each line (not file order, which union merge does not preserve, and not wall clock, which skews across machines). `--clear` retracts a key without rewriting history. See ADR-0005.
 - **`JOURNAL`** — the append-only ledger: one entry per meaningful change (who — from `git config user.name`/`user.email`, plus agent name and session id when an agent did the work — what, why, the resulting state, refs). The entry format is documented once, in the journal file's own header.
 - **Records** — feature (`docs/features/FEAT-NNN-*.md`) and issue (`docs/issues/ISSUE-NNN-*.md`) docs with status frontmatter and append-only status histories; decisions land in `docs/adr/NNNN-title.md` (the same directory and naming the Context Layer reads — shared with the `discuss` skill).
 

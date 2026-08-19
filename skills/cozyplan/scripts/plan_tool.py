@@ -1805,15 +1805,232 @@ def check_state(state_path: Path, root: Path, adr_dir: Path, journal: Path,
     return problems, warns, notes
 
 
+# ── state log + render (ADR-0005: append-only log, capped projection) ─────────
+# The log is Tier 1: union-merged, append-only, never rewritten. STATE.md is
+# Tier 2: generated, capped, ranked by importance. Ordering is COMMIT order —
+# union merge concatenates without ordering it, and wall clocks skew across
+# machines, so the only total order every writer already shares is git's.
+
+STATE_LOG_DEFAULT = "docs/state.ndjson"
+STATE_KINDS = ("claim", "indev", "gap")
+ZERO_SHA = "0" * 40
+BLAME_HDR_RE = re.compile(r"^([0-9a-f]{40})\s+\d+\s+(\d+)")
+
+
+def state_log_order(root: Path, log_path: Path, n_lines: int) -> list[tuple]:
+    """A sort key per line index, taken from the commit that introduced the line.
+
+    Uncommitted lines sort last — they are the newest by definition. Falls back to
+    file order when git or blame is unavailable: a degraded order, never a crash
+    (ADR-0004)."""
+    ok, out = git(root, "blame", "--porcelain", "--", str(log_path))
+    if not ok or not out:
+        return [(1, 0, i) for i in range(n_lines)]
+    # Rank by position in history, NOT by committer-time: timestamps have
+    # one-second granularity, so two commits made in the same second tie and fall
+    # back to file order — precisely the order union merge does not preserve.
+    ok_log, log_out = git(root, "log", "--topo-order", "--reverse",
+                          "--format=%H", "--", str(log_path))
+    rank = {sha: i for i, sha in enumerate(log_out.split("\n"))} if ok_log else {}
+    far = len(rank) + 1
+    keys: dict[int, tuple] = {}
+    sha, line_no = ZERO_SHA, 0
+    for ln in out.split("\n"):
+        m = BLAME_HDR_RE.match(ln)
+        if m:
+            sha, line_no = m.group(1), int(m.group(2))
+        elif ln.startswith("\t"):
+            # 0 = committed (ordered by history position); 1 = still uncommitted.
+            keys[line_no - 1] = ((1, far) if sha == ZERO_SHA
+                                 else (0, rank.get(sha, far)))
+    return [keys.get(i, (1, far)) + (i,) for i in range(n_lines)]
+
+
+def read_state_log(root: Path, log_path: Path) -> list[dict]:
+    """Every event in the log, in commit order. A malformed line is skipped rather
+    than fatal — union merge can land junk, and a log that will not parse must not
+    take the render down with it."""
+    if not log_path.exists():
+        return []
+    raw = [ln for ln in read(log_path).split("\n") if ln.strip()]
+    order = state_log_order(root, log_path, len(raw))
+    seen, events = set(), []
+    for i, ln in enumerate(raw):
+        if ln in seen:      # union merge can duplicate an identical append
+            continue
+        seen.add(ln)
+        try:
+            ev = json.loads(ln)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(ev, dict) or ev.get("kind") not in STATE_KINDS:
+            continue
+        ev["_ord"] = order[i]
+        events.append(ev)
+    events.sort(key=lambda e: e["_ord"])
+    return events
+
+
+def project_state(events: list[dict]) -> dict:
+    """Reduce the log to current truth: last write wins per (kind, key), and an
+    event marked cleared removes the key. Ranked by weight first so a capped view
+    keeps the most significant state, not merely the most recent."""
+    current: dict = {}
+    for ev in events:
+        k = (ev["kind"], ev.get("key") or ev.get("what", ""))
+        if ev.get("cleared"):
+            current.pop(k, None)
+        else:
+            current[k] = ev
+    out: dict = {kind: [] for kind in STATE_KINDS}
+    for (kind, _), ev in current.items():
+        out[kind].append(ev)
+    for kind in out:
+        out[kind].sort(key=lambda e: (-int(e.get("weight", 3) or 3), e["_ord"]))
+    return out
+
+
+def refs_line(ev: dict) -> str:
+    """The pointer trail. An entry carries the ids needed to decide whether to
+    follow it, never the detail itself — so capping costs immediacy, never
+    reachability (ADR-0005)."""
+    r = ev.get("refs") or {}
+    bits = []
+    for key in ("plan", "phase", "session"):
+        if r.get(key):
+            bits.append(f"{key}:{r[key]}")
+    for key, prefix in (("adr", "adr:"), ("issue", "issue:#")):
+        vals = r.get(key) or []
+        if isinstance(vals, str):
+            vals = [vals]
+        bits.extend(f"{prefix}{v}" for v in vals)
+    bits.extend(f"path:{p}" for p in (ev.get("paths") or []))
+    return "  ↳ " + " ".join(bits) if bits else ""
+
+
+def render_state(root: Path, projected: dict, cap: int, adr_dir: Path,
+                 specs: str, journal: Path, origin, project: str | None = None) -> str:
+    ok_b, branch = git(root, "rev-parse", "--abbrev-ref", "HEAD")
+    ok_s, sha = git(root, "rev-parse", "--short", "HEAD")
+    # Deterministic: stamp the newest EVENT, never the run time, so re-rendering
+    # unchanged inputs is byte-identical (the same rule `index` follows).
+    newest = max((e.get("ts", "") for lst in projected.values() for e in lst), default="")
+    lines = [f"# {project or root.resolve().name} — State", "",
+             "<!-- GENERATED by `plan_tool state render` from docs/state.ndjson.",
+             "     Do not hand-edit: append with `plan_tool state add`, then re-render.",
+             "     History lives in the log; this file is the capped current view. -->", "",
+             "| Sync | |", "|---|---|",
+             f"| Last synced | {newest or '(no events)'} |",
+             f"| Repo state | {branch if ok_b else '?'} @ {sha if ok_s else '?'} |"]
+    if origin:
+        ok_c, counts = git(root, "rev-list", "--left-right", "--count", f"{origin}...HEAD")
+        if ok_c and counts:
+            behind, ahead = (counts.split() + ["?", "?"])[:2]
+            lines.append(f"| Vs {origin} | {behind} behind, {ahead} ahead |")
+    lines.append("")
+
+    def section(title: str, kind: str, fmt) -> None:
+        items = projected.get(kind, [])
+        lines.extend([f"## {title}", ""])
+        if not items:
+            lines.extend(["_none recorded_", ""])
+            return
+        for ev in items[:cap]:
+            lines.append(fmt(ev))
+            rl = refs_line(ev)
+            if rl:
+                lines.append(rl)
+        if len(items) > cap:
+            lines.extend(["", f"_{len(items) - cap} more — `plan_tool state show --all`_"])
+        lines.append("")
+
+    section("Current Working State", "claim", lambda e: (
+        f"- {e.get('what', '')} — verified by `{e.get('proof', '')}` "
+        f"({e.get('date', '')}{', ' + e['sha'] if e.get('sha') else ''})"))
+    section("In Development", "indev", lambda e: (
+        f"- {e.get('what', '')} — {e.get('status', 'in-development')}"
+        + (f" · {e['owner']}" if e.get("owner") else "")))
+    section("Known Gaps / Risks", "gap", lambda e: f"- {e.get('what', '')}")
+
+    lines.extend(["## Registers", "",
+                  f"- **Plans** — [{specs}/_index.html]({specs}/_index.html)",
+                  f"- **Decisions (ADRs)** — [{adr_dir}/]({adr_dir}/)"])
+    # Derived, so the register cannot drift from the directory — the drift
+    # `state check` caught by hand is now impossible by construction.
+    if adr_dir.is_dir():
+        for f in sorted(adr_dir.glob("*.md")):
+            m = ADR_FILE_RE.match(f.name)
+            if not m:
+                continue
+            title = next((ln[7:].strip() for ln in read(f).split("\n")
+                          if ln.startswith("title: ")), "")
+            lines.append(f"  - ADR-{m.group('num')} — {title or f.stem}")
+    lines.extend(["- **Components** — [SYSTEM.md](SYSTEM.md)",
+                  f"- **Ledger** — [{journal}]({journal})", ""])
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def cmd_state(args) -> int:
+    root = Path(args.root)
+    log_path = Path(args.log)
+
+    if args.state_cmd == "add":
+        if not args.what:
+            return fail("--what is required")
+        _, who = git(root, "config", "user.name")
+        ev = {"kind": args.kind, "key": args.key or args.what[:60], "what": args.what,
+              "weight": args.weight, "by": who or "",
+              "ts": args.ts or datetime.now().astimezone().isoformat(timespec="seconds")}
+        # The proof date is the event's own date — one field, never disagreeing
+        # with the timestamp beside it.
+        ev["date"] = ev["ts"][:10]
+        for name in ("proof", "sha", "status", "owner"):
+            if getattr(args, name, None):
+                ev[name] = getattr(args, name)
+        if args.paths:
+            ev["paths"] = [p.strip() for p in args.paths.split(",") if p.strip()]
+        refs = {n: getattr(args, n) for n in ("plan", "phase", "session") if getattr(args, n, None)}
+        if args.adr:
+            refs["adr"] = [a.strip() for a in args.adr.split(",") if a.strip()]
+        if args.issue:
+            refs["issue"] = [i.strip().lstrip("#") for i in args.issue.split(",") if i.strip()]
+        if refs:
+            ev["refs"] = refs
+        if args.clear:
+            ev["cleared"] = True
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_path, "a", encoding="utf-8", newline="\n") as f:
+            f.write(json.dumps(ev, ensure_ascii=False, sort_keys=True) + "\n")
+        print(f"state: appended {args.kind} '{ev['key']}'"
+              + (" (cleared)" if args.clear else "") + f" -> {log_path}")
+        return 0
+
+    if args.state_cmd in ("render", "show"):
+        projected = project_state(read_state_log(root, log_path))
+        if args.state_cmd == "show":
+            for kind in STATE_KINDS:
+                items = projected[kind]
+                shown = items if args.all else items[:args.cap]
+                print(f"{kind} ({len(items)}):")
+                for ev in shown:
+                    print(f"  [w{ev.get('weight', 3)}] {ev.get('what', '')}")
+                if len(items) > len(shown):
+                    print(f"  ... {len(items) - len(shown)} more (--all)")
+            return 0
+        out = Path(args.file)
+        write(out, render_state(root, projected, args.cap, Path(args.adr_dir),
+                                args.specs, Path(args.journal), args.origin, args.project))
+        n = sum(len(v) for v in projected.values())
+        print(f"state: rendered {out} from {n} projected entr(ies)")
+        return 0
+
     state_path = Path(args.file)
     if not state_path.exists():
         return fail(f"state file not found: {state_path} - run the Init State workflow first")
-    root = Path(args.root)
     problems, warns, notes = check_state(
         state_path, root, Path(args.adr_dir), Path(args.journal), args.max_drift)
-    for n in notes:
-        print(f"  note: {n}")
+    for note in notes:
+        print(f"  note: {note}")
     for w in warns:
         print(f"  warn: {w}")
     if problems:
@@ -1906,14 +2123,46 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(func=cmd_hooks)
 
     sp = sub.add_parser("state", parents=[parent],
-                        help="check STATE.md against git reality (freshness, proofs, registers)")
-    sp.add_argument("state_cmd", choices=["check"], help="subcommand (only 'check')")
-    sp.add_argument("--file", default="STATE.md", help="state file (default: STATE.md)")
+                        help="append to / render / inspect / check the state layer")
+    sp.add_argument("state_cmd", choices=["add", "render", "show", "check"],
+                    help="add an event, render STATE.md, show the projection, or check it")
+    sp.add_argument("--file", default="STATE.md", help="rendered state file (default: STATE.md)")
+    sp.add_argument("--log", default=STATE_LOG_DEFAULT,
+                    help=f"append-only event log (default: {STATE_LOG_DEFAULT})")
     sp.add_argument("--root", default=".", help="repo root (default: .)")
     sp.add_argument("--adr-dir", default="docs/adr", help="ADR directory (default: docs/adr)")
     sp.add_argument("--journal", default="docs/journal.md", help="ledger (default: docs/journal.md)")
+    sp.add_argument("--specs", default="specs", help="specs directory (default: specs)")
     sp.add_argument("--max-drift", type=int, default=None,
-                    help="fail when the snapshot is more than N commits behind HEAD")
+                    help="check: fail when the snapshot is more than N commits behind HEAD")
+    sp.add_argument("--cap", type=int, default=20,
+                    help="render/show: max entries per section (default: 20)")
+    sp.add_argument("--all", action="store_true", help="show: every entry, ignoring --cap")
+    sp.add_argument("--origin", default=None,
+                    help="render: also report position vs this ref, e.g. origin/main")
+    sp.add_argument("--project", default=None,
+                    help="render: project name for the heading (default: the repo directory)")
+    # add
+    sp.add_argument("--kind", choices=list(STATE_KINDS), default="claim",
+                    help="add: event kind (default: claim)")
+    sp.add_argument("--key", default=None,
+                    help="add: stable identity for last-write-wins (default: derived from --what)")
+    sp.add_argument("--what", default=None, help="add: the capability, item, or gap")
+    sp.add_argument("--proof", default=None, help="add: the command that demonstrated a claim")
+    sp.add_argument("--sha", default=None, help="add: the commit the proof was true at")
+    sp.add_argument("--paths", default=None,
+                    help="add: comma-separated paths this entry depends on")
+    sp.add_argument("--weight", type=int, default=3,
+                    help="add: importance 1-5; a capped view keeps the heaviest (default: 3)")
+    sp.add_argument("--status", default=None, help="add: status, for --kind indev")
+    sp.add_argument("--owner", default=None, help="add: owner, for --kind indev")
+    sp.add_argument("--plan", default=None, help="add: plan id ref")
+    sp.add_argument("--phase", default=None, help="add: phase/task id ref")
+    sp.add_argument("--adr", default=None, help="add: comma-separated ADR numbers")
+    sp.add_argument("--issue", default=None, help="add: comma-separated issue numbers")
+    sp.add_argument("--ts", default=None, help="add: explicit ISO timestamp (default: now)")
+    sp.add_argument("--clear", action="store_true",
+                    help="add: retract this key from the projection (the log keeps the history)")
     sp.set_defaults(func=cmd_state)
 
     sp = sub.add_parser("brief", parents=[parent],
