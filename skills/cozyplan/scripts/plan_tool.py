@@ -1348,17 +1348,17 @@ def cmd_roles(args) -> int:
 
 
 # ── new (deterministic plan scaffolding from templates/plan.html) ─────────────
-def template_candidates() -> list[Path]:
-    """Ordered locations to look for templates/plan.html.
+def template_candidates(name: str = "plan.html") -> list[Path]:
+    """Ordered locations to look for a named template.
 
     Mirrors how the hooks resolve plan_tool.py: prefer CLAUDE_PLUGIN_ROOT (the
     bundled plugin), then the project cwd, then this script's own location — each
     with the in-project `.claude/skills/...` layout and the moved-as-a-unit layout.
     """
     rels = [
-        Path(".claude") / "skills" / "cozyplan" / "templates" / "plan.html",
-        Path("skills") / "cozyplan" / "templates" / "plan.html",
-        Path("templates") / "plan.html",
+        Path(".claude") / "skills" / "cozyplan" / "templates" / name,
+        Path("skills") / "cozyplan" / "templates" / name,
+        Path("templates") / name,
     ]
     roots: list[Path] = []
     pr = os.environ.get("CLAUDE_PLUGIN_ROOT")
@@ -1375,8 +1375,8 @@ def template_candidates() -> list[Path]:
     return seen
 
 
-def resolve_template() -> Path | None:
-    for c in template_candidates():
+def resolve_template(name: str = "plan.html") -> Path | None:
+    for c in template_candidates(name):
         if c.exists():
             return c
     return None
@@ -2050,6 +2050,203 @@ def migrate_state(text: str, who: str) -> tuple[list[dict], list[str]]:
                     "path-intersection sync trigger cannot fire for migrated claims")
     return events, lost
 
+
+CLAUDE_MD_STUB = """# {name}
+
+<!-- Written by `plan_tool init`. This is a stub: replace the placeholders with
+     what is actually true of this repo. A clone's entry point is only worth the
+     accuracy of what it says. -->
+
+## Project state
+
+Start here, in this order. Each answers a different question.
+
+| Read | To answer |
+| --- | --- |
+| `STATE.md` | Where the project left off, and what is verified working right now |
+| `docs/adr/` | Why the system is built this way |
+| `docs/journal.md` | The append-only history of who changed what and why |
+
+`STATE.md` is **generated** by `plan_tool state render` from `docs/state.ndjson`.
+Never hand-edit it: append an event with `plan_tool state add`, then re-render.
+
+Run `plan_tool doctor` to see what is actually wired in this clone.
+
+## Agent skills
+
+### Issue tracker
+
+See `docs/agents/issue-tracker.md`.
+"""
+
+GITATTRIBUTES_STANZA = """
+# Append-only state event log (ADR-0005): union-merge so concurrent appends
+# from different sessions and agents combine instead of conflicting.
+docs/state.ndjson merge=union
+"""
+
+
+def cmd_init(args) -> int:
+    """Wire a repo for cozyplan: everything `doctor` checks that a command can
+    legitimately create. Idempotent and additive — every write is create-if-absent
+    or append-if-missing, never a truncation, so brownfield is the normal case
+    rather than a special one."""
+    root = Path(args.root)
+    in_git, _ = git(root, "rev-parse", "--is-inside-work-tree")
+    if not in_git:
+        if not args.git_init:
+            return fail(f"{root} is not a git repository — every layer below is wired "
+                        f"through git. Run `git init` first, or pass --git-init.")
+        ok, _ = git(root, "init")
+        if not ok:
+            return fail(f"git init failed in {root}")
+
+    made: list[str] = []
+    kept: list[str] = []
+    # Rewritten every run by design (they re-point a moved interpreter), so they are
+    # neither created nor left alone. Reporting them as "created" on a re-run would be
+    # a small lie in a tool whose entire value is that its reports are true.
+    refreshed: list[str] = []
+    manual: list[str] = []
+
+    def ensure_dir(rel: str) -> None:
+        d = root / rel
+        (kept if d.is_dir() else made).append(rel)
+        d.mkdir(parents=True, exist_ok=True)
+
+    def ensure_file(rel: str, body: str) -> None:
+        f = root / rel
+        if f.exists():
+            kept.append(rel)
+            return
+        f.parent.mkdir(parents=True, exist_ok=True)
+        write(f, body)
+        made.append(rel)
+
+    def ensure_from_template(rel: str, template: str, subs: "dict[str, str] | None" = None) -> None:
+        f = root / rel
+        if f.exists():
+            kept.append(rel)
+            return
+        src = resolve_template(template)
+        if src is None:
+            manual.append(f"{rel} — template `{template}` not found beside this script; "
+                          f"create it by hand")
+            return
+        text = read(src)
+        for k, v in (subs or {}).items():
+            text = text.replace(k, v)
+        f.parent.mkdir(parents=True, exist_ok=True)
+        write(f, text)
+        made.append(rel)
+
+    # ── records and the event log ────────────────────────────────────────────
+    ensure_dir("docs/adr")
+    ensure_file(STATE_LOG_DEFAULT, "")
+    ensure_from_template("docs/journal.md", "journal.md")
+
+    ok_rem, remote = git(root, "remote", "get-url", "origin")
+    slug = ""
+    if ok_rem and remote:
+        m = re.search(r"[:/]([^/:]+/[^/]+?)(?:\.git)?$", remote.strip())
+        slug = m.group(1) if m else ""
+    if slug:
+        ensure_from_template("docs/agents/issue-tracker.md", "issue-tracker.md",
+                             {"{{REPO_SLUG}}": slug})
+    elif (root / "docs/agents/issue-tracker.md").exists():
+        kept.append("docs/agents/issue-tracker.md")
+    else:
+        manual.append("docs/agents/issue-tracker.md — no `origin` remote, so the repo slug "
+                      "cannot be filled in. Add a remote and re-run, or write it by hand")
+
+    # ── union merge: ask git, not the file. The attribute can come from
+    #    .git/info/attributes or a parent dir, and appending blindly duplicates it.
+    ok_attr, attr = git(root, "check-attr", "merge", "--", STATE_LOG_DEFAULT)
+    if ok_attr and attr.strip().endswith(": union"):
+        kept.append(".gitattributes (merge=union)")
+    else:
+        ga = root / ".gitattributes"
+        existing = read(ga) if ga.exists() else ""
+        write(ga, (existing.rstrip("\n") + "\n\n" if existing.strip() else "") + GITATTRIBUTES_STANZA.lstrip("\n"))
+        made.append(".gitattributes (merge=union)")
+
+    # ── CI ───────────────────────────────────────────────────────────────────
+    wf = root / ".github" / "workflows"
+    runs_check = any("state check" in read(f) or "state_check" in read(f)
+                     for f in sorted(list(wf.glob("*.yml")) + list(wf.glob("*.yaml")))) if wf.is_dir() else False
+    if runs_check:
+        kept.append(".github/workflows (a workflow already runs state check)")
+    else:
+        ensure_from_template(".github/workflows/state-check.yml", "state-check.yml")
+
+    # ── git hooks. A foreign core.hooksPath means another manager owns them;
+    #    overwriting it silently is the one genuinely destructive move here.
+    ok_hp, hooks_path = git(root, "config", "core.hooksPath")
+    foreign = ok_hp and hooks_path.strip() and hooks_path.strip() != args.hooks_dir
+    if foreign and not args.force_hooks:
+        manual.append(f"core.hooksPath is already set to `{hooks_path.strip()}` — another hook "
+                      f"manager owns this repo. Re-run with --force-hooks to take it over, "
+                      f"or install the commit-msg trailer hook into that manager by hand")
+    else:
+        ns = argparse.Namespace(hooks_cmd="git-install", root=args.root, dir=args.hooks_dir)
+        if cmd_hooks_git(ns) == 0:
+            refreshed.append(f"{args.hooks_dir}/ + core.hooksPath")
+
+    # ── Claude Code hooks (advisory layer; bare-skill installs need this) ────
+    if args.claude_hooks:
+        ns = argparse.Namespace(hooks_cmd="install", settings=str(root / ".claude" / "settings.json"),
+                                global_=False)
+        if cmd_hooks(ns) == 0:
+            refreshed.append(".claude/settings.json (guard + lint hooks)")
+        else:
+            manual.append(".claude/settings.json — hook registration failed; run "
+                          "`plan_tool hooks install` and read the error")
+
+    # ── entry point ──────────────────────────────────────────────────────────
+    if (root / "CLAUDE.md").exists() or (root / "AGENTS.md").exists():
+        kept.append("CLAUDE.md / AGENTS.md")
+    else:
+        ensure_file("CLAUDE.md", CLAUDE_MD_STUB.format(name=root.resolve().name))
+
+    # ── STATE.md last: render refuses to overwrite an authored snapshot, which
+    #    is exactly the behaviour we want here, so route the user to migrate.
+    state_file = root / "STATE.md"
+    if state_file.exists():
+        if STATE_GENERATED_MARKER in read(state_file):
+            kept.append("STATE.md (generated)")
+        else:
+            manual.append("STATE.md exists but was authored by hand — run "
+                          "`plan_tool state migrate` to carry it into the event log, "
+                          "then `plan_tool state render`")
+    else:
+        ns = argparse.Namespace(state_cmd="render", root=args.root, log=STATE_LOG_DEFAULT,
+                                file=str(state_file), cap=20, adr_dir=str(root / "docs" / "adr"),
+                                specs=args.specs, journal=str(root / "docs" / "journal.md"),
+                                origin=None, project=None, force=False, dry_run=False)
+        if cmd_state(ns) == 0:
+            made.append("STATE.md")
+
+    # ── report ───────────────────────────────────────────────────────────────
+    print(f"\ncozyplan init — {root.resolve()}\n")
+    for title, items in (("created", made), ("refreshed (rewritten every run)", refreshed),
+                         ("already present, left alone", kept)):
+        if items:
+            print(f"  {title}:")
+            for i in items:
+                print(f"    - {i}")
+    # Steps no command can do are named, never faked (ADR-0004).
+    checks = {name: (status, detail) for _, status, name, detail in doctor_checks(root, 20)}
+    for name in ("identity", "remote", "gh", "required check"):
+        if name in checks and checks[name][0] != OK:
+            manual.append(f"{name} — {checks[name][1]}")
+    if manual:
+        print("\n  needs a human:")
+        for i in manual:
+            print(f"    - {i}")
+    gaps = [(n, d) for _, st, n, d in doctor_checks(root, 20) if st == GAP]
+    print(f"\n  {len(gaps)} gap(s) remain — run `plan_tool doctor` for the full picture.")
+    return 0
+
 def cmd_state(args) -> int:
     root = Path(args.root)
     log_path = Path(args.log)
@@ -2597,6 +2794,21 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--strict", action="store_true",
                     help="exit non-zero when any gap is found (for CI)")
     sp.set_defaults(func=cmd_doctor)
+
+    sp = sub.add_parser("init", parents=[parent],
+                        help="wire this repo for cozyplan: everything doctor checks that "
+                             "a command can legitimately create (idempotent)")
+    sp.add_argument("--root", default=".", help="repo root (default: .)")
+    sp.add_argument("--specs", default="specs", help="specs directory (default: specs)")
+    sp.add_argument("--hooks-dir", default=".githooks",
+                    help="tracked git hooks directory (default: .githooks)")
+    sp.add_argument("--git-init", action="store_true",
+                    help="run `git init` when root is not a repository")
+    sp.add_argument("--force-hooks", action="store_true",
+                    help="take over core.hooksPath even when another hook manager owns it")
+    sp.add_argument("--no-claude-hooks", dest="claude_hooks", action="store_false",
+                    help="skip registering the Claude Code hooks in .claude/settings.json")
+    sp.set_defaults(func=cmd_init, claude_hooks=True)
 
     sp = sub.add_parser("state", parents=[parent],
                         help="append to / render / inspect / check the state layer")
