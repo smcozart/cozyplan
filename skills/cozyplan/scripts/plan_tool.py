@@ -2058,9 +2058,28 @@ OK, WARN, GAP = "ok", "warn", "gap"
 _MARK = {OK: "  ok  ", WARN: " warn ", GAP: " gap  "}
 
 
+def _hook_runner_parts() -> tuple[str, str]:
+    """(executable, extra arg) for the hooks — kept as parts, never joined into one
+    string. An interpreter path can contain spaces, and a hook that word-splits its
+    runner fails open silently, which is the exact failure ADR-0004 exists to catch."""
+    return ("uv", "run") if shutil.which("uv") else (sys.executable, "")
+
+
 def _hook_runner() -> list[str]:
     """The same resolution the hooks use: prefer uv, fall back to this interpreter."""
-    return ["uv", "run"] if shutil.which("uv") else [sys.executable]
+    exe, arg = _hook_runner_parts()
+    return [exe, arg] if arg else [exe]
+
+
+def _stored_hook_runner(root: Path) -> "list[str] | None":
+    """The runner this clone actually recorded, or None if it has not been wired.
+    doctor must test this rather than its own resolution: they differ exactly when
+    the clone is misconfigured, which is the case worth reporting."""
+    ok, exe = git(root, "config", "cozyplan.runner")
+    if not ok or not exe.strip():
+        return None
+    ok_arg, arg = git(root, "config", "cozyplan.runnerarg")
+    return [exe.strip(), arg.strip()] if ok_arg and arg.strip() else [exe.strip()]
 
 
 def doctor_checks(root: Path, commits: int) -> list[tuple[str, str, str, str]]:
@@ -2109,16 +2128,18 @@ def doctor_checks(root: Path, commits: int) -> list[tuple[str, str, str, str]]:
 
     # The check that matters: does the interpreter those hooks name actually run?
     tool = Path(__file__).resolve()
-    runner = _hook_runner()
+    stored = _stored_hook_runner(root)
+    runner = stored or _hook_runner()
     try:
         r = subprocess.run(runner + [str(tool), "--help"],
                            capture_output=True, text=True, timeout=30, cwd=str(root))
         runs = r.returncode == 0
     except (OSError, subprocess.SubprocessError):
         runs = False
+    src = " (recorded by git-install)" if stored else " (not wired here; this is what it would use)"
     add("enforcement", OK if runs else GAP, "hook interpreter",
-        f"`{' '.join(runner)}` runs plan_tool" if runs
-        else f"`{' '.join(runner)}` cannot run plan_tool — hooks would fail open, silently")
+        f"`{' '.join(runner)}` runs plan_tool{src}" if runs
+        else f"`{' '.join(runner)}` cannot run plan_tool{src} — hooks fail open, silently")
 
     ok_hp, hooks_path = git(root, "config", "core.hooksPath")
     if ok_hp and hooks_path:
@@ -2228,7 +2249,10 @@ TOOL=$(git config cozyplan.plantool 2>/dev/null) || exit 0
 [ -n "$TOOL" ] || exit 0
 RUN=$(git config cozyplan.runner 2>/dev/null)
 [ -n "$RUN" ] || RUN=python3
-$RUN "$TOOL" trailers --message-file "$1" >/dev/null 2>&1 || true
+ARG=$(git config cozyplan.runnerarg 2>/dev/null)
+# Quoted: an interpreter path or a repo path may contain spaces. Unquoted, $RUN
+# word-splits, the command is not found, and the trailer vanishes with no error.
+"$RUN" ${ARG:+"$ARG"} "$TOOL" trailers --message-file "$1" >/dev/null 2>&1 || true
 exit 0
 """
 
@@ -2238,7 +2262,10 @@ TOOL=$(git config cozyplan.plantool 2>/dev/null) || exit 0
 [ -n "$TOOL" ] || exit 0
 RUN=$(git config cozyplan.runner 2>/dev/null)
 [ -n "$RUN" ] || RUN=python3
-$RUN "$TOOL" state check 2>/dev/null | grep -E "behind HEAD|FAIL" || true
+ARG=$(git config cozyplan.runnerarg 2>/dev/null)
+# Quoted: an interpreter path or a repo path may contain spaces. Unquoted, $RUN
+# word-splits, the command is not found, and the trailer vanishes with no error.
+"$RUN" ${ARG:+"$ARG"} "$TOOL" state check 2>/dev/null | grep -E "behind HEAD|FAIL" || true
 exit 0
 """
 
@@ -2304,6 +2331,7 @@ def cmd_hooks_git(args) -> int:
         git(root, "config", "--unset", "core.hooksPath")
         git(root, "config", "--unset", "cozyplan.plantool")
         git(root, "config", "--unset", "cozyplan.runner")
+        git(root, "config", "--unset", "cozyplan.runnerarg")
         print(f"hooks: removed {args.dir}/ hooks and unset core.hooksPath")
         return 0
 
@@ -2317,8 +2345,12 @@ def cmd_hooks_git(args) -> int:
     # clone opts in with one command. doctor reports when that has not happened.
     git(root, "config", "core.hooksPath", args.dir)
     git(root, "config", "cozyplan.plantool", str(Path(__file__).resolve()))
-    git(root, "config", "cozyplan.runner",
-        "uv run" if shutil.which("uv") else sys.executable)
+    runner_exe, runner_arg = _hook_runner_parts()
+    git(root, "config", "cozyplan.runner", runner_exe)
+    if runner_arg:
+        git(root, "config", "cozyplan.runnerarg", runner_arg)
+    else:
+        git(root, "config", "--unset", "cozyplan.runnerarg")
     print(f"hooks: wrote {args.dir}/commit-msg and {args.dir}/pre-push, "
           f"set core.hooksPath={args.dir}")
     print("       commit these — .git/hooks is not cloned, so each clone runs "

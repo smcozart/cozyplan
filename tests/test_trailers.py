@@ -122,3 +122,57 @@ def test_installed_hook_injects_on_a_real_commit(pt, git_repo):
     assert r.returncode == 0, r.stderr
     body = git(git_repo, "log", "-1", "--format=%B").stdout
     assert "ADR: 0007" in body, body
+
+
+def _wrapper_at_spaced_path(tmp_path, name="py"):
+    """A runner whose path contains a space, wrapping the current interpreter.
+
+    The workspace this project is developed in lives under `.../AI Dev/software
+    factory/`, so a spaced interpreter path is the normal case here, not an exotic one.
+    """
+    import sys as _sys
+    d = tmp_path / "dir with a space" / "bin"
+    d.mkdir(parents=True, exist_ok=True)
+    w = d / name
+    w.write_text('#!/bin/sh\nexec "%s" "$@"\n' % _sys.executable, encoding="utf-8")
+    w.chmod(0o755)
+    return w
+
+
+def test_hook_runs_when_the_interpreter_path_contains_spaces(pt, git_repo, tmp_path):
+    """Regression: the hook quoted nothing, so a spaced runner word-split, the
+    command was not found, and `|| true` swallowed it — the trailer vanished with
+    no error anywhere. Silent fail-open is the failure ADR-0004 exists to prevent."""
+    pt.main(["hooks", "git-install", "--root", str(git_repo)])
+    git(git_repo, "config", "cozyplan.runner", str(_wrapper_at_spaced_path(tmp_path)))
+    git(git_repo, "config", "--unset", "cozyplan.runnerarg")
+    stage_adr(git_repo, "0007")
+    r = git(git_repo, "commit", "-m", "feat: add a decision")
+    assert r.returncode == 0, r.stderr
+    assert "ADR: 0007" in git(git_repo, "log", "-1", "--format=%B").stdout
+
+
+def test_git_install_records_runner_as_separate_parts(pt, git_repo):
+    """The runner is stored as executable + optional arg so the hook can quote the
+    executable. Joining them into one string is what made spaces unquotable."""
+    pt.main(["hooks", "git-install", "--root", str(git_repo)])
+    exe = git(git_repo, "config", "cozyplan.runner").stdout.strip()
+    arg = git(git_repo, "config", "cozyplan.runnerarg").stdout.strip()
+    assert exe and " " not in arg
+    assert arg in ("", "run")
+    if arg == "run":
+        assert exe == "uv"
+
+
+def test_doctor_reports_a_broken_stored_runner(pt, git_repo, capsys):
+    """doctor tested its own resolution, so it reported ok while the installed hook
+    was dead. It must test what the clone actually recorded."""
+    pt.main(["hooks", "git-install", "--root", str(git_repo)])
+    git(git_repo, "config", "cozyplan.runner", "/nonexistent/interpreter")
+    git(git_repo, "config", "--unset", "cozyplan.runnerarg")
+    pt.main(["doctor", "--root", str(git_repo)])
+    out = capsys.readouterr().out
+    assert "hook interpreter" in out
+    line = [l for l in out.splitlines() if "hook interpreter" in l][0]
+    assert "gap" in line, line
+    assert "fail open" in line, line

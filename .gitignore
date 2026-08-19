@@ -17,3 +17,6 @@
 # Test cache — never versioned.
 .pytest_cache/
 __pycache__/
+
+# Local test virtualenv — pytest is not installed on this machine.
+.venv*/
