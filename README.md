@@ -78,7 +78,7 @@ Everything here exists to make these answerable from a clone, by a human or an a
 
 **Plans are HTML-first.** One self-contained `.html` page per plan in `specs/` — browsable by a human, with embedded Excalidraw diagrams on a synced visual identity. `plan_tool new` scaffolds it with every `data-*` anchor stamped; you author content, never structure.
 
-**Agents read plans indexed, not wholesale.** `plan_tool brief` renders whole-plan state in a few hundred tokens; `phase` pulls one phase; `next` returns the re-entry point. A build session costs O(current phase), not O(whole plan). Reading a plan end to end spends tens of thousands of tokens on state `brief` already renders.
+**Agents read plans indexed, not wholesale.** `plan_tool brief` renders whole-plan state in a few hundred tokens; `phase` pulls one phase; `next` returns the re-entry point. A build session costs O(current phase), not O(whole plan). Reading a plan end to end costs 4x to 7x what `brief` costs on the plans in this repo, and `next` is eight characters.
 
 **Structured writes go through the CLI.** Status markers, metadata, and amendments are CLI-owned so they stay well-formed; prose and diagrams are edited normally. Every mutation appends to a union-merged event log and takes a lock, so concurrent writers never lose data.
 
@@ -95,7 +95,6 @@ Everything here exists to make these answerable from a clone, by a human or an a
 | **Create Plan** | Interviews first (via `discuss`), then authors the plan, diagrams, and index entry |
 | **Update Plan** | Surgical revision + amendment + reciprocal references |
 | **Build Plan** | Resumes at `next`, works phase by phase, flips markers, records the implementing commit |
-| **Generate Roles** | Compiles `roles/*.md` into an ownership map and `.github/CODEOWNERS` (opt-in) |
 | **Init State** | Scaffolds the state layer in a repo |
 | **Track Record** | Records a decision as an ADR, or files a work item on the issue tracker |
 | **Sync State** | Reconciles the snapshot against git and the tracker |
@@ -126,9 +125,10 @@ plan_tool state render          # rebuild STATE.md
 plan_tool state migrate         # carry a hand-authored STATE.md into the log
 plan_tool state check           # verify it against git
 plan_tool doctor                # verify the wiring itself
+plan_tool issue file --title "…"  # file it, or queue it when gh is away
 ```
 
-`state check` is static — it never executes a proof command it read from a file. It verifies placeholders, sync-block shape, whether the recorded sha exists and is an ancestor of HEAD, drift, claim shape, and ADR-register drift in both directions.
+`state check` is static — it never executes a proof command it read from a file. It verifies placeholders, sync-block shape, whether the recorded sha exists and is an ancestor of HEAD, drift, claim shape, and ADR-register drift in both directions. It also intersects each claim's `path:` set with what changed since that claim's anchor commit, so a claim whose own code moved gets reported while an unrelated spike stays silent.
 
 **Ordering is commit order**, not wall clock: union merge concatenates without ordering, and same-second commits tie on timestamps. Rank comes from `git log --topo-order --reverse`.
 
@@ -148,7 +148,7 @@ Marking that check **required** needs a human with repo admin. Nothing here clai
 skills/cozyplan/
 ├── SKILL.md              the router
 ├── workflows/            one per branch, each with a checkable completion criterion
-├── templates/            plan.html · journal.md · adr.md · role.md · state-check.yml
+├── templates/            plan.html · journal.md · adr.md · state-check.yml
 ├── reference/            plan-tool.md — full CLI surface, metadata contract, install paths
 └── scripts/              plan_tool.py + the two Claude Code hooks
 
@@ -162,7 +162,7 @@ specs/<plan>.html         the plan          specs/_index.html   generated catalo
 specs/<plan>.log.ndjson   plan events       STATE.md            generated state view
 docs/state.ndjson         state events      docs/adr/           decisions
 docs/journal.md           narrative ledger  docs/agents/        issue tracker + label config
-.githooks/                tracked git hooks .github/CODEOWNERS  generated from roles/
+.githooks/                tracked git hooks
 ```
 
 ## Decisions

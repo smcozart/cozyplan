@@ -186,3 +186,43 @@ def test_a_stale_claim_can_be_made_fatal(pt, git_repo, capsys):
 def test_a_fresh_claim_passes_the_age_limit(pt, git_repo):
     write_state(git_repo, head(git_repo))
     assert run(pt, git_repo, "--max-claim-age", "0") == 0
+
+
+def _claim_with_paths(sha, *paths):
+    trail = "  ↳ " + " ".join(f"path:{p}" for p in paths)
+    return [f"- ingest works — verified by `pytest tests` (2026-08-18, {sha})", trail]
+
+
+def test_a_claim_whose_own_paths_changed_is_flagged(pt, git_repo, capsys):
+    """Commit distance says a claim is old. Path intersection says it is probably
+    wrong, which is the difference between a count and a signal."""
+    sha = head(git_repo)
+    write_state(git_repo, sha, claims=_claim_with_paths(sha, "src/ingest"))
+    (git_repo / "src").mkdir()
+    (git_repo / "src" / "ingest").write_text("changed\n", encoding="utf-8")
+    git(git_repo, "add", "-A")
+    git(git_repo, "commit", "-m", "touch ingest")
+    assert run(pt, git_repo) == 0
+    assert "claim's own code changed since it was proved" in capsys.readouterr().out
+
+
+def test_a_commit_touching_nothing_the_claim_depends_on_stays_quiet(pt, git_repo, capsys):
+    """A test run or a spike must produce no prompt, or the signal loses credibility."""
+    sha = head(git_repo)
+    write_state(git_repo, sha, claims=_claim_with_paths(sha, "src/ingest"))
+    (git_repo / "NOTES.md").write_text("a spike\n", encoding="utf-8")
+    git(git_repo, "add", "-A")
+    git(git_repo, "commit", "-m", "unrelated")
+    assert run(pt, git_repo) == 0
+    assert "own code changed" not in capsys.readouterr().out
+
+
+def test_a_claim_with_no_path_set_is_not_flagged(pt, git_repo, capsys):
+    """Legacy and migrated claims carry no paths; they must not produce noise."""
+    sha = head(git_repo)
+    write_state(git_repo, sha)
+    (git_repo / "anything.txt").write_text("x\n", encoding="utf-8")
+    git(git_repo, "add", "-A")
+    git(git_repo, "commit", "-m", "c")
+    assert run(pt, git_repo) == 0
+    assert "own code changed" not in capsys.readouterr().out

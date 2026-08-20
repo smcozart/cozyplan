@@ -24,11 +24,11 @@ Start here, in this order. Each answers a different question.
 **Reading a plan is indexed, not wholesale.** Plans in `specs/` are self-contained HTML
 meant to be opened in a browser by humans. Agents read them through the CLI instead —
 `plan_tool brief <plan>` for whole-plan state, `plan_tool phase <plan> --id phase-<n>` for
-one phase, `plan_tool next <plan>` for the re-entry point. Reading a plan end to end spends
-tens of thousands of tokens on state `brief` already renders.
+one phase, `plan_tool next <plan>` for the re-entry point. Reading a plan end to end costs
+several times what `brief` costs.
 
-**Generated files are never hand-edited:** `specs/_index.*`, `roles/_roles.json`, and
-`.github/CODEOWNERS`. Rerun the command that builds them.
+**Generated files are never hand-edited:** `specs/_index.*` and `STATE.md`. Rerun the
+command that builds them.
 
 **Status markers** on plan tasks are `[]` idle, `[wip]` in progress, `[x]` done, `[f]`
 abandoned with a recorded reason. Only `plan_tool status` writes them.

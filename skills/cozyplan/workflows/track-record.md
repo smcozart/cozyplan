@@ -27,7 +27,7 @@ Per ADR-0001 cozyplan keeps no parallel tracker: features and bugs live as issue
 1. **Check for a duplicate** on the tracker before opening anything.
 2. **Open it** per `docs/agents/issue-tracker.md` — on GitHub, `gh issue create` with a label from `docs/agents/triage-labels.md`. Body names the plan id and any governing ADR.
 3. **Link it back.** Record the issue number on the plan (`PLAN_TOOL meta <plan> --field issues --value <n>` where the field exists) and reference it as `Refs: #<n>` — or `Closes #<n>` — in the trailer of the commit that acts on it.
-4. **When `gh` is unavailable**, do not resurrect a file-based tracker. Write the intended issue body to `.scratch/pending-issues/<slug>.md` and append the exact `gh issue create` command to `.scratch/pending-gh.sh`, so the queue replays when `gh` arrives.
+4. **Filing is one command either way.** `PLAN_TOOL issue file --title "…" --body "…" --label <label> --plan <id>` calls `gh` when it is installed and authenticated, and queues to `.scratch/` when it is not. Do not resurrect a file-based tracker, and do not branch on `gh` yourself. Replay a queue with `PLAN_TOOL issue replay` (add `--run` to file them; the default only lists, because filing is outward-facing and hard to undo).
 
 **Completion criterion:** the issue exists on the tracker (or is queued in `.scratch/pending-gh.sh`), it names its plan, and the commit that acts on it carries a `Refs:` or `Closes:` trailer.
 

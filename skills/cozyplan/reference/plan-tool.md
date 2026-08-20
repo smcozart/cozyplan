@@ -14,7 +14,6 @@ The full CLI surface, the plan metadata contract, and the install paths. Reached
 | Append an amendment | `PLAN_TOOL amend <plan> --summary "…" --detail "…"` |
 | Assign `data-*` anchors to a legacy plan | `PLAN_TOOL init-ids <plan>` |
 | Rebuild the specs catalog + dependency graph | `PLAN_TOOL index` |
-| Build the role ownership map + CODEOWNERS | `PLAN_TOOL roles build` |
 
 | Read | Command |
 | --- | --- |
@@ -32,6 +31,11 @@ The full CLI surface, the plan metadata contract, and the install paths. Reached
 | Inspect the projection | `PLAN_TOOL state show` |
 | Check `STATE_FILE` against git | `PLAN_TOOL state check [--max-drift N] [--max-claim-age N]` |
 | Add the trailers this commit can prove | `PLAN_TOOL trailers --message-file <f>` · `--print` |
+
+| Work items | Command |
+| --- | --- |
+| File an issue, queueing it when `gh` is away | `PLAN_TOOL issue file --title "…" --body "…" [--label a,b] [--plan P] [--queue]` |
+| List or replay the queue | `PLAN_TOOL issue replay` · `--run` to actually file them |
 
 | Install | Command |
 | --- | --- |
@@ -51,7 +55,7 @@ The full CLI surface, the plan metadata contract, and the install paths. Reached
 
 **`id`** is a short immutable slug set once at Create. References, event logs, and commit trailers point at it, so it survives renames — which is why history keys on it rather than the filename.
 
-**`owner`** is the role that owns the plan (`architect`, `engineer-<component>`, `ux`); only the owner edits plan content.
+**`owner`** is the role that owns the plan (`architect`, `engineer-<component>`, `ux`); only the owner edits plan content. It is a label on the plan, not an enforcement mechanism: review routing is git's job via CODEOWNERS, which this tool no longer generates (ADR-0008).
 
 **`provides`/`consumes` are the plan's impact edges.** `provides` names the contracts this plan's work will own — a route, a queue topic, an event name, a shared table; `consumes` names the ones it depends on. Record the **literal string that crosses the boundary**, never a description, so the edge stays greppable in both sides' source. `PLAN_TOOL index` aggregates them across `specs/` into the dependency graph that answers "what breaks if this changes", and flags any contract consumed but provided by nothing. Calls that stay inside one component are not edges — `find references` answers those exactly and for free. (ADR-0003)
 
@@ -67,7 +71,7 @@ Record the implementing commit with `meta --field commits --value <sha>`, and ta
 
 - **CLI-owned** — metadata (`data-meta=`), status markers, amendments. Route these through `PLAN_TOOL`.
 - **Free-form** — Purpose, Problem, Solution, Notes, Open Questions prose, diagrams. Edit normally.
-- **Generated** — `roles/_roles.json`, `.github/CODEOWNERS`, `specs/_index.*`, `STATE.md`. Change them by rerunning the command that builds them.
+- **Generated** — `specs/_index.*`, `STATE.md`. Change them by rerunning the command that builds them.
 
 **Draft authoring window.** While `status` is `draft`, the guard permits *structural* authoring via Edit — duplicating and renumbering phase/task blocks with their `data-*` anchors and markers — because Create requires it. Metadata and amendments stay CLI-only in every status. Once the plan leaves `draft`, all managed tokens are CLI-only again.
 

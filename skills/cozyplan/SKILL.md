@@ -1,6 +1,6 @@
 ---
 name: cozyplan
-description: HTML-first implementation plans in specs/, built and tracked through a deterministic CLI, plus a project state layer derived from git. Use when the user wants to plan new work, build or update an existing plan in specs/, generate a role/CODEOWNERS ownership map, record a decision, or sync and report the project's working state.
+description: HTML-first implementation plans in specs/, built and tracked through a deterministic CLI, plus a project state layer derived from git. Use when the user wants to plan new work, build or update an existing plan in specs/, wire a repo for planning, record a decision, or sync and report the project's working state.
 argument-hint: "[user-prompt]"
 ---
 
@@ -30,7 +30,7 @@ cozyplan owns **plans and intent**. **Git owns enforcement**: branches and PRs g
 
 ## Reading a plan
 
-**Indexed, not wholesale.** Orient with `PLAN_TOOL brief <plan>`, pull one phase at a time with `PLAN_TOOL phase <plan> --id phase-<n>`, and get the re-entry point from `PLAN_TOOL next <plan>`. Follow a back reference only when the decision in front of you depends on it. Reading a plan end to end spends tens of thousands of tokens on state `brief` already renders.
+**Indexed, not wholesale.** Orient with `PLAN_TOOL brief <plan>`, pull one phase at a time with `PLAN_TOOL phase <plan> --id phase-<n>`, and get the re-entry point from `PLAN_TOOL next <plan>`. Follow a back reference only when the decision in front of you depends on it. Reading a plan end to end costs several times what `brief` costs, and `next` is one line.
 
 ## Context and state
 
@@ -47,7 +47,7 @@ The **state layer** is cozyplan's, and it is derived rather than authored:
 
 ## Writes
 
-Metadata, status markers, and amendments are **CLI-owned**: route them through `PLAN_TOOL` so they stay well-formed. Purpose, Problem, Solution, Notes, Open Questions prose, and diagrams are free-form — edit normally. `roles/_roles.json`, `.github/CODEOWNERS`, `specs/_index.*`, and `STATE_FILE` are **generated** — change them by rerunning the command that builds them.
+Metadata, status markers, and amendments are **CLI-owned**: route them through `PLAN_TOOL` so they stay well-formed. Purpose, Problem, Solution, Notes, Open Questions prose, and diagrams are free-form — edit normally. `specs/_index.*` and `STATE_FILE` are **generated** — change them by rerunning the command that builds them.
 
 Full CLI surface, the metadata contract, the gates, and the install paths: [`reference/plan-tool.md`](reference/plan-tool.md).
 
@@ -62,7 +62,6 @@ Select the single best-matching workflow and read its file before acting.
 | Create Plan | Plan, spec, or design new work, with no existing plan referenced | `workflows/create-plan.md` |
 | Update Plan | Change, extend, or revise an existing plan — including refreshing its references | `workflows/update-plan.md` |
 | Build Plan | Implement, execute, or carry out the work an existing plan describes | `workflows/build-plan.md` |
-| Generate Roles | Scope a project into roles and ownership (opt-in; never enable on your own initiative) | `workflows/generate-roles.md` |
 | Init State | Set up the state layer in a repo, or adopt an existing one | `workflows/init-state.md` |
 | Track Record | Record a decision as an ADR, or file a work item on the tracker | `workflows/track-record.md` |
 | Sync State | Sync, refresh, reconcile, or report the project's current state. Also the closing step of Create, Update, and Build | `workflows/sync-state.md` |
