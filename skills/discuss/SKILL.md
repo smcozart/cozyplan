@@ -1,13 +1,13 @@
 ---
 name: discuss
-description: Relentlessly interview the user to stress-test a design before it's built — grill or be grilled, poke holes, pressure-test assumptions, pin down domain terms or stack choices — recording what lands as ADRs, a glossary, and stack defaults; and orient a reader in how an existing system runs today. Use when the user wants to grill or stress-test a plan or idea, or to understand, get oriented in, or onboard onto how a running system works.
+description: Stress-test a design until every open decision is settled, recording what settles as ADRs, glossary terms, and stack defaults. Use when a design needs grilling before it is built, when a plan would otherwise rest on unsettled decisions, or when someone needs orienting in a running system.
 ---
 
 # Discuss
 
 ## Purpose
 
-Discuss runs the **understanding loop**: write understanding *in* by interviewing the user relentlessly and recording what crystallizes, then read it *out* on demand by orienting a reader in how the system runs today. The interview is the write side — one question at a time, each branch of the decision tree resolved before the next, weak assumptions surfaced before they land in a plan. The records are the residue — decisions as ADRs, vocabulary as a glossary, stack defaults and deviations in place — so the "why" survives instead of evaporating into chat history. Orient is the read side — it never stores a description, it synthesizes the current picture live from the map, the code, and the records.
+Discuss runs the **understanding loop**: write understanding *in* by interviewing the user relentlessly and recording what crystallizes, then read it *out* on demand by orienting a reader in how the system runs today. The interview is the write side — it works the design tree in rounds until the frontier is empty, surfacing weak assumptions before they land in a plan. The records are the residue — decisions as ADRs, vocabulary as a glossary, stack defaults and deviations in place — so the "why" survives instead of evaporating into chat history. Orient is the read side — it never stores a description, it synthesizes the current picture live from the map, the code, and the records.
 
 ## Session start
 
@@ -39,8 +39,8 @@ Four living records hold the understanding the loop writes. Each has one job; ke
 | --- | --- | --- | --- |
 | `STACK.md` | repo root | Technology defaults, each as *default + when-to-use lane + escape hatch*, plus a Deviations section | Describes defaults, does not enforce them; a deviation that clears the three gates gets an ADR |
 | `CONTEXT.md` | repo root | The glossary — canonical domain terms and their meanings | Glossary **only**; zero implementation detail, no spec, no scratch pad |
-| `docs/adr/` | `docs/adr/NNNN-kebab-title.md` | One decision per file, recorded only when all three gates pass | Hard to reverse **and** surprising without context **and** the result of a real trade-off |
-| `SYSTEM.md` | repo root | The component map — nodes only: what exists, who owns it, where its why lives | Stores nodes, not edges; updated only when a component is added/removed/renamed/re-owned |
+| `docs/adr/` | `docs/adr/NNNN-kebab-title.md` | One decision per file, recorded only when all three gates pass, in the shape of the sibling `cozyplan` skill's `templates/adr.md` | Hard to reverse **and** surprising without context **and** the result of a real trade-off |
+| `SYSTEM.md` | repo root | The component map — nodes (what exists, who owns it, where its why lives) plus the cross-boundary edges between them | Nodes change on add/remove/rename/re-own; edges record only contracts crossing a process, repo, or network boundary, each with a greppable `Contract` string. In-repo calls are the code's job (ADR-0003) |
 
 ## Scope
 
@@ -48,4 +48,4 @@ Discuss interviews, records, and hands off — nothing more. It does not enforce
 
 ## Exit
 
-An interview ends by summarizing its resolved decisions as **locked inputs** and handing them to the cozyplan skill: greenfield work → its Create Plan workflow, a brownfield structural revision → its Update Plan workflow. The plan links the ADRs inline in its phase and task rationale.
+An interview ends when the user has confirmed the shared understanding — not before. It then summarizes the resolved decisions as **locked inputs** and handing them to the cozyplan skill: greenfield work → its Create Plan workflow, a brownfield structural revision → its Update Plan workflow. The plan links the ADRs inline in its phase and task rationale.

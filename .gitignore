@@ -13,3 +13,13 @@
 # Curated images that the README and example plans depend on stay tracked
 !images/
 !specs/
+
+# Test cache — never versioned.
+.pytest_cache/
+__pycache__/
+
+# Local test virtualenv — pytest is not installed on this machine.
+.venv*/
+
+# Queued work items awaiting `gh` (ADR-0001) — replayed, never versioned.
+.scratch/

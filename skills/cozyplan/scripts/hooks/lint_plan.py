@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # /// script
-# requires-python = ">=3.11"
+# requires-python = ">=3.9"
 # dependencies = []
 # ///
 """PostToolUse: validate a plan after any write, feeding problems back to the agent.
@@ -10,9 +10,12 @@ Reads the hook payload from stdin. If the tool touched a specs/*.html file, run
 self-corrects. Fail-open on any unexpected error.
 """
 
+from __future__ import annotations
+
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -56,6 +59,15 @@ def plan_paths_from_payload(payload: dict) -> list[str]:
     return out
 
 
+def runner(tool_script: Path) -> list[str]:
+    """plan_tool declares `dependencies = []`, so a plain interpreter runs it.
+    Prefer uv when it is on PATH; otherwise fall back to the interpreter running
+    this hook, so a host without uv still gets validation instead of silence."""
+    if shutil.which("uv"):
+        return ["uv", "run", str(tool_script)]
+    return [sys.executable, str(tool_script)]
+
+
 def main() -> int:
     try:
         payload = json.load(sys.stdin)
@@ -75,11 +87,11 @@ def main() -> int:
     for plan in plans:
         try:
             r = subprocess.run(
-                ["uv", "run", str(tool_script), "validate", plan],
+                runner(tool_script) + ["validate", plan],
                 capture_output=True, text=True, cwd=str(root), timeout=60,
             )
         except (OSError, subprocess.SubprocessError):
-            return 0  # uv missing / failed to launch -> fail-open
+            return 0  # interpreter failed to launch -> fail-open
         if r.returncode != 0:
             messages.append(f"plan_tool validate FAILED for {plan}:\n{r.stdout.strip()}")
 

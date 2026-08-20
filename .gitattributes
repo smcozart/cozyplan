@@ -15,5 +15,7 @@
 # writers/roles combine cleanly instead of conflicting.
 specs/*.log.ndjson merge=union
 
-# Append-only role activity log (impact tracking): same union-merge treatment.
-roles/activity.log.ndjson merge=union
+
+# Append-only state event log (ADR-0005): union-merge so concurrent appends
+# from different sessions and agents combine instead of conflicting.
+docs/state.ndjson merge=union

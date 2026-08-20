@@ -19,7 +19,15 @@ def test_install_creates_settings_with_both_entries(pt, tmp_path):
     assert len(pre) == 1 and len(post) == 1
     assert pre[0]["matcher"] == "Edit|MultiEdit|Write"
     assert "guard_plan_edit.py" in pre[0]["hooks"][0]["command"]
-    assert pre[0]["hooks"][0]["command"].startswith('uv run "')
+    # It used to hardcode `uv run`, so on a machine without uv the registered hook was
+    # `uv run …` — command not found, silently. The git-hook half already resolved the
+    # runner; this half did not, and doctor reported "registered" either way.
+    # Parsed, not string-matched: the interpreter path may contain spaces and be quoted.
+    import shlex as _shlex
+    exe, arg = pt._hook_runner_parts()
+    argv = _shlex.split(pre[0]["hooks"][0]["command"])
+    assert argv[0] == exe
+    assert (argv[1] == arg) if arg else argv[1].endswith("guard_plan_edit.py")
     assert post[0]["matcher"] == "Edit|MultiEdit|Write|Bash"
     assert "lint_plan.py" in post[0]["hooks"][0]["command"]
 
@@ -76,3 +84,15 @@ def test_install_rejects_malformed_settings(pt, tmp_path, capsys):
     settings.write_text("not json", encoding="utf-8")
     assert pt.main(["hooks", "install", "--settings", str(settings)]) == 1
     assert "cannot parse" in capsys.readouterr().err
+
+
+def test_the_registered_command_is_runnable_on_this_machine(pt, tmp_path):
+    """The bug this closes: the hook was registered and unrunnable at the same time,
+    and doctor reported it as ok because it checked registration, not runnability."""
+    import shlex, subprocess
+    settings = tmp_path / ".claude" / "settings.json"
+    pt.main(["hooks", "install", "--settings", str(settings)])
+    cmd = read(settings)["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    argv = shlex.split(cmd)
+    r = subprocess.run(argv, input="{}", capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, f"registered hook is not runnable: {cmd}\n{r.stderr[:300]}"

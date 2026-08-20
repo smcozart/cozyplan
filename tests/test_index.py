@@ -65,3 +65,41 @@ def test_scan_drift_skips_scripts_dir(pt, tmp_path):
     (root / "scripts").mkdir(parents=True)
     (root / "scripts" / "tool.md").write_text("uses gpt-image internally\n", encoding="utf-8")
     assert pt.scan_drift(root) == []
+
+
+def _consumer(pt, specs, name, contract):
+    pt.main(["new", name, "--title", name.title(), "--specs", str(specs)])
+    pt.main(["meta", str(specs / f"{name}.html"), "--field", "consumes", "--value", contract])
+
+
+def test_a_contract_consumed_but_provided_by_nothing_is_reported(pt, specs, capsys):
+    """It was computed into _index.json and then never surfaced: the command printed a
+    clean bill of health while the gap sat in the file. ADR-0003 calls that confident
+    'nothing depends on this' the worse half of the problem."""
+    _consumer(pt, specs, "beta", "POST /api/nonexistent")
+    assert pt.main(["index", "--specs", str(specs)]) == 0
+    out = capsys.readouterr().out
+    assert "consumed but provided by nothing" in out
+    assert "POST /api/nonexistent" in out
+    assert "clean:" not in out, "it must not also claim to be clean"
+
+
+def test_the_unprovided_contract_reaches_the_html_a_human_opens(pt, specs):
+    _consumer(pt, specs, "beta", "POST /api/nonexistent")
+    pt.main(["index", "--specs", str(specs)])
+    assert "POST /api/nonexistent" in read(specs / "_index.html")
+
+
+def test_a_provided_contract_is_not_flagged(pt, specs, capsys):
+    pt.main(["new", "alpha", "--title", "Alpha", "--specs", str(specs)])
+    pt.main(["meta", str(specs / "alpha.html"), "--field", "provides", "--value", "POST /api/orders"])
+    _consumer(pt, specs, "beta", "POST /api/orders")
+    pt.main(["index", "--specs", str(specs)])
+    assert "consumed but provided by nothing" not in capsys.readouterr().out
+
+
+def test_an_external_contract_is_not_flagged(pt, specs, capsys):
+    """`external:` marks a contract owned outside the repo, which nothing here provides."""
+    _consumer(pt, specs, "beta", "external:POST https://stripe.com/v1/charges")
+    pt.main(["index", "--specs", str(specs)])
+    assert "consumed but provided by nothing" not in capsys.readouterr().out

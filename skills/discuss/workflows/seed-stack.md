@@ -15,3 +15,5 @@ Every entry MUST be **default + when-to-use lane + escape hatch** — never a ba
 State in that one line *why* the default is the default and *when* to leave it. A bare inventory ("Business Logic: Azure Functions") reads as law to a later reader and suppresses exactly the trade-offs the interview exists to surface; a lane with an escape hatch turns every future deviation into a recordable decision instead of a silent violation.
 
 `STACK.md` is a **living file**: later sessions update it as the system evolves. It describes defaults; it does not enforce them.
+
+**Completion criterion:** every section named in step 3 has at least one entry, every entry carries all three parts (default, lane, escape hatch), and any entry still marked **PROPOSED — confirm** has been resolved with the user.

@@ -28,6 +28,7 @@
         <dt>forward refs</dt> <dd data-meta="forward-refs">{{FORWARD_REFERENCES}}</dd>
         <dt>provides</dt>     <dd data-meta="provides">{{PROVIDES_LIST}}</dd>
         <dt>consumes</dt>     <dd data-meta="consumes">{{CONSUMES_LIST}}</dd>
+        <dt>issues</dt>       <dd data-meta="issues">{{ISSUE_NUMBER_LIST}}</dd>
       </dl>
     </details>
     <!-- Metadata, status markers, and amendments are CLI-managed (data-managed="cli").
@@ -167,7 +168,7 @@
 
   <!-- ===== AMENDMENTS ===== -->
   <!-- Running history of changes made AFTER the plan was first executed. Append-only.
-       Populated by the Update Plan and Update References workflows — never edited during Create. -->
+       Populated by the Update Plan workflow — never edited during Create. -->
   <section id="amendments" data-region="amendments" data-managed="cli">
     <h2>Amendments</h2>
     <!-- CLI-managed: PLAN_TOOL amend/ref/report append <details> entries into the

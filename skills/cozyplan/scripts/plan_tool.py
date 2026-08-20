@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # /// script
-# requires-python = ">=3.11"
+# requires-python = ">=3.9"
 # dependencies = []
 # ///
 """cozyplan plan_tool — deterministic writes, validation, and indexing for specs/*.html plans.
@@ -8,9 +8,11 @@
 Every structured mutation of a living plan artifact goes through this tool instead of
 free-form edits, so status markers, append-only metadata, references, and amendments stay
 well-formed. Locating regions relies on machine-readable data-* anchors baked into the
-plan template (see .claude/skills/cozyplan/SKILL.md). Stdlib only — run via `uv run`.
+plan template (see .claude/skills/cozyplan/SKILL.md). Stdlib only, and 3.9 is the
+floor the tests run on: `uv run` and a plain `python3` both work, and neither is
+required by the other (ADR-0004).
 
-Commands:
+Commands (`--help` is authoritative; this list is the map, not the contract):
   new        scaffold a fresh plan from templates/plan.html
   status     flip a task/phase status marker
   meta       set or append a metadata field
@@ -19,11 +21,16 @@ Commands:
   validate   lint a plan (leftover tokens, markers, metadata, images, refs)
   index      scan specs/ -> _index.json + _index.html, flag dangling refs + doc drift
   init-ids   assign data-* anchors to a plan that lacks them (additive, reviewable)
-  roles      build: generate roles/_roles.json + .github/CODEOWNERS from roles/*.md
   brief      compact plain-text extract of a plan (or --all for a one-liner index)
   phase      print one phase in full — its tasks, actions, and Testing Strategy
   next       print the first status id that is not [x]/[f] (or 'done')
   addphase   append a correctly-numbered phase block (structure, not content)
+  init       wire a repo for cozyplan (idempotent; implements doctor's check list)
+  doctor     report what is actually wired in this clone (ADR-0004)
+  state      add/render/show/check/migrate the state layer (ADR-0005)
+  issue      file a work item, queueing it when gh is away (ADR-0001)
+  trailers   add the commit trailers this commit can demonstrate (ADR-0007)
+  hooks      install/remove the Claude Code hooks and the tracked .githooks
 
 Scope: cozyplan is the *plan/intent* layer. Enforcement, revert points, and
 accountability are git's job (branches, PRs, CODEOWNERS, tags, CI) — this tool
@@ -39,6 +46,9 @@ import html
 import json
 import os
 import re
+import shlex
+import shutil
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -51,7 +61,7 @@ VALID_MARKERS = set(STATUS_MARKERS.values())
 TERMINAL_MARKERS = {"[x]", "[f]"}
 STATUS_VOCAB = {"draft", "active", "built", "superseded", "archived"}
 LIST_FIELDS = {"modified", "commits", "agent", "session", "back-refs", "forward-refs",
-               "provides", "consumes"}
+               "provides", "consumes", "issues"}
 SINGLE_FIELDS = {"id", "created", "status", "owner", "schema", "kind"}
 ALL_FIELDS = LIST_FIELDS | SINGLE_FIELDS
 WRITE_ONCE = {"id", "created", "schema"}
@@ -117,85 +127,6 @@ def split_list(v: str) -> list[str]:
 def fail(msg: str) -> int:
     print(f"error: {msg}", file=sys.stderr)
     return 1
-
-
-# ── glob engine (ONE matcher shared by roles-build disjointness AND the guard) ─
-# Semantics, documented once and relied on by both consumers:
-#   **   spans directory boundaries (zero or more path segments)
-#   *    matches within a single segment (never crosses '/')
-#   ?    matches one non-'/' character
-#   [..] a character class (passed through to the regex)
-# Separators are normalized ('\\' -> '/') before matching. The guard imports
-# `glob_match`; `roles build` disjointness uses `glob_overlap`, which is defined
-# purely in terms of `glob_match`, so build-time and enforce-time never disagree.
-_GLOB_CACHE: dict[str, re.Pattern] = {}
-
-
-def _compile_glob(glob: str) -> re.Pattern:
-    cached = _GLOB_CACHE.get(glob)
-    if cached is not None:
-        return cached
-    g = glob.replace("\\", "/")
-    out: list[str] = []
-    i, n = 0, len(g)
-    while i < n:
-        if g[i:i + 3] == "**/":
-            out.append("(?:[^/]+/)*")  # zero or more whole directory segments
-            i += 3
-        elif g[i:i + 2] == "**":
-            out.append(".*")            # trailing/!bare ** -> spans everything
-            i += 2
-        elif g[i] == "*":
-            out.append("[^/]*")
-            i += 1
-        elif g[i] == "?":
-            out.append("[^/]")
-            i += 1
-        elif g[i] == "[":
-            j = g.find("]", i + 1)
-            if j == -1:
-                out.append(re.escape("["))
-                i += 1
-            else:
-                out.append(g[i:j + 1])
-                i = j + 1
-        else:
-            out.append(re.escape(g[i]))
-            i += 1
-    pat = re.compile("".join(out) + r"\Z")
-    _GLOB_CACHE[glob] = pat
-    return pat
-
-
-def glob_match(rel: str, glob: str) -> bool:
-    """True if the relative POSIX path `rel` matches ownership glob `glob`."""
-    return _compile_glob(glob).match(rel.replace("\\", "/")) is not None
-
-
-def _glob_witness(glob: str) -> str:
-    """A concrete path a glob matches — wildcards resolved to sentinel segments.
-
-    Used only to probe overlap through `glob_match`; the sentinels are arbitrary
-    tokens unlikely to collide with real literal segments in another glob.
-    """
-    g = glob.replace("\\", "/")
-    parts = []
-    for seg in g.split("/"):
-        if seg == "**":
-            parts.append("_w_")
-        else:
-            s = re.sub(r"\[.*?\]", "w", seg).replace("**", "w").replace("*", "w").replace("?", "y")
-            parts.append(s if s else "w")
-    return "/".join(p for p in parts if p != "")
-
-
-def glob_overlap(g1: str, g2: str) -> bool:
-    """True if some path could be owned by both globs — expressed via `glob_match`.
-
-    Symmetric probe: a witness path generated from each glob is tested against the
-    other. Correct for the prefix/segment ownership patterns roles use in practice.
-    """
-    return glob_match(_glob_witness(g1), g2) or glob_match(_glob_witness(g2), g1)
 
 
 # ── plan write lock (exclusive, sibling <plan>.lock; Windows-safe) ────────────
@@ -920,7 +851,7 @@ def _ensure_new_fields(text: str, nl: str) -> str:
     additions = ""
     for field, default in (("id", ""), ("owner", ""), ("kind", "plan"),
                            ("status", "draft"), ("schema", str(MIN_SCHEMA)),
-                           ("provides", "—"), ("consumes", "—")):
+                           ("provides", "—"), ("consumes", "—"), ("issues", "—")):
         if f'data-meta="{field}"' not in text:
             additions += f'{nl}        <dt>{field}</dt> <dd data-meta="{field}">{default}</dd>'
     if not additions:
@@ -1026,7 +957,8 @@ def scan_drift(root: Path) -> list[tuple[str, int, str]]:
     return hits
 
 
-def render_index_html(plans: list[dict], dangling: list, as_of: str = "") -> str:
+def render_index_html(plans: list[dict], dangling: list, as_of: str = "",
+                      unprovided: list = ()) -> str:
     order = ["active", "draft", "built", "superseded", "archived", ""]
     by_status: dict[str, list[dict]] = {}
     for p in plans:
@@ -1055,6 +987,13 @@ def render_index_html(plans: list[dict], dangling: list, as_of: str = "") -> str
     if dangling:
         items = "".join(f"<li>{esc(f)} [{esc(fld)}] → {esc(r)}</li>" for f, fld, r in dangling)
         danger = f'<div class="danger"><strong>Dangling references:</strong><ul>{items}</ul></div>'
+    if unprovided:
+        # The half worth flagging (ADR-0003): a dead edge wastes a lookup, a missing
+        # one makes "nothing depends on this" read as confident and true.
+        items = "".join(f"<li>{esc(f)} consumes → <code>{esc(c)}</code></li>" for f, c in unprovided)
+        danger += (f'<div class="danger"><strong>Consumed but provided by nothing:</strong>'
+                   f'<ul>{items}</ul>'
+                   f'<p>Mark it <code>external:&lt;contract&gt;</code> if it is owned outside this repo.</p></div>')
     owner_facet = ""
     if owners:
         owner_facet = '<p class="facet">Owners: ' + ", ".join(esc(o) for o in owners) + "</p>"
@@ -1129,15 +1068,31 @@ def cmd_index(args) -> int:
                 if rr.endswith((".html", ".md")) and not (specs / rr).exists():
                     dangling.append((p["file"], fld_name, rr))
 
+    # Unprovided consumption: a contract some plan consumes that no plan provides.
+    # A dead edge only wastes a lookup; a MISSING edge makes an impact answer read
+    # "nothing depends on this" with confidence, so this is the half worth flagging.
+    # `external:` marks a contract owned outside the repo, which nothing here provides.
+    provided = {c for p in plans for c in p["provides"] if c and c != "\u2014"}
+    unprovided = []
+    for p in plans:
+        for c in p["consumes"]:
+            c = c.strip()
+            if not c or c == "\u2014" or c.startswith("external:"):
+                continue
+            if c not in provided:
+                unprovided.append((p["file"], c))
+
     # Deterministic output: stamp with the newest content timestamp, not the run
     # time, so re-running index on unchanged inputs produces a byte-identical file.
     as_of = max((p["modified"] or p["created"] for p in plans), default="")
     (specs / "_index.json").write_text(
-        json.dumps({"as_of": as_of, "plans": plans, "dangling": dangling},
+        json.dumps({"as_of": as_of, "plans": plans, "dangling": dangling,
+                    "unprovided": unprovided},
                    indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
-    (specs / "_index.html").write_text(render_index_html(plans, dangling, as_of), encoding="utf-8")
+    (specs / "_index.html").write_text(
+        render_index_html(plans, dangling, as_of, unprovided), encoding="utf-8")
 
     drift = scan_drift(Path(args.root))
 
@@ -1150,198 +1105,33 @@ def cmd_index(args) -> int:
         print(f"  docs-drift hits ({len(drift)}) [retired-pipeline tokens]:")
         for f, ln, tok in drift[:50]:
             print(f"    {f}:{ln}: {tok}")
-    if not dangling and not drift:
-        print("  clean: no dangling refs, no doc drift")
-    return 0
-
-
-# ── roles build (manifest + CODEOWNERS from roles/*.md) ───────────────────────
-def parse_role_frontmatter(md_text: str) -> dict | None:
-    """Parse the flat-ish YAML frontmatter of a role file (no PyYAML).
-
-    Extracts `role`, `reports_to`, `github`, the architect-only `mode`/`acceptance`,
-    and the nested `owns.{source_of_truth,code,supporting}` lists — the fields
-    `roles build` needs. Tolerates the richer nested blocks (definition_of_done,
-    report_back) by ignoring them.
-    """
-    m = re.match(r"^﻿?---\s*\n(.*?)\n---\s*\n?", md_text, re.S)
-    if not m:
-        return None
-    lines = m.group(1).split("\n")
-    out = {"role": None, "reports_to": None, "github": None,
-           "mode": None, "acceptance": None,
-           "owns": {"source_of_truth": [], "code": [], "supporting": []}}
-
-    def _unquote(s: str) -> str:
-        return s.strip().strip('"').strip("'").strip()
-
-    for ln in lines:
-        ms = re.match(r"^role:\s*(.+)$", ln)
-        if ms:
-            out["role"] = _unquote(ms.group(1))
-        mr = re.match(r"^reports_to:\s*(.+)$", ln)
-        if mr:
-            out["reports_to"] = _unquote(mr.group(1))
-        for key in ("github", "mode", "acceptance"):
-            mk = re.match(rf"^{key}:\s*(.+)$", ln)
-            if mk:
-                out[key] = _unquote(mk.group(1))
-
-    owns_idx = next((k for k, ln in enumerate(lines) if re.match(r"^owns:\s*$", ln)), None)
-    if owns_idx is not None:
-        cur_sub = None
-        for ln in lines[owns_idx + 1:]:
-            if ln.strip() == "":
-                continue
-            if re.match(r"^\S", ln):  # dedent to column 0 -> owns block ended
-                break
-            msub = re.match(r"^  (\w+):\s*(.*)$", ln)
-            if msub and not msub.group(2).strip().startswith("-"):
-                cur_sub = msub.group(1)
-                out["owns"].setdefault(cur_sub, [])
-                inline = msub.group(2).strip()
-                if inline.startswith("[") and inline.endswith("]"):
-                    out["owns"][cur_sub].extend(
-                        _unquote(x) for x in inline[1:-1].split(",") if x.strip())
-                    cur_sub = None
-                continue
-            mitem = re.match(r"^\s*-\s*(.+)$", ln)
-            if mitem and cur_sub:
-                out["owns"][cur_sub].append(_unquote(mitem.group(1)))
-    return out
-
-
-def check_disjoint(role_globs: dict[str, list[str]]) -> list[tuple[str, str, str, str]]:
-    """Return (role1, glob1, role2, glob2) pairs that could own a common path.
-
-    Uses `glob_overlap` — the exact same matcher the guard enforces with — so a
-    role set that builds clean here cannot surprise the guard at enforce time.
-    """
-    flat = [(role, g) for role, globs in role_globs.items() for g in globs]
-    conflicts = []
-    for i in range(len(flat)):
-        for j in range(i + 1, len(flat)):
-            r1, g1 = flat[i]
-            r2, g2 = flat[j]
-            if r1 == r2:
-                continue
-            if glob_overlap(g1, g2):
-                conflicts.append((r1, g1, r2, g2))
-    return conflicts
-
-
-def _glob_to_codeowners(g: str) -> str:
-    g = g.replace("\\", "/")
-    if g.endswith("/**"):
-        return g[:-3] + "/"
-    return g.replace("/**/", "/").replace("**", "*")
-
-
-def render_codeowners(roles_out: dict) -> tuple[str, list[str]]:
-    """Render CODEOWNERS from the role manifest, plus a list of unmapped roles.
-
-    A role with a `github` identity gets live ownership lines. A role WITHOUT one
-    is emitted commented-out (never a bare `@<role-slug>`, which GitHub cannot
-    resolve) with a trailing note, and its slug is returned so the caller warns.
-    """
-    lines = [
-        "# GENERATED by plan_tool roles build - do not hand-edit. Source: roles/*.md",
-        "",
-    ]
-    unmapped = []
-    for role, info in roles_out.items():
-        gh = info.get("github")
-        lines.append(f"# {role}")
-        if gh:
-            for g in info["owns"]:
-                lines.append(f"{_glob_to_codeowners(g)}  {gh}")
-        else:
-            unmapped.append(role)
-            for g in info["owns"]:
-                lines.append(f"# {_glob_to_codeowners(g)}  # no github identity mapped for role {role}")
-        lines.append("")
-    return "\n".join(lines) + "\n", unmapped
-
-
-def cmd_roles(args) -> int:
-    if args.roles_cmd != "build":
-        return fail("only 'roles build' is supported")
-    roles_dir = Path(args.dir)
-    if not roles_dir.exists():
-        return fail(f"roles dir not found: {roles_dir}")
-    parsed = {}
-    for rf in sorted(roles_dir.glob("*.md")):
-        if rf.name.startswith("_"):
-            continue
-        data = parse_role_frontmatter(read(rf))
-        if not data or not data.get("role"):
-            print(f"  warn: {rf.name} has no parseable 'role' frontmatter; skipped")
-            continue
-        parsed[data["role"]] = data
-    if not parsed:
-        return fail("no roles parsed from roles/*.md")
-
-    # Disjointness on source_of_truth + code (unchanged scope), using the SAME
-    # glob semantics the guard enforces (glob_overlap). `supporting` may overlap
-    # freely — it drives logging/attribution only, never a guard deny.
-    sot_code = {r: (d["owns"].get("source_of_truth", []) + d["owns"].get("code", []))
-                for r, d in parsed.items()}
-    conflicts = check_disjoint(sot_code)
-    if conflicts:
-        print("FAIL roles build: overlapping source_of_truth/code globs across roles:")
-        for r1, g1, r2, g2 in conflicts:
-            print(f"  - {r1} {g1!r} overlaps {r2} {g2!r}")
-        return 1
-
-    # roles is a pure ownership-map generator: it compiles roles/*.md into an
-    # ownership manifest + CODEOWNERS for PR-review routing. It does NOT enforce
-    # anything at edit time — git/PR review + CODEOWNERS carry that. (Enforcement
-    # modes / acceptance queues were removed in the coherence-over-compliance rework.)
-    roles_out = {}
-    for r, d in parsed.items():
-        owns = d["owns"]
-        sot = list(dict.fromkeys(owns.get("source_of_truth", [])))
-        code = list(dict.fromkeys(owns.get("code", [])))
-        supporting = list(dict.fromkeys(owns.get("supporting", [])))
-        roles_out[r] = {
-            "source_of_truth": sot,
-            "code": code,
-            "supporting": supporting,
-            "owns": list(dict.fromkeys(sot + code + supporting)),  # CODEOWNERS union
-            "reports_to": d.get("reports_to"),
-            "github": d.get("github"),
-        }
-
-    manifest = {"roles": roles_out}
-    (roles_dir / "_roles.json").write_text(
-        json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
-    gh = Path(args.codeowners) if args.codeowners else Path(".github") / "CODEOWNERS"
-    gh.parent.mkdir(parents=True, exist_ok=True)
-    co_text, unmapped = render_codeowners(roles_out)
-    gh.write_text(co_text, encoding="utf-8")
-
-    print(f"roles build: {len(roles_out)} role(s) "
-          f"-> {roles_dir}/_roles.json, {gh}")
-    for r, info in roles_out.items():
-        print(f"  {r}: {len(info['owns'])} owned glob(s)")
-    for r in unmapped:
-        print(f"  warn: no github identity mapped for role {r!r}; its CODEOWNERS lines "
-              f"are commented out (add `github: \"@org/team\"` to roles/{r}.md)")
+    # A contract consumed but provided by nothing was computed into _index.json and
+    # then never surfaced: the command printed a clean bill of health while the gap
+    # sat in the file. ADR-0003 names that exact failure — a confident "nothing
+    # depends on this" is worse than no answer at all.
+    if unprovided:
+        print(f"  consumed but provided by nothing ({len(unprovided)}):")
+        for f, c in unprovided:
+            print(f"    {f} consumes -> {c}")
+        print("    (mark it `external:<contract>` if it is owned outside this repo)")
+    if not dangling and not drift and not unprovided:
+        print("  clean: no dangling refs, no unprovided contracts, no doc drift")
     return 0
 
 
 # ── new (deterministic plan scaffolding from templates/plan.html) ─────────────
-def template_candidates() -> list[Path]:
-    """Ordered locations to look for templates/plan.html.
+def template_candidates(name: str = "plan.html", skill: str = "cozyplan") -> list[Path]:
+    """Ordered locations to look for a named template.
 
     Mirrors how the hooks resolve plan_tool.py: prefer CLAUDE_PLUGIN_ROOT (the
     bundled plugin), then the project cwd, then this script's own location — each
     with the in-project `.claude/skills/...` layout and the moved-as-a-unit layout.
     """
     rels = [
-        Path(".claude") / "skills" / "cozyplan" / "templates" / "plan.html",
-        Path("skills") / "cozyplan" / "templates" / "plan.html",
-        Path("templates") / "plan.html",
+        Path(".claude") / "skills" / skill / "templates" / name,
+        Path("skills") / skill / "templates" / name,
+        Path(skill) / "templates" / name,   # from a <skills>/ root, for a sibling skill
+        Path("templates") / name,
     ]
     roots: list[Path] = []
     pr = os.environ.get("CLAUDE_PLUGIN_ROOT")
@@ -1349,6 +1139,7 @@ def template_candidates() -> list[Path]:
         roots.append(Path(pr))
     roots.append(Path.cwd())
     roots.append(Path(__file__).resolve().parent.parent)  # <skill>/scripts/ -> <skill>/ (templates/ sits beside scripts/)
+    roots.append(Path(__file__).resolve().parent.parent.parent)  # -> <skills>/, for a sibling skill
     seen: list[Path] = []
     for root in roots:
         for rel in rels:
@@ -1358,8 +1149,8 @@ def template_candidates() -> list[Path]:
     return seen
 
 
-def resolve_template() -> Path | None:
-    for c in template_candidates():
+def resolve_template(name: str = "plan.html", skill: str = "cozyplan") -> Path | None:
+    for c in template_candidates(name, skill):
         if c.exists():
             return c
     return None
@@ -1618,7 +1409,9 @@ def cmd_hooks(args) -> int:
         ]
         removed = before - len(entries)
         if args.hooks_cmd == "install":
-            cmd_str = f'uv run "{(hook_dir / script).as_posix()}"'
+            exe, arg = _hook_runner_parts()
+            cmd_str = " ".join(shlex.quote(x) for x in ([exe] + ([arg] if arg else []))
+                               + [(hook_dir / script).as_posix()])
             entries.append({"matcher": matcher,
                             "hooks": [{"type": "command", "command": cmd_str}]})
             changed.append(f"{event}: {script} registered" + (" (re-pointed)" if removed else ""))
@@ -1637,6 +1430,1386 @@ def cmd_hooks(args) -> int:
     for c in changed:
         print(f"hooks: {c}")
     print(f"hooks: wrote {settings_path} — restart Claude Code (or reload settings) to take effect")
+    return 0
+
+
+# ── state check (STATE.md against git reality) ────────────────────────────────
+# The snapshot claims things about the repo; git knows whether they still hold.
+# This check is deliberately STATIC — it never executes a proof command it found
+# in a file (that would be arbitrary code execution from repo content, and slow
+# in CI). It verifies shape, anchoring, and freshness, and reports what it cannot
+# know. Per ADR-0004 the derivation tolerates gaps: missing anchors narrow the
+# report to a warning rather than failing the run.
+
+# "- <capability> — verified by `<command>` (<when>)" where <when> is an ISO date
+# optionally followed by the short sha the proof was true at.
+STATE_CLAIM_RE = re.compile(
+    r"^-\s+(?P<what>.+?)\s+[—-]\s+verified by\s+`(?P<cmd>[^`]+)`\s+"
+    r"\((?P<when>[^)]+)\)\s*$"
+)
+STATE_WHEN_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})(?:\s*,\s*(?P<sha>[0-9a-f]{7,40}))?$")
+REPO_STATE_RE = re.compile(r"^\|\s*Repo state\s*\|\s*(?P<branch>\S+)\s*@\s*(?P<sha>[0-9a-f]{7,40})\s*\|",
+                           re.M)
+LAST_SYNCED_RE = re.compile(r"^\|\s*Last synced\s*\|\s*(?P<ts>[^|]+?)\s*\|", re.M)
+ADR_FILE_RE = re.compile(r"^(?P<num>\d{4})-")
+
+
+def git(root: Path, *argv: str) -> tuple[bool, str]:
+    """Run a git command, returning (ok, stripped stdout). Never raises: a missing
+    git binary or a non-repo is a condition the caller reports, not a crash."""
+    try:
+        r = subprocess.run(["git", *argv], cwd=str(root), capture_output=True,
+                           text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return False, ""
+    return r.returncode == 0, r.stdout.strip()
+
+
+def section_body(text: str, heading: str) -> str:
+    """The lines under a `## heading`, up to the next heading of the same level."""
+    m = re.search(rf"^##\s+{re.escape(heading)}\s*$(?P<body>.*?)(?=^##\s|\Z)",
+                  text, re.M | re.S)
+    return m.group("body") if m else ""
+
+
+def check_state(state_path: Path, root: Path, adr_dir: Path, journal: Path,
+                max_drift: int | None,
+                max_claim_age: int | None = None) -> tuple[list[str], list[str], list[str]]:
+    """Return (problems, warns, notes). Problems fail the run; warns and notes do not."""
+    problems: list[str] = []
+    warns: list[str] = []
+    notes: list[str] = []
+
+    text = read(state_path)
+
+    # 1. No unfilled scaffold slots. A placeholder in a snapshot is a lie with a
+    #    template's face on it.
+    tokens = re.findall(r"\{\{.*?\}\}", text, re.S)
+    if tokens:
+        problems.append(f"{len(tokens)} unfilled {{{{}}}} placeholder token(s) in {state_path.name}")
+
+    # 2. The sync block must be parseable — everything downstream keys off it.
+    m_repo = REPO_STATE_RE.search(text)
+    m_sync = LAST_SYNCED_RE.search(text)
+    if not m_sync:
+        problems.append("no parseable 'Last synced' row in the Sync block")
+    if not m_repo:
+        problems.append("no parseable 'Repo state | <branch> @ <sha>' row in the Sync block")
+
+    in_git, _ = git(root, "rev-parse", "--is-inside-work-tree")
+    if not in_git:
+        notes.append("not a git work tree (or git unavailable) — freshness checks skipped")
+
+    # 3. Snapshot freshness. The sha is recorded today but never read back; reading
+    #    it is the whole point of this check.
+    if in_git and m_repo:
+        sha = m_repo.group("sha")
+        ok_obj, _ = git(root, "cat-file", "-e", f"{sha}^{{commit}}")
+        if not ok_obj:
+            problems.append(f"Repo state names {sha}, which is not a commit in this repo")
+        else:
+            ok_anc, _ = git(root, "merge-base", "--is-ancestor", sha, "HEAD")
+            if not ok_anc:
+                problems.append(
+                    f"Repo state {sha} is not an ancestor of HEAD — the snapshot was taken "
+                    "on a branch this one does not contain")
+            else:
+                ok_cnt, out = git(root, "rev-list", "--count", f"{sha}..HEAD")
+                behind = int(out or 0) if ok_cnt else 0
+                notes.append(f"snapshot is {behind} commit(s) behind HEAD")
+                if max_drift is not None and behind > max_drift:
+                    problems.append(f"snapshot is {behind} commit(s) behind HEAD (max-drift {max_drift})")
+        ok_st, dirty = git(root, "status", "--porcelain")
+        if ok_st and dirty:
+            warns.append(f"working tree has {len(dirty.splitlines())} uncommitted change(s); "
+                         "any claim proved against it is not reproducible from HEAD")
+
+    # 4. Every Current Working State line carries its proof, in a shape a machine
+    #    can read. A claim whose proof cannot be parsed cannot be checked later.
+    body = section_body(text, "Current Working State")
+    body_lines = body.splitlines()
+    claims = []
+    for i, ln in enumerate(body_lines):
+        if ln.strip().startswith("- ") and "<!--" not in ln:
+            # The pointer trail sits on the next line, indented under the claim. It is
+            # where `path:` lives, and paths are what make the staleness check specific
+            # instead of merely temporal.
+            trail = body_lines[i + 1] if i + 1 < len(body_lines) else ""
+            claims.append((ln, trail if trail.strip().startswith("\u21b3") else ""))
+    if not claims:
+        notes.append("Current Working State is empty")
+    for ln, trail in claims:
+        m = STATE_CLAIM_RE.match(ln.strip())
+        if not m:
+            problems.append(f"claim does not name its proof: {ln.strip()[:90]}")
+            continue
+        mw = STATE_WHEN_RE.match(m.group("when").strip())
+        if not mw:
+            problems.append(
+                f"claim's proof timestamp is not '<YYYY-MM-DD>' or '<YYYY-MM-DD>, <sha>': "
+                f"{m.group('when').strip()[:60]}")
+            continue
+        sha = mw.group("sha")
+        if not sha:
+            warns.append(f"claim is date-anchored but not commit-anchored, so staleness "
+                         f"cannot be computed: {m.group('what')[:60]}")
+            continue
+        if in_git:
+            ok_obj, _ = git(root, "cat-file", "-e", f"{sha}^{{commit}}")
+            if not ok_obj:
+                problems.append(f"claim cites {sha}, which is not a commit in this repo: "
+                                f"{m.group('what')[:60]}")
+                continue
+            ok_cnt, out = git(root, "rev-list", "--count", f"{sha}..HEAD")
+            age = int(out or 0) if ok_cnt else 0
+            if age:
+                # A claim nobody re-proves is the thing this layer exists to prevent,
+                # so it can be made fatal rather than only mentioned.
+                msg = f"claim proved {age} commit(s) ago: {m.group('what')[:60]}"
+                if max_claim_age is not None and age > max_claim_age:
+                    problems.append(f"{msg} (limit {max_claim_age}) — re-run its proof "
+                                    f"and re-anchor it, or record it as a gap")
+                else:
+                    notes.append(msg)
+            # Commit distance says a claim is old. Path intersection says it is
+            # probably wrong, which is the difference between a count and a signal:
+            # a test run or a spike touches nothing a claim depends on and stays quiet.
+            paths = re.findall(r"path:(\S+)", trail)
+            if paths:
+                ok_d, changed = git(root, "diff", "--name-only", f"{sha}..HEAD", "--", *paths)
+                touched = [c for c in changed.splitlines() if c.strip()] if ok_d else []
+                if touched:
+                    warns.append(
+                        f"claim's own code changed since it was proved "
+                        f"({len(touched)} file(s), e.g. {touched[0]}): {m.group('what')[:60]}")
+
+    # 5. The ADR register is a hand-maintained copy of a directory listing, so it
+    #    drifts. Comparing the two is cheap and catches it immediately.
+    if adr_dir.is_dir():
+        on_disk = {m.group("num") for f in adr_dir.glob("*.md")
+                   if (m := ADR_FILE_RE.match(f.name))}
+        registers = section_body(text, "Registers")
+        listed = set(re.findall(r"ADR-(\d{4})", registers))
+        for num in sorted(on_disk - listed):
+            problems.append(f"ADR-{num} exists in {adr_dir}/ but is missing from the Registers index")
+        for num in sorted(listed - on_disk):
+            problems.append(f"Registers index lists ADR-{num}, which has no file in {adr_dir}/")
+    else:
+        notes.append(f"no {adr_dir}/ directory — ADR register check skipped")
+
+    # 6. The ledger. Its entry format is prose owned by the journal's own header,
+    #    so this checks presence and agreement only — never tries to parse it.
+    if not journal.exists():
+        warns.append(f"no ledger at {journal} — history has nowhere to accumulate")
+    elif m_sync:
+        ts = m_sync.group("ts").strip()
+        if ts and ts not in read(journal):
+            warns.append(f"ledger has no entry stamped '{ts}' — the newest sync may be unrecorded")
+
+    return problems, warns, notes
+
+
+# ── state log + render (ADR-0005: append-only log, capped projection) ─────────
+# The log is Tier 1: union-merged, append-only, never rewritten. STATE.md is
+# Tier 2: generated, capped, ranked by importance. Ordering is COMMIT order —
+# union merge concatenates without ordering it, and wall clocks skew across
+# machines, so the only total order every writer already shares is git's.
+
+STATE_LOG_DEFAULT = "docs/state.ndjson"
+STATE_KINDS = ("claim", "indev", "gap")
+
+# The one machine-detectable signal that STATE.md is generated rather than authored.
+# `state render` truncates its output file, so this string is what stands between a
+# hand-authored snapshot and silent, total data loss (ADR-0005).
+STATE_GENERATED_MARKER = "GENERATED by `plan_tool state render`"
+ZERO_SHA = "0" * 40
+BLAME_HDR_RE = re.compile(r"^([0-9a-f]{40})\s+\d+\s+(\d+)")
+
+
+def state_log_order(root: Path, log_path: Path, n_lines: int) -> list[tuple]:
+    """A sort key per line index, taken from the commit that introduced the line.
+
+    Uncommitted lines sort last — they are the newest by definition. Falls back to
+    file order when git or blame is unavailable: a degraded order, never a crash
+    (ADR-0004)."""
+    ok, out = git(root, "blame", "--porcelain", "--", str(log_path))
+    if not ok or not out:
+        return [(1, 0, i) for i in range(n_lines)]
+    # Rank by position in history, NOT by committer-time: timestamps have
+    # one-second granularity, so two commits made in the same second tie and fall
+    # back to file order — precisely the order union merge does not preserve.
+    ok_log, log_out = git(root, "log", "--topo-order", "--reverse",
+                          "--format=%H", "--", str(log_path))
+    rank = {sha: i for i, sha in enumerate(log_out.split("\n"))} if ok_log else {}
+    far = len(rank) + 1
+    keys: dict[int, tuple] = {}
+    sha, line_no = ZERO_SHA, 0
+    for ln in out.split("\n"):
+        m = BLAME_HDR_RE.match(ln)
+        if m:
+            sha, line_no = m.group(1), int(m.group(2))
+        elif ln.startswith("\t"):
+            # 0 = committed (ordered by history position); 1 = still uncommitted.
+            keys[line_no - 1] = ((1, far) if sha == ZERO_SHA
+                                 else (0, rank.get(sha, far)))
+    return [keys.get(i, (1, far)) + (i,) for i in range(n_lines)]
+
+
+def read_state_log(root: Path, log_path: Path) -> list[dict]:
+    """Every event in the log, in commit order. A malformed line is skipped rather
+    than fatal — union merge can land junk, and a log that will not parse must not
+    take the render down with it."""
+    if not log_path.exists():
+        return []
+    raw = [ln for ln in read(log_path).split("\n") if ln.strip()]
+    order = state_log_order(root, log_path, len(raw))
+    seen, events = set(), []
+    for i, ln in enumerate(raw):
+        if ln in seen:      # union merge can duplicate an identical append
+            continue
+        seen.add(ln)
+        try:
+            ev = json.loads(ln)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(ev, dict) or ev.get("kind") not in STATE_KINDS:
+            continue
+        ev["_ord"] = order[i]
+        events.append(ev)
+    events.sort(key=lambda e: e["_ord"])
+    return events
+
+
+def project_state(events: list[dict]) -> dict:
+    """Reduce the log to current truth: last write wins per (kind, key), and an
+    event marked cleared removes the key. Ordered by commit position, which every
+    writer already shares: the one total order available without a clock (ADR-0008
+    removed the weight ranking this used to apply)."""
+    current: dict = {}
+    for ev in events:
+        k = (ev["kind"], ev.get("key") or ev.get("what", ""))
+        if ev.get("cleared"):
+            current.pop(k, None)
+        else:
+            current[k] = ev
+    out: dict = {kind: [] for kind in STATE_KINDS}
+    for (kind, _), ev in current.items():
+        out[kind].append(ev)
+    for kind in out:
+        out[kind].sort(key=lambda e: e["_ord"])
+    return out
+
+
+def refs_line(ev: dict) -> str:
+    """The pointer trail. An entry carries the ids needed to decide whether to
+    follow it, never the detail itself, so truncating a view would cost immediacy
+    and never reachability (ADR-0005)."""
+    r = ev.get("refs") or {}
+    bits = []
+    for key in ("plan", "phase", "session"):
+        if r.get(key):
+            bits.append(f"{key}:{r[key]}")
+    for key, prefix in (("adr", "adr:"), ("issue", "issue:#")):
+        vals = r.get(key) or []
+        if isinstance(vals, str):
+            vals = [vals]
+        bits.extend(f"{prefix}{v}" for v in vals)
+    bits.extend(f"path:{p}" for p in (ev.get("paths") or []))
+    return "  ↳ " + " ".join(bits) if bits else ""
+
+
+def render_state(root: Path, projected: dict, adr_dir: Path,
+                 specs: str, journal: Path, origin, project: str | None = None) -> str:
+    ok_b, branch = git(root, "rev-parse", "--abbrev-ref", "HEAD")
+    ok_s, sha = git(root, "rev-parse", "--short", "HEAD")
+    # Deterministic: stamp the newest EVENT, never the run time, so re-rendering
+    # unchanged inputs is byte-identical (the same rule `index` follows).
+    newest = max((e.get("ts", "") for lst in projected.values() for e in lst), default="")
+    lines = [f"# {project or root.resolve().name} — State", "",
+             f"<!-- {STATE_GENERATED_MARKER} from docs/state.ndjson.",
+             "     Do not hand-edit: append with `plan_tool state add`, then re-render.",
+             "     History lives in the log; this file is the current view. -->", "",
+             "| Sync | |", "|---|---|",
+             f"| Last synced | {newest or '(no events)'} |",
+             f"| Repo state | {branch if ok_b else '?'} @ {sha if ok_s else '?'} |"]
+    if origin:
+        ok_c, counts = git(root, "rev-list", "--left-right", "--count", f"{origin}...HEAD")
+        if ok_c and counts:
+            behind, ahead = (counts.split() + ["?", "?"])[:2]
+            lines.append(f"| Vs {origin} | {behind} behind, {ahead} ahead |")
+    lines.append("")
+
+    def section(title: str, kind: str, fmt) -> None:
+        items = projected.get(kind, [])
+        lines.extend([f"## {title}", ""])
+        if not items:
+            lines.extend(["_none recorded_", ""])
+            return
+        for ev in items:
+            lines.append(fmt(ev))
+            rl = refs_line(ev)
+            if rl:
+                lines.append(rl)
+        lines.append("")
+
+    section("Current Working State", "claim", lambda e: (
+        f"- {e.get('what', '')} — verified by `{e.get('proof', '')}` "
+        f"({e.get('date', '')}{', ' + e['sha'] if e.get('sha') else ''})"))
+    section("In Development", "indev", lambda e: (
+        f"- {e.get('what', '')} — {e.get('status', 'in-development')}"
+        + (f" · {e['owner']}" if e.get("owner") else "")))
+    section("Known Gaps / Risks", "gap", lambda e: f"- {e.get('what', '')}")
+
+    lines.extend(["## Registers", "",
+                  f"- **Plans** — [{specs}/_index.html]({specs}/_index.html)",
+                  f"- **Decisions (ADRs)** — [{adr_dir}/]({adr_dir}/)"])
+    # Derived, so the register cannot drift from the directory — the drift
+    # `state check` caught by hand is now impossible by construction.
+    if adr_dir.is_dir():
+        for f in sorted(adr_dir.glob("*.md")):
+            m = ADR_FILE_RE.match(f.name)
+            if not m:
+                continue
+            title = next((ln[7:].strip() for ln in read(f).split("\n")
+                          if ln.startswith("title: ")), "")
+            lines.append(f"  - ADR-{m.group('num')} — {title or f.stem}")
+    lines.extend(["- **Components** — [SYSTEM.md](SYSTEM.md)",
+                  f"- **Ledger** — [{journal}]({journal})", ""])
+    return "\n".join(lines).rstrip() + "\n"
+
+
+
+def migrate_state(text: str, who: str) -> tuple[list[dict], list[str]]:
+    """Parse a hand-authored STATE.md into events, plus a list of what could not be
+    carried. Honest by construction: it never invents a field the old format has no
+    source for (ADR-0005)."""
+    events: list[dict] = []
+    lost: list[str] = []
+
+    def ev(kind: str, what: str, **extra) -> None:
+        e = {"kind": kind, "key": what[:60], "what": what, "by": who,
+             "ts": extra.pop("ts", None) or now_iso()}
+        e["date"] = e["ts"][:10]
+        e.update({k: v for k, v in extra.items() if v})
+        events.append(e)
+
+    for ln in section_body(text, "Current Working State").splitlines():
+        m = STATE_CLAIM_RE.match(ln.strip())
+        if not m:
+            continue
+        mw = STATE_WHEN_RE.match(m.group("when").strip())
+        date = mw.group("date") if mw else ""
+        # No sha is left absent, never back-filled to HEAD: that would assert a proof
+        # ran at a commit where it never ran, and check_state would then report a
+        # staleness distance computed from a fiction.
+        sha = mw.group("sha") if mw else ""
+        ev("claim", m.group("what").strip(), proof=m.group("cmd").strip(), sha=sha,
+           ts=f"{date}T00:00:00" if date else None)
+
+    for ln in section_body(text, "In Development").splitlines():
+        ln = ln.strip()
+        if not ln.startswith("|") or re.match(r"^\|[\s|:-]+\|$", ln):
+            continue
+        cells = [c.strip() for c in ln.strip("|").split("|")]
+        if len(cells) < 2 or cells[0].lower() in ("item", ""):
+            continue
+        item, typ = cells[0], cells[1] if len(cells) > 1 else ""
+        status = cells[2] if len(cells) > 2 else ""
+        owner = cells[3] if len(cells) > 3 else ""
+        record = cells[4] if len(cells) > 4 else ""
+        refs = {}
+        adrs = re.findall(r"(?:ADR-|adr/)(\d{4})", record)
+        if adrs:
+            refs["adr"] = adrs
+        elif record and record not in ("-", "—"):
+            lost.append(f"In Development record link, no id to key on: {record}")
+        ev("indev", item, status=status, owner=owner, refs=refs or None)
+        if typ and typ not in ("-", "—"):
+            lost.append(f"In Development Type column has no event field: {item} ({typ})")
+
+    for heading in ("Known Gaps / Risks", "Known Gaps", "Gaps / Risks"):
+        body = section_body(text, heading)
+        if body:
+            for ln in body.splitlines():
+                ln = ln.strip()
+                if ln.startswith("- ") and "{{" not in ln:
+                    ev("gap", ln[2:].strip())
+            break
+
+    if section_body(text, "How to Run / Verify").strip():
+        lost.append("the `## How to Run / Verify` block — no event kind and no rendered "
+                    "section; copy it into CLAUDE.md or a README before re-rendering")
+    if re.search(r"^\|\s*Synced by\s*\|", text, re.M):
+        lost.append("the `Synced by` row — the schema has no email field and `by` is "
+                    "never rendered; migrated events are attributed to you")
+    if events:
+        lost.append("paths on every claim — no source in the old format, so the "
+                    "path-intersection sync trigger cannot fire for migrated claims")
+    return events, lost
+
+
+CLAUDE_MD_STUB = """# {name}
+
+<!-- Written by `plan_tool init`. This is a stub: replace the placeholders with
+     what is actually true of this repo. A clone's entry point is only worth the
+     accuracy of what it says. -->
+
+## Project state
+
+Start here, in this order. Each answers a different question.
+
+| Read | To answer |
+| --- | --- |
+| `STATE.md` | Where the project left off, and what is verified working right now |
+| `docs/adr/` | Why the system is built this way |
+| `docs/journal.md` | The append-only history of who changed what and why |
+
+`STATE.md` is **generated** by `plan_tool state render` from `docs/state.ndjson`.
+Never hand-edit it: append an event with `plan_tool state add`, then re-render.
+
+## First session in a fresh clone
+
+`.git/hooks` is never cloned, so a clone arrives with the tracked hooks present and
+inactive. Git refuses to let a clone set its own config, which is a security property,
+not an oversight — so this one step cannot be automated away, only done for the human.
+
+At the start of a session in a clone you did not wire yourself, run `plan_tool doctor`.
+If it reports `git hooks  core.hooksPath unset`, run `plan_tool hooks git-install` once.
+Both commands are idempotent, and `doctor` reports the result rather than assuming it.
+
+Skipping this is safe. The hooks only inject commit trailers, which makes history
+answer "why was it built this way" further back. Without them the derived reports get
+thinner, never wrong (ADR-0004).
+{vendor_note}
+## Agent skills
+
+### Issue tracker
+
+See `docs/agents/issue-tracker.md`.
+"""
+
+GITATTRIBUTES_STANZA = """
+# Append-only state event log (ADR-0005): union-merge so concurrent appends
+# from different sessions and agents combine instead of conflicting.
+docs/state.ndjson merge=union
+"""
+
+
+
+def state_log_union_merged(root: Path) -> bool:
+    """Ask git, never the file: the attribute can come from .git/info/attributes or a
+    parent directory, so string-matching .gitattributes both misses and duplicates."""
+    ok, attr = git(root, "check-attr", "merge", "--", STATE_LOG_DEFAULT)
+    return ok and attr.strip().endswith(": union")
+
+
+def a_workflow_runs_state_check(root: Path) -> bool:
+    wf = root / ".github" / "workflows"
+    if not wf.is_dir():
+        return False
+    return any("state check" in read(f) or "state_check" in read(f)
+               for f in sorted(list(wf.glob("*.yml")) + list(wf.glob("*.yaml"))))
+
+
+def strip_example_rows(text: str) -> str:
+    """Drop a template's illustrative table rows. A fresh repo that ships a map of
+    fictional components is the confident-wrong-answer failure SYSTEM.md's own footer
+    warns about: a reader stops at the table instead of reading the code."""
+    out: list[str] = []
+    in_table = False
+    for ln in text.splitlines():
+        if re.match(r"^\|[\s|:-]+\|\s*$", ln):          # the header separator
+            cols = ln.count("|") - 1
+            out.append(ln)
+            out.append("| _none recorded yet_ " + "| " * (cols - 1) + "|")
+            in_table = True
+            continue
+        if in_table and ln.startswith("|"):
+            continue                                       # an example row
+        in_table = False
+        out.append(ln)
+    return "\n".join(out) + "\n"
+
+def cmd_init(args) -> int:
+    """Wire a repo for cozyplan: everything `doctor` checks that a command can
+    legitimately create. Idempotent and additive — every write is create-if-absent
+    or append-if-missing, never a truncation, so brownfield is the normal case
+    rather than a special one."""
+    root = Path(args.root)
+    in_git, _ = git(root, "rev-parse", "--is-inside-work-tree")
+    if not in_git:
+        if not args.git_init:
+            return fail(f"{root} is not a git repository — every layer below is wired "
+                        f"through git. Run `git init` first, or pass --git-init.")
+        ok, _ = git(root, "init")
+        if not ok:
+            return fail(f"git init failed in {root}")
+
+    made: list[str] = []
+    kept: list[str] = []
+    # Rewritten every run by design (they re-point a moved interpreter), so they are
+    # neither created nor left alone. Reporting them as "created" on a re-run would be
+    # a small lie in a tool whose entire value is that its reports are true.
+    refreshed: list[str] = []
+    manual: list[str] = []
+
+    def ensure_dir(rel: str) -> None:
+        d = root / rel
+        (kept if d.is_dir() else made).append(rel)
+        d.mkdir(parents=True, exist_ok=True)
+
+    def ensure_file(rel: str, body: str) -> None:
+        f = root / rel
+        if f.exists():
+            kept.append(rel)
+            return
+        f.parent.mkdir(parents=True, exist_ok=True)
+        write(f, body)
+        made.append(rel)
+
+    def ensure_from_template(rel: str, template: str, subs: "dict[str, str] | None" = None) -> None:
+        f = root / rel
+        if f.exists():
+            kept.append(rel)
+            return
+        src = resolve_template(template)
+        if src is None:
+            manual.append(f"{rel} — template `{template}` not found beside this script; "
+                          f"create it by hand")
+            return
+        text = read(src)
+        for k, v in (subs or {}).items():
+            text = text.replace(k, v)
+        f.parent.mkdir(parents=True, exist_ok=True)
+        write(f, text)
+        made.append(rel)
+
+    # ── vendoring: the repo carries the skill, so a teammate installs nothing ──
+    if args.vendor:
+        skill_root = Path(__file__).resolve().parent.parent      # <skills>/cozyplan
+        src_dir = skill_root.parent                              # <skills>
+        dest_dir = root / ".claude" / "skills"
+        if src_dir.resolve() == (root / "skills").resolve():
+            manual.append(".claude/skills — this repo IS the skill source; vendoring it into "
+                          "itself would duplicate it. Run --vendor in the consuming repo.")
+        else:
+            for name in ("cozyplan", "discuss"):
+                src = src_dir / name
+                dst = dest_dir / name
+                if not src.is_dir():
+                    manual.append(f".claude/skills/{name} — not found at {src}")
+                    continue
+                existed = dst.exists()
+                if existed:
+                    shutil.rmtree(dst)
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(src, dst,
+                                ignore=shutil.ignore_patterns("__pycache__", "*.pyc", ".venv*"))
+                (refreshed if existed else made).append(f".claude/skills/{name}")
+            # What was vendored, and from where. A consuming repo cannot see upstream,
+            # so the only honest drift signal is a recorded origin a human can compare.
+            ver = ""
+            for cand in (src_dir.parent / ".claude-plugin" / "plugin.json",):
+                if cand.exists():
+                    with contextlib.suppress(Exception):
+                        ver = json.loads(read(cand)).get("version", "")
+            ok_sha, sha = git(src_dir.parent, "rev-parse", "--short", "HEAD")
+            write(dest_dir / "VENDORED.md",
+                  "# Vendored cozyplan\n\n"
+                  "These skills are committed into this repo so a clone needs no install.\n"
+                  "Do not hand-edit them: re-vendor with `plan_tool init --vendor` from a\n"
+                  "newer cozyplan, and review the diff.\n\n"
+                  f"| Field | Value |\n| --- | --- |\n"
+                  f"| version | {ver or 'unknown'} |\n"
+                  f"| source commit | {sha if ok_sha else 'unknown'} |\n"
+                  f"| vendored from | {src_dir.parent} |\n\n"
+                  "`state check` reports a stale claim when anything under `.claude/skills/`\n"
+                  "changes, which is how a drifted copy surfaces.\n")
+            made.append(".claude/skills/VENDORED.md")
+
+    # ── records and the event log ────────────────────────────────────────────
+    ensure_dir("docs/adr")
+    ensure_file(STATE_LOG_DEFAULT, "")
+    ensure_from_template("docs/journal.md", "journal.md")
+
+    slug = (args.repo or "").strip()
+    if not slug:
+        ok_rem, remote = git(root, "remote", "get-url", "origin")
+        if ok_rem and remote:
+            m = re.search(r"[:/]([^/:]+/[^/]+?)(?:\.git)?$", remote.strip())
+            slug = m.group(1) if m else ""
+    if slug:
+        ensure_from_template("docs/agents/issue-tracker.md", "issue-tracker.md",
+                             {"{{REPO_SLUG}}": slug})
+    elif (root / "docs/agents/issue-tracker.md").exists():
+        kept.append("docs/agents/issue-tracker.md")
+    else:
+        manual.append("docs/agents/issue-tracker.md — no `origin` remote, so the repo slug "
+                      "cannot be filled in. Re-run with `--repo <owner>/<name>`, add a remote, "
+                      "or write the file by hand. A guessed slug would point every issue "
+                      "command at someone else's repo.")
+
+    # ── union merge: ask git, not the file. The attribute can come from
+    #    .git/info/attributes or a parent dir, and appending blindly duplicates it.
+    if state_log_union_merged(root):
+        kept.append(".gitattributes (merge=union)")
+    else:
+        ga = root / ".gitattributes"
+        existing = read(ga) if ga.exists() else ""
+        write(ga, (existing.rstrip("\n") + "\n\n" if existing.strip() else "") + GITATTRIBUTES_STANZA.lstrip("\n"))
+        made.append(".gitattributes (merge=union)")
+
+    # The gh-less queue holds intended issues, not repo content (ADR-0001), so a
+    # fresh repo should not commit it.
+    gi = root / ".gitignore"
+    gi_text = read(gi) if gi.exists() else ""
+    if re.search(r"^\.scratch/?\s*$", gi_text, re.M):
+        kept.append(".gitignore (.scratch/)")
+    else:
+        write(gi, (gi_text.rstrip("\n") + "\n\n" if gi_text.strip() else "")
+              + "# Queued work items awaiting `gh` (ADR-0001) — replayed, never versioned.\n"
+              + ".scratch/\n")
+        made.append(".gitignore (.scratch/)")
+
+    # ── CI ───────────────────────────────────────────────────────────────────
+    if a_workflow_runs_state_check(root):
+        kept.append(".github/workflows (a workflow already runs state check)")
+    else:
+        ensure_from_template(".github/workflows/state-check.yml", "state-check.yml")
+
+    # ── git hooks. A foreign core.hooksPath means another manager owns them;
+    #    overwriting it silently is the one genuinely destructive move here.
+    ok_hp, hooks_path = git(root, "config", "core.hooksPath")
+    foreign = ok_hp and hooks_path.strip() and hooks_path.strip() != args.hooks_dir
+    if foreign and not args.force_hooks:
+        manual.append(f"core.hooksPath is already set to `{hooks_path.strip()}` — another hook "
+                      f"manager owns this repo. Re-run with --force-hooks to take it over, "
+                      f"or install the commit-msg trailer hook into that manager by hand")
+    else:
+        ns = argparse.Namespace(hooks_cmd="git-install", root=args.root, dir=args.hooks_dir)
+        if cmd_hooks_git(ns) == 0:
+            refreshed.append(f"{args.hooks_dir}/ + core.hooksPath")
+
+    # ── Claude Code hooks (advisory layer; bare-skill installs need this) ────
+    if args.claude_hooks:
+        ns = argparse.Namespace(hooks_cmd="install", settings=str(root / ".claude" / "settings.json"),
+                                global_=False)
+        if cmd_hooks(ns) == 0:
+            refreshed.append(".claude/settings.json (guard + lint hooks)")
+        else:
+            manual.append(".claude/settings.json — hook registration failed; run "
+                          "`plan_tool hooks install` and read the error")
+
+    # SYSTEM.md answers "what breaks if I change this" (ADR-0003), and the README
+    # routes two of the four questions at it. Nothing created it, so every repo shipped
+    # a dead link — including the generated STATE.md's own Registers block.
+    if (root / "SYSTEM.md").exists():
+        kept.append("SYSTEM.md")
+    else:
+        src = resolve_template("system.md", skill="discuss")
+        if src is None:
+            manual.append("SYSTEM.md — the discuss skill's templates/system.md was not found "
+                          "beside this script; copy it by hand")
+        else:
+            write(root / "SYSTEM.md", strip_example_rows(read(src)))
+            made.append("SYSTEM.md")
+
+    # ── entry point ──────────────────────────────────────────────────────────
+    if (root / "CLAUDE.md").exists() or (root / "AGENTS.md").exists():
+        kept.append("CLAUDE.md / AGENTS.md")
+    else:
+        vendor_note = ("\nNothing else needs installing: the cozyplan and discuss skills are "
+                       "committed\nunder `.claude/skills/`, and `plan_tool.py` ships inside them. "
+                       "See\n`.claude/skills/VENDORED.md` for the version this repo carries.\n"
+                       if args.vendor else "")
+        ensure_file("CLAUDE.md", CLAUDE_MD_STUB.format(name=root.resolve().name,
+                                                       vendor_note=vendor_note))
+
+    # ── STATE.md last: render refuses to overwrite an authored snapshot, which
+    #    is exactly the behaviour we want here, so route the user to migrate.
+    state_file = root / "STATE.md"
+    if state_file.exists():
+        if STATE_GENERATED_MARKER in read(state_file):
+            kept.append("STATE.md (generated)")
+        else:
+            manual.append("STATE.md exists but was authored by hand — run "
+                          "`plan_tool state migrate` to carry it into the event log, "
+                          "then `plan_tool state render`")
+    else:
+        ns = argparse.Namespace(state_cmd="render", root=args.root, log=STATE_LOG_DEFAULT,
+                                file=str(state_file), adr_dir=str(root / "docs" / "adr"),
+                                specs=args.specs, journal=str(root / "docs" / "journal.md"),
+                                origin=None, project=None, force=False, dry_run=False)
+        if cmd_state(ns) == 0:
+            made.append("STATE.md")
+
+    # ── report ───────────────────────────────────────────────────────────────
+    print(f"\ncozyplan init — {root.resolve()}\n")
+    for title, items in (("created", made), ("refreshed (rewritten every run)", refreshed),
+                         ("already present, left alone", kept)):
+        if items:
+            print(f"  {title}:")
+            for i in items:
+                print(f"    - {i}")
+    # Steps no command can do are named, never faked (ADR-0004).
+    rows = doctor_checks(root, 20)
+    checks = {name: (status, detail) for _, status, name, detail in rows}
+    for name in ("identity", "remote", "gh", "required check"):
+        if name in checks and checks[name][0] != OK:
+            manual.append(f"{name} — {checks[name][1]}")
+    if manual:
+        print("\n  needs a human:")
+        for i in manual:
+            print(f"    - {i}")
+    gaps = [(n, d) for _, st, n, d in rows if st == GAP]
+    print(f"\n  {len(gaps)} gap(s) remain — run `plan_tool doctor` for the full picture.")
+    return 0
+
+
+# ── issue filing, with a queue for when gh is absent ──────────────────────────
+# ADR-0001 made GitHub the source of truth for work items and promised that a
+# gh-less session queues rather than forking that truth into files. That promise
+# lived only in prose for a release. An agent told in markdown to "write the body
+# to .scratch/ and append the command" follows it approximately, which is the same
+# reason every other structured write in this tool is a command.
+
+SCRATCH_DIR = ".scratch"
+QUEUE_SCRIPT_HEADER = """#!/bin/sh
+# cozyplan: issues intended while `gh` was unavailable (ADR-0001).
+# Replay with `plan_tool issue replay --run`, or run this file directly.
+set -e
+"""
+
+
+def gh_ready() -> bool:
+    """gh installed AND authenticated. Installed-but-logged-out fails at the API
+    call, so treating it as ready would lose the issue instead of queueing it."""
+    if not shutil.which("gh"):
+        return False
+    try:
+        return subprocess.run(["gh", "auth", "status"], capture_output=True,
+                              timeout=30).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def slugify(text: str) -> str:
+    out = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return (out[:50].rstrip("-") or "issue")
+
+
+def queue_issue(root: Path, title: str, body: str, labels: list, plan: str) -> tuple:
+    """Write the intended issue body to its own file and append a one-line gh command
+    that reads it with --body-file. Inlining the body would put newlines inside the
+    queued command, so the script stops being one-command-per-line and stops being
+    listable, and the body would live in two places that can disagree.
+    Returns (body_path, script_path)."""
+    scratch = root / SCRATCH_DIR
+    pending = scratch / "pending-issues"
+    pending.mkdir(parents=True, exist_ok=True)
+    slug = slugify(title)
+    body_path = pending / f"{slug}.md"
+    n = 2
+    while body_path.exists():
+        body_path = pending / f"{slug}-{n}.md"
+        n += 1
+    text = body.rstrip("\n")
+    if plan:
+        text = f"{text}\n\nPlan: {plan}".strip("\n")
+    write(body_path, text + "\n")
+
+    rel = body_path.relative_to(root) if body_path.is_relative_to(root) else body_path
+    argv = ["gh", "issue", "create", "--title", title, "--body-file", str(rel)]
+    for lb in labels:
+        argv += ["--label", lb]
+    script = scratch / "pending-gh.sh"
+    existing = read(script) if script.exists() else QUEUE_SCRIPT_HEADER
+    write(script, existing.rstrip("\n") + "\n" + " ".join(shlex.quote(a) for a in argv) + "\n")
+    script.chmod(0o755)
+    return body_path, script
+
+
+def queued_commands(root: Path) -> list:
+    script = root / SCRATCH_DIR / "pending-gh.sh"
+    if not script.exists():
+        return []
+    return [ln for ln in read(script).splitlines()
+            if ln.strip().startswith("gh ")]
+
+
+def cmd_issue(args) -> int:
+    root = Path(args.root)
+    if args.issue_cmd == "file":
+        if not args.title:
+            return fail("--title is required")
+        labels = [l.strip() for l in (args.label or "").split(",") if l.strip()]
+        body = args.body or ""
+        if args.plan:
+            body = f"{body}\n\nPlan: {args.plan}".strip("\n")
+        if gh_ready() and not args.queue:
+            argv = ["gh", "issue", "create", "--title", args.title, "--body", body]
+            for lb in labels:
+                argv += ["--label", lb]
+            r = subprocess.run(argv, cwd=str(root), capture_output=True, text=True)
+            if r.returncode == 0:
+                print(f"issue: filed {r.stdout.strip()}")
+                return 0
+            # Never drop it. A failed create is exactly when the queue earns its place.
+            print(f"  warn: gh issue create failed ({r.stderr.strip()[:120]}); queueing instead")
+        bp, sp = queue_issue(root, args.title, args.body or "", labels, args.plan or "")
+        print(f"issue: queued -> {bp}")
+        print(f"       replay with `plan_tool issue replay --run` once gh is available ({sp})")
+        return 0
+
+    if args.issue_cmd == "replay":
+        cmds = queued_commands(root)
+        if not cmds:
+            print("issue: nothing queued")
+            return 0
+        if not args.run:
+            # Filing issues is outward-facing and hard to undo, so the default is to
+            # show the queue rather than to fire it.
+            print(f"issue: {len(cmds)} queued — pass --run to file them")
+            for c in cmds:
+                print(f"  {c}")
+            return 0
+        if not gh_ready():
+            return fail("gh is not installed or not authenticated — nothing was replayed")
+        script = root / SCRATCH_DIR / "pending-gh.sh"
+
+        def rewrite(pending: list) -> None:
+            write(script, QUEUE_SCRIPT_HEADER + ("\n".join(pending) + "\n" if pending else ""))
+
+        # One command at a time, and the queue is rewritten after each success. Running
+        # the whole script and leaving it untouched on failure meant the commands that
+        # already succeeded stayed queued, so the next --run filed them a second time —
+        # duplicates in the tracker ADR-0001 made the source of truth.
+        pending = list(cmds)
+        for cmd in cmds:
+            r = subprocess.run(["sh", "-c", cmd], cwd=str(root))
+            if r.returncode != 0:
+                rewrite(pending)
+                return fail(f"replay stopped at a failing command; {len(pending)} still "
+                            f"queued in {script}. The ones already filed were removed.")
+            pending.pop(0)
+            rewrite(pending)
+        print(f"issue: replayed {len(cmds)} queued issue(s); {script} reset")
+        return 0
+    return fail(f"unknown issue command: {args.issue_cmd}")
+
+def cmd_state(args) -> int:
+    root = Path(args.root)
+    log_path = Path(args.log)
+
+    if args.state_cmd == "add":
+        if not args.what:
+            return fail("--what is required")
+        _, who = git(root, "config", "user.name")
+        ev = {"kind": args.kind, "key": args.key or args.what[:60], "what": args.what,
+              "by": who or "",
+              "ts": args.ts or datetime.now().astimezone().isoformat(timespec="seconds")}
+        # The proof date is the event's own date — one field, never disagreeing
+        # with the timestamp beside it.
+        ev["date"] = ev["ts"][:10]
+        for name in ("proof", "sha", "status", "owner"):
+            if getattr(args, name, None):
+                ev[name] = getattr(args, name)
+        if args.paths:
+            ev["paths"] = [p.strip() for p in args.paths.split(",") if p.strip()]
+        refs = {n: getattr(args, n) for n in ("plan", "phase", "session") if getattr(args, n, None)}
+        if args.adr:
+            refs["adr"] = [a.strip() for a in args.adr.split(",") if a.strip()]
+        if args.issue:
+            refs["issue"] = [i.strip().lstrip("#") for i in args.issue.split(",") if i.strip()]
+        if refs:
+            ev["refs"] = refs
+        if args.clear:
+            ev["cleared"] = True
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_path, "a", encoding="utf-8", newline="\n") as f:
+            f.write(json.dumps(ev, ensure_ascii=False, sort_keys=True) + "\n")
+        print(f"state: appended {args.kind} '{ev['key']}'"
+              + (" (cleared)" if args.clear else "") + f" -> {log_path}")
+        return 0
+
+    if args.state_cmd == "migrate":
+        src = Path(args.file)
+        if not src.exists():
+            return fail(f"state file not found: {src}")
+        text = read(src)
+        if STATE_GENERATED_MARKER in text:
+            print(f"state: {src} is already generated — nothing to migrate")
+            return 0
+        _, who = git(root, "config", "user.name")
+        events, lost = migrate_state(text, who or "")
+        if not events:
+            return fail(f"{src} has no recognisable claims, In Development rows, or gaps "
+                        f"— migrate it by hand with `plan_tool state add`")
+        backup = src.with_name(src.name + ".pre-migration")
+        if not args.dry_run and backup.exists():
+            return fail(f"{backup} already exists — migration has already run here. "
+                        f"Move it aside first if you really mean to migrate again.")
+        if args.dry_run:
+            for e in events:
+                print(json.dumps(e, ensure_ascii=False, sort_keys=True))
+        else:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(log_path, "a", encoding="utf-8", newline="\n") as f:
+                for e in events:
+                    f.write(json.dumps(e, ensure_ascii=False, sort_keys=True) + "\n")
+            # The old file is set aside rather than left in place: leaving it would
+            # deadlock the user between migrate and render's guard, and the sections
+            # that could not be carried are only recoverable from it.
+            src.rename(backup)
+            print(f"state: migrated {len(events)} entr(ies) from {src} -> {log_path}")
+            print(f"       kept the original at {backup}")
+        # Never silently. Everything the old format could not express is named here,
+        # because a migration that reports nothing reads as a migration that lost nothing.
+        if lost:
+            print("\nnot carried over — handle these by hand:")
+            for item in lost:
+                print(f"  - {item}")
+        if not args.dry_run:
+            print(f"\nnext: review the log, then `plan_tool state render` to write a "
+                  f"fresh {src.name}. Delete {backup.name} once you have salvaged "
+                  f"anything above.")
+        return 0
+
+    if args.state_cmd in ("render", "show"):
+        projected = project_state(read_state_log(root, log_path))
+        if args.state_cmd == "show":
+            for kind in STATE_KINDS:
+                items = projected[kind]
+                print(f"{kind} ({len(items)}):")
+                for ev in items:
+                    print(f"  {ev.get('what', '')}")
+            return 0
+        out = Path(args.file)
+        # render TRUNCATES. A STATE.md without the marker was written by hand (or by
+        # a pre-3.0 cozyplan), and rendering over it destroys every claim, gap, and
+        # the How to Run block with no error and exit 0 — and `state check` then
+        # passes on the emptied file, so no later layer catches it either. Refuse by
+        # default: the users at risk are exactly those who do not know the semantics
+        # changed, so an opt-in flag would not protect them.
+        if out.exists() and not args.force and STATE_GENERATED_MARKER not in read(out):
+            return fail(
+                f"{out} was not generated by `state render` — it has no generated marker, "
+                f"so rendering would overwrite hand-authored content.\n"
+                f"       Migrate it first:  plan_tool state migrate --file {out}\n"
+                f"       Or discard it:     plan_tool state render --force")
+        rendered = render_state(root, projected, Path(args.adr_dir),
+                                args.specs, Path(args.journal), args.origin, args.project)
+        if args.dry_run:
+            print(rendered, end="")
+            return 0
+        write(out, rendered)
+        n = sum(len(v) for v in projected.values())
+        print(f"state: rendered {out} from {n} projected entr(ies)")
+        return 0
+
+    state_path = Path(args.file)
+    if not state_path.exists():
+        return fail(f"state file not found: {state_path} - run the Init State workflow first")
+    problems, warns, notes = check_state(
+        state_path, root, Path(args.adr_dir), Path(args.journal), args.max_drift,
+        args.max_claim_age)
+    for note in notes:
+        print(f"  note: {note}")
+    for w in warns:
+        print(f"  warn: {w}")
+    if problems:
+        print(f"FAIL {state_path.name}: {len(problems)} problem(s)")
+        for p in problems:
+            print(f"  - {p}")
+        return 1
+    print(f"OK {state_path.name}: consistent with git")
+    return 0
+
+
+# ── doctor (ADR-0004: wiring is observable) ──────────────────────────────────
+# The failure this guards against is SILENT misconfiguration. hooks.json shipped
+# a note saying "if uv is missing, enforcement silently disappears", and that is
+# exactly what happened — for months, on any machine without uv. So doctor does
+# not ask whether a hook is *registered*; it runs the interpreter that hook would
+# use and reports whether it actually works.
+#
+# It never claims protection it cannot verify. Whether a CI check is *required*
+# lives in GitHub branch protection, which is not visible from a clone, so doctor
+# says so instead of implying a gate exists.
+
+OK, WARN, GAP = "ok", "warn", "gap"
+_MARK = {OK: "  ok  ", WARN: " warn ", GAP: " gap  "}
+
+
+
+# A command named in prose but absent from the parser sends a reader (or an agent)
+# to run something that does not exist. This drifted twice already: init-state.md and
+# sync-state.md described the 2.x model for a whole release. Checking it is a grep.
+_DOC_CMD_RE = re.compile(r"(?:^|`)(?:PLAN_TOOL|plan_tool(?:\.py)?)\s+([a-z][a-z0-9-]*)", re.M)
+
+
+def subcommand_names() -> set:
+    """The verbs the parser actually accepts, read off the parser itself so this can
+    never disagree with it."""
+    for act in build_parser()._actions:
+        if isinstance(act, argparse._SubParsersAction):
+            return set(act.choices)
+    return set()
+
+
+def header_command_drift() -> list:
+    """(direction, verb) where this file's own `Commands:` block disagrees with the
+    parser. The prose check below reads SKILL.md, workflows/, and reference/ — never
+    this script — so the header was the one place drift could hide from it, and did."""
+    known = subcommand_names()
+    if not known:
+        return []
+    m = re.search(r"^Commands[^\n]*:\n(?P<body>(?:  \S.*\n)+)", __doc__ or "", re.M)
+    if not m:
+        return [("missing", "the Commands: block itself")]
+    listed = set(re.findall(r"^  ([a-z][a-z0-9-]*)\s{2,}", m.group("body"), re.M))
+    return ([("undocumented", v) for v in sorted(known - listed)]
+            + [("stale", v) for v in sorted(listed - known)])
+
+
+def doc_command_drift(skill_root: Path) -> list:
+    """(file, verb) for every command named in the skill's prose that does not exist."""
+    known = subcommand_names()
+    if not known:
+        return []
+    docs = [skill_root / "SKILL.md"]
+    for sub in ("workflows", "reference"):
+        d = skill_root / sub
+        if d.is_dir():
+            docs.extend(sorted(d.glob("*.md")))
+    out = []
+    for f in docs:
+        if not f.exists():
+            continue
+        for verb in set(_DOC_CMD_RE.findall(read(f))):
+            if verb not in known:
+                out.append((f.name, verb))
+    return sorted(out)
+
+def _hook_runner_parts() -> tuple[str, str]:
+    """(executable, extra arg) for the hooks — kept as parts, never joined into one
+    string. An interpreter path can contain spaces, and a hook that word-splits its
+    runner fails open silently, which is the exact failure ADR-0004 exists to catch."""
+    return ("uv", "run") if shutil.which("uv") else (sys.executable, "")
+
+
+def _hook_runner() -> list[str]:
+    """The same resolution the hooks use: prefer uv, fall back to this interpreter."""
+    exe, arg = _hook_runner_parts()
+    return [exe, arg] if arg else [exe]
+
+
+def _stored_hook_runner(root: Path) -> "list[str] | None":
+    """The runner this clone actually recorded, or None if it has not been wired.
+    doctor must test this rather than its own resolution: they differ exactly when
+    the clone is misconfigured, which is the case worth reporting."""
+    ok, exe = git(root, "config", "cozyplan.runner")
+    if not ok or not exe.strip():
+        return None
+    ok_arg, arg = git(root, "config", "cozyplan.runnerarg")
+    return [exe.strip(), arg.strip()] if ok_arg and arg.strip() else [exe.strip()]
+
+
+def doctor_checks(root: Path, commits: int) -> list[tuple[str, str, str, str]]:
+    """(section, status, name, detail) for every wiring fact worth knowing."""
+    out: list[tuple[str, str, str, str]] = []
+
+    def add(section, status, name, detail=""):
+        out.append((section, status, name, detail))
+
+    # ── git ──────────────────────────────────────────────────────────────────
+    in_git, _ = git(root, "rev-parse", "--is-inside-work-tree")
+    if not in_git:
+        add("git", GAP, "work tree", "not a git repository — nothing below can be wired")
+        return out
+    _, branch = git(root, "rev-parse", "--abbrev-ref", "HEAD")
+    _, sha = git(root, "rev-parse", "--short", "HEAD")
+    add("git", OK, "work tree", f"{branch} @ {sha}")
+
+    ok_r, remote = git(root, "remote", "get-url", "origin")
+    add("git", OK if ok_r else WARN, "remote",
+        remote if ok_r else "no origin — GitHub-backed workflows have no target")
+
+    _, name = git(root, "config", "user.name")
+    _, email = git(root, "config", "user.email")
+    if name and email:
+        add("git", OK, "identity", f"{name} <{email}>")
+    else:
+        # A warn, not a gap: identity is attribution config, not wiring. It is
+        # routinely unset on a CI runner, and failing --strict there would be a
+        # false positive — the fastest way to teach a team to delete the check.
+        add("git", WARN, "identity",
+            "user.name/user.email unset — journal entries and ADR authorship land blank")
+
+    # ── enforcement layering (ADR-0004) ──────────────────────────────────────
+    settings = root / ".claude" / "settings.json"
+    registered = False
+    if settings.exists():
+        try:
+            blob = json.dumps(json.loads(read(settings)))
+            registered = "guard_plan_edit" in blob and "lint_plan" in blob
+        except (json.JSONDecodeError, ValueError):
+            registered = False
+    add("enforcement", OK if registered else WARN, "claude hooks",
+        "guard + lint registered in .claude/settings.json" if registered
+        else "not registered — run `plan_tool hooks install` (advisory layer only)")
+
+    # The check that matters: does the interpreter those hooks name actually run?
+    tool = Path(__file__).resolve()
+    stored = _stored_hook_runner(root)
+    runner = stored or _hook_runner()
+    # Run what the hook runs, not a proxy for it. `--help` passed happily while the
+    # commit-msg hook was dead, because the break was in the runner, not the tool.
+    try:
+        r = subprocess.run(runner + [str(tool), "trailers", "--print", "--root", str(root)],
+                           capture_output=True, text=True, timeout=30, cwd=str(root))
+        runs = r.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        runs = False
+    src = " (recorded by git-install)" if stored else " (not wired here; this is what it would use)"
+    add("enforcement", OK if runs else GAP, "hook interpreter",
+        f"`{' '.join(runner)}` runs the trailer path{src}" if runs
+        else f"`{' '.join(runner)}` cannot run the trailer path{src} — hooks fail open, silently")
+
+    ok_hp, hooks_path = git(root, "config", "core.hooksPath")
+    if ok_hp and hooks_path:
+        d = root / hooks_path
+        n = len([f for f in d.iterdir() if f.is_file()]) if d.is_dir() else 0
+        add("enforcement", OK if n else WARN, "git hooks",
+            f"core.hooksPath={hooks_path} ({n} hook(s))" if n
+            else f"core.hooksPath={hooks_path} but no hooks in it")
+    else:
+        add("enforcement", WARN, "git hooks",
+            "core.hooksPath unset — .git/hooks is not cloned, so nothing is installed here")
+
+    skill_root = Path(__file__).resolve().parent.parent
+    if (skill_root / "SKILL.md").exists():
+        drift = ([f"{f}:{v}" for f, v in doc_command_drift(skill_root)]
+                 + [f"plan_tool.py header {d}: {v}" for d, v in header_command_drift()])
+        add("enforcement", OK if not drift else GAP, "docs match the CLI",
+            "the skill prose and this file's own header both match the parser" if not drift
+            else "documented commands disagree with the parser: " + ", ".join(drift))
+
+    vend = root / ".claude" / "skills" / "VENDORED.md"
+    if vend.exists():
+        m = re.search(r"\| version \| ([^|]+) \|", read(vend))
+        ver = (m.group(1).strip() if m else "unknown")
+        ok_d, dirty = git(root, "status", "--porcelain", "--", ".claude/skills")
+        modified = [l for l in dirty.splitlines() if l.strip()] if ok_d else []
+        add("adapter", WARN if modified else OK, "vendored skills",
+            f"cozyplan {ver}, committed in-repo — a clone needs no install" if not modified
+            else f"cozyplan {ver}, but {len(modified)} file(s) under .claude/skills/ are "
+                 f"modified — re-vendor with `init --vendor` rather than hand-editing")
+
+    wf = root / ".github" / "workflows"
+    ci = [f.name for f in wf.glob("*.yml")] + [f.name for f in wf.glob("*.yaml")] if wf.is_dir() else []
+    has_state_ci = any("state check" in read(wf / f) or "state_check" in read(wf / f) for f in ci) if ci else False
+    add("enforcement", OK if has_state_ci else GAP, "ci workflow",
+        f"{', '.join(ci)}" if has_state_ci else "no workflow runs `state check` — no enforcing layer exists")
+    add("enforcement", WARN, "required check",
+        "not verifiable from a clone — confirm in GitHub Settings > Branches, or CI only reports")
+
+    # ── tooling ──────────────────────────────────────────────────────────────
+    if shutil.which("gh"):
+        authed = subprocess.run(["gh", "auth", "status"], capture_output=True,
+                                text=True).returncode == 0
+        add("tooling", OK if authed else WARN, "gh",
+            "installed and authenticated" if authed else "installed but not authenticated (`gh auth login`)")
+    else:
+        add("tooling", WARN, "gh",
+            "not installed — issue operations queue to .scratch/ instead (ADR-0001)")
+    add("tooling", OK if shutil.which("uv") else WARN, "uv",
+        "present" if shutil.which("uv") else "absent — plan_tool runs on plain python3, so this is fine")
+    add("tooling", OK, "python", sys.version.split()[0])
+
+    # ── state layer (ADR-0005) ───────────────────────────────────────────────
+    state_md, log = root / "STATE.md", root / STATE_LOG_DEFAULT
+    add("state", OK if state_md.exists() else GAP, "STATE.md",
+        "present" if state_md.exists() else "missing — run the Init State workflow")
+    n_ev = len([l for l in read(log).split("\n") if l.strip()]) if log.exists() else 0
+    add("state", OK if log.exists() else WARN, "event log",
+        f"{STATE_LOG_DEFAULT} ({n_ev} event(s))" if log.exists()
+        else f"no {STATE_LOG_DEFAULT} — STATE.md is still hand-authored")
+    ok_at, attr = git(root, "check-attr", "merge", "--", STATE_LOG_DEFAULT)
+    union = ok_at and attr.strip().endswith(": union")
+    add("state", OK if union else GAP, "union merge",
+        "state log is union-merged" if union
+        else f"`{STATE_LOG_DEFAULT} merge=union` missing from .gitattributes — concurrent appends will conflict")
+    adr = root / "docs" / "adr"
+    n_adr = len(list(adr.glob("*.md"))) if adr.is_dir() else 0
+    add("state", OK if n_adr else WARN, "ADRs", f"{n_adr} recorded" if n_adr else "none recorded")
+
+    # ── skill adapter ────────────────────────────────────────────────────────
+    tracker = root / "docs" / "agents" / "issue-tracker.md"
+    add("adapter", OK if tracker.exists() else GAP, "issue tracker",
+        "docs/agents/issue-tracker.md" if tracker.exists()
+        else "missing — to-spec/to-tickets/triage/wayfinder halt; run `plan_tool init` "
+             "(or /setup-matt-pocock-skills for the wider skill set)")
+    agent_doc = next((f for f in ("CLAUDE.md", "AGENTS.md") if (root / f).exists()), None)
+    add("adapter", OK if agent_doc else GAP, "agent doc",
+        f"{agent_doc} present" if agent_doc else "no CLAUDE.md or AGENTS.md — a clone has no entry point")
+
+    # ── trailer coverage (what backward grounding depends on, ADR-0006) ──────
+    ok_l, log_out = git(root, "log", f"-{commits}", "--format=%H%x1f%(trailers:key=Plan,valueonly)"
+                        "%x1f%(trailers:key=ADR,valueonly)%x1e")
+    if ok_l and log_out:
+        recs = [r for r in log_out.split("\x1e") if r.strip()]
+        with_tr = sum(1 for r in recs if any(p.strip() for p in r.split("\x1f")[1:]))
+        pct = round(100 * with_tr / len(recs)) if recs else 0
+        add("grounding", OK if pct >= 50 else WARN, "trailer coverage",
+            f"{with_tr}/{len(recs)} of the last {len(recs)} commits carry Plan:/ADR: ({pct}%)"
+            + ("" if pct >= 50 else " — backward grounding will return thin answers"))
+    return out
+
+
+def cmd_doctor(args) -> int:
+    root = Path(args.root)
+    rows = doctor_checks(root, args.commits)
+    print(f"cozyplan doctor — {root.resolve()}\n")
+    section = None
+    for sec, status, name, detail in rows:
+        if sec != section:
+            print(f"{sec}")
+            section = sec
+        print(f"  [{_MARK[status]}] {name:<18} {detail}")
+    gaps = [r for r in rows if r[1] == GAP]
+    warns = [r for r in rows if r[1] == WARN]
+    print(f"\n{len(rows) - len(gaps) - len(warns)} ok, {len(warns)} warn, {len(gaps)} gap")
+    if gaps:
+        print("gaps are wiring that is absent, not merely unconfigured:")
+        for _, _, name, detail in gaps:
+            print(f"  - {name}: {detail}")
+    return 1 if (gaps and args.strict) else 0
+
+
+# ── trailers + git hooks (ADR-0004: hooks advise by injecting, never rejecting) ─
+# A commit-msg hook that REJECTS teaches people to type --no-verify, and then you
+# have neither the trailer nor the habit. So this only ever adds what it can
+# demonstrate: ADRs from the staged files, and a plan whose id matches the branch.
+# Anything it cannot prove, it leaves alone. It fails open on every error — a
+# hook that blocks a commit because it could not read a file is worse than a
+# missing trailer.
+
+GIT_HOOK_NAMES = ("commit-msg", "pre-push")
+
+COMMIT_MSG_HOOK = """#!/bin/sh
+# cozyplan: add the trailers that can be demonstrated from this commit.
+# Advisory by design — never blocks, never rejects (ADR-0004).
+TOOL=$(git config cozyplan.plantool 2>/dev/null) || exit 0
+[ -n "$TOOL" ] || exit 0
+RUN=$(git config cozyplan.runner 2>/dev/null)
+[ -n "$RUN" ] || RUN=python3
+ARG=$(git config cozyplan.runnerarg 2>/dev/null)
+# Quoted: an interpreter path or a repo path may contain spaces. Unquoted, $RUN
+# word-splits, the command is not found, and the trailer vanishes with no error.
+"$RUN" ${ARG:+"$ARG"} "$TOOL" trailers --message-file "$1" >/dev/null 2>&1 || true
+exit 0
+"""
+
+PRE_PUSH_HOOK = """#!/bin/sh
+# cozyplan: report snapshot drift before a push. Never blocks (ADR-0004).
+TOOL=$(git config cozyplan.plantool 2>/dev/null) || exit 0
+[ -n "$TOOL" ] || exit 0
+RUN=$(git config cozyplan.runner 2>/dev/null)
+[ -n "$RUN" ] || RUN=python3
+ARG=$(git config cozyplan.runnerarg 2>/dev/null)
+# Quoted: an interpreter path may contain spaces. Unquoted, $RUN word-splits and the
+# drift report silently never runs.
+"$RUN" ${ARG:+"$ARG"} "$TOOL" state check 2>/dev/null | grep -E "behind HEAD|FAIL" || true
+exit 0
+"""
+
+
+def infer_trailers(root: Path) -> list[str]:
+    """Trailers this commit can prove. Never a guess: an ADR is inferred only from
+    a staged ADR file, and a plan only from a branch segment that names a real
+    plan in specs/."""
+    out: list[str] = []
+
+    ok, staged = git(root, "diff", "--cached", "--name-only")
+    if ok and staged:
+        nums = []
+        for path in staged.split("\n"):
+            name = Path(path).name
+            if "docs/adr/" in path.replace("\\", "/"):
+                m = ADR_FILE_RE.match(name)
+                if m and m.group("num") not in nums:
+                    nums.append(m.group("num"))
+        if nums:
+            out.append("ADR: " + ",".join(sorted(nums)))
+
+    ok_b, branch = git(root, "rev-parse", "--abbrev-ref", "HEAD")
+    if ok_b and branch and branch != "HEAD":
+        # feat/streaming-ingest, streaming-ingest, or bug/streaming-ingest-2 all
+        # get a chance; only an id with a real plan file behind it is used.
+        for seg in [branch] + branch.split("/"):
+            if (root / "specs" / f"{seg}.html").exists():
+                out.append(f"Plan: {seg}")
+                break
+    return out
+
+
+def cmd_trailers(args) -> int:
+    root = Path(args.root)
+    trailers = infer_trailers(root)
+    if args.print_only:
+        for t in trailers:
+            print(t)
+        return 0
+    if not args.message_file:
+        return fail("--message-file or --print is required")
+    msg = Path(args.message_file)
+    if not msg.exists() or not trailers:
+        return 0
+    argv = ["interpret-trailers", "--in-place", "--if-exists", "doNothing"]
+    for t in trailers:
+        argv += ["--trailer", t]
+    argv.append(str(msg))
+    # git owns the trailer grammar (last paragraph, no blank lines inside the
+    # block). Hand-rolling it is how the first pass at this silently dropped
+    # every trailer behind a Co-Authored-By line.
+    git(root, *argv)
+    return 0
+
+
+def cmd_hooks_git(args) -> int:
+    root = Path(args.root)
+    hooks_dir = root / args.dir
+    if args.hooks_cmd == "git-remove":
+        for name in GIT_HOOK_NAMES:
+            (hooks_dir / name).unlink(missing_ok=True)
+        git(root, "config", "--unset", "core.hooksPath")
+        git(root, "config", "--unset", "cozyplan.plantool")
+        git(root, "config", "--unset", "cozyplan.runner")
+        git(root, "config", "--unset", "cozyplan.runnerarg")
+        print(f"hooks: removed {args.dir}/ hooks and unset core.hooksPath")
+        return 0
+
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    for name, body in (("commit-msg", COMMIT_MSG_HOOK), ("pre-push", PRE_PUSH_HOOK)):
+        p = hooks_dir / name
+        with open(p, "w", encoding="utf-8", newline="\n") as f:
+            f.write(body)
+        p.chmod(0o755)
+    # .git/hooks is not cloned, so the hooks live in a TRACKED directory and each
+    # clone opts in with one command. doctor reports when that has not happened.
+    git(root, "config", "core.hooksPath", args.dir)
+    git(root, "config", "cozyplan.plantool", str(Path(__file__).resolve()))
+    runner_exe, runner_arg = _hook_runner_parts()
+    git(root, "config", "cozyplan.runner", runner_exe)
+    if runner_arg:
+        git(root, "config", "cozyplan.runnerarg", runner_arg)
+    else:
+        git(root, "config", "--unset", "cozyplan.runnerarg")
+    print(f"hooks: wrote {args.dir}/commit-msg and {args.dir}/pre-push, "
+          f"set core.hooksPath={args.dir}")
+    print("       commit these — .git/hooks is not cloned, so each clone runs "
+          "`plan_tool hooks git-install` once (doctor reports when it has not).")
     return 0
 
 
@@ -1705,20 +2878,136 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--root", default=".", help="repo root for doc-drift scan (default: .)")
     sp.set_defaults(func=cmd_index)
 
-    sp = sub.add_parser("roles", parents=[parent], help="build role manifest + CODEOWNERS")
-    sp.add_argument("roles_cmd", choices=["build"], help="subcommand (only 'build')")
-    sp.add_argument("--dir", default="roles", help="roles directory (default: roles)")
-    sp.add_argument("--codeowners", default=None, help="CODEOWNERS output path (default: .github/CODEOWNERS)")
-    sp.set_defaults(func=cmd_roles)
-
     sp = sub.add_parser("hooks", parents=[parent],
                         help="register/unregister the coherence hooks in .claude/settings.json (for bare-skill installs)")
-    sp.add_argument("hooks_cmd", choices=["install", "remove"], help="install or remove the two hook entries")
+    sp.add_argument("hooks_cmd", choices=["install", "remove", "git-install", "git-remove"],
+                    help="install/remove the Claude Code hooks, or git-install/git-remove "
+                         "the tracked .githooks (commit-msg trailer injection, pre-push drift)")
+    sp.add_argument("--dir", dest="dir", default=".githooks",
+                    help="git-install: tracked hooks directory (default: .githooks)")
+    sp.add_argument("--root", default=".", help="repo root (default: .)")
     sp.add_argument("--settings", default=None,
                     help="explicit settings.json path (default: ./.claude/settings.json)")
     sp.add_argument("--global", dest="global_", action="store_true",
                     help="target ~/.claude/settings.json instead of the project settings")
-    sp.set_defaults(func=cmd_hooks)
+    sp.set_defaults(func=lambda a: cmd_hooks_git(a) if a.hooks_cmd.startswith("git-") else cmd_hooks(a))
+
+    sp = sub.add_parser("trailers", parents=[parent],
+                        help="add the commit trailers this commit can demonstrate (advisory)")
+    sp.add_argument("--message-file", default=None, help="commit message file to amend in place")
+    sp.add_argument("--print", dest="print_only", action="store_true",
+                    help="print the inferred trailers instead of writing them")
+    sp.add_argument("--root", default=".", help="repo root (default: .)")
+    sp.set_defaults(func=cmd_trailers)
+
+    sp = sub.add_parser("doctor", parents=[parent],
+                        help="report what is actually wired in this clone (ADR-0004)")
+    sp.add_argument("--root", default=".", help="repo root (default: .)")
+    sp.add_argument("--commits", type=int, default=20,
+                    help="commits to sample for trailer coverage (default: 20)")
+    sp.add_argument("--strict", action="store_true",
+                    help="exit non-zero when any gap is found (for CI)")
+    sp.set_defaults(func=cmd_doctor)
+
+    sp = sub.add_parser("init", parents=[parent],
+                        help="wire this repo for cozyplan: everything doctor checks that "
+                             "a command can legitimately create (idempotent)")
+    sp.add_argument("--root", default=".", help="repo root (default: .)")
+    sp.add_argument("--specs", default="specs", help="specs directory (default: specs)")
+    sp.add_argument("--hooks-dir", default=".githooks",
+                    help="tracked git hooks directory (default: .githooks)")
+    sp.add_argument("--git-init", action="store_true",
+                    help="run `git init` when root is not a repository")
+    sp.add_argument("--force-hooks", action="store_true",
+                    help="take over core.hooksPath even when another hook manager owns it")
+    sp.add_argument("--vendor", action="store_true",
+                    help="copy the cozyplan and discuss skills into .claude/skills/ so a "
+                         "clone of this repo needs no install")
+    sp.add_argument("--repo", default=None, metavar="OWNER/NAME",
+                    help="repo slug for the issue-tracker adapter when there is no origin")
+    sp.add_argument("--no-claude-hooks", dest="claude_hooks", action="store_false",
+                    help="skip registering the Claude Code hooks in .claude/settings.json")
+    sp.set_defaults(func=cmd_init, claude_hooks=True)
+
+    # One subparser per verb. A single shared flag list meant `state render --proof x`
+    # parsed happily and did nothing, which is the kind of defect a 32-flag command hides.
+    sp = sub.add_parser("issue", parents=[parent],
+                        help="file a work item on the tracker, queueing it when gh is absent")
+    sp.add_argument("issue_cmd", choices=["file", "replay"],
+                    help="file one issue, or replay the queue built while gh was away")
+    sp.add_argument("--root", default=".", help="repo root (default: .)")
+    sp.add_argument("--title", default=None, help="file: issue title")
+    sp.add_argument("--body", default=None, help="file: issue body")
+    sp.add_argument("--label", default=None, help="file: comma-separated labels")
+    sp.add_argument("--plan", default=None, help="file: plan id to reference in the body")
+    sp.add_argument("--queue", action="store_true",
+                    help="file: queue even when gh is available")
+    sp.add_argument("--run", action="store_true",
+                    help="replay: actually file the queued issues (default: list them)")
+    sp.set_defaults(func=cmd_issue)
+
+    sp = sub.add_parser("state", help="append to / render / inspect / check the state layer")
+    state_common = argparse.ArgumentParser(add_help=False)
+    state_common.add_argument("--root", default=".", help="repo root (default: .)")
+    state_common.add_argument("--log", default=STATE_LOG_DEFAULT,
+                              help=f"append-only event log (default: {STATE_LOG_DEFAULT})")
+    ssub = sp.add_subparsers(dest="state_cmd", metavar="{add,render,show,check,migrate}")
+    ssub.required = True
+
+    q = ssub.add_parser("add", parents=[parent, state_common], help="append one event to the log")
+    q.add_argument("--kind", choices=list(STATE_KINDS), default="claim", help="event kind (default: claim)")
+    q.add_argument("--key", default=None,
+                   help="stable identity for last-write-wins (default: derived from --what)")
+    q.add_argument("--what", default=None, help="the capability, item, or gap")
+    q.add_argument("--proof", default=None, help="the command that demonstrated a claim")
+    q.add_argument("--sha", default=None, help="the commit the proof was true at")
+    q.add_argument("--paths", default=None, help="comma-separated paths this entry depends on")
+    q.add_argument("--status", default=None, help="status, for --kind indev")
+    q.add_argument("--owner", default=None, help="owner, for --kind indev")
+    q.add_argument("--plan", default=None, help="plan id ref")
+    q.add_argument("--phase", default=None, help="phase/task id ref")
+    q.add_argument("--adr", default=None, help="comma-separated ADR numbers")
+    q.add_argument("--issue", default=None, help="comma-separated issue numbers")
+    q.add_argument("--ts", default=None, help="explicit ISO timestamp (default: now)")
+    q.add_argument("--clear", action="store_true",
+                   help="retract this key from the projection (the log keeps the history)")
+    q.set_defaults(func=cmd_state)
+
+    q = ssub.add_parser("render", parents=[parent, state_common],
+                        help="rebuild STATE.md from the log")
+    q.add_argument("--file", default="STATE.md", help="rendered state file (default: STATE.md)")
+    q.add_argument("--adr-dir", default="docs/adr", help="ADR directory (default: docs/adr)")
+    q.add_argument("--journal", default="docs/journal.md", help="ledger (default: docs/journal.md)")
+    q.add_argument("--specs", default="specs", help="specs directory (default: specs)")
+    q.add_argument("--origin", default=None,
+                   help="also report position vs this ref, e.g. origin/main")
+    q.add_argument("--project", default=None,
+                   help="project name for the heading (default: the repo directory)")
+    q.add_argument("--force", action="store_true",
+                   help="overwrite a STATE.md carrying no generated marker (discards it)")
+    q.add_argument("--dry-run", action="store_true", help="print the result instead of writing it")
+    q.set_defaults(func=cmd_state)
+
+    q = ssub.add_parser("show", parents=[parent, state_common], help="print the projection")
+    q.set_defaults(func=cmd_state)
+
+    q = ssub.add_parser("check", parents=[parent, state_common],
+                        help="verify STATE.md against git")
+    q.add_argument("--file", default="STATE.md", help="rendered state file (default: STATE.md)")
+    q.add_argument("--adr-dir", default="docs/adr", help="ADR directory (default: docs/adr)")
+    q.add_argument("--journal", default="docs/journal.md", help="ledger (default: docs/journal.md)")
+    q.add_argument("--max-drift", type=int, default=None,
+                   help="fail when the snapshot is more than N commits behind HEAD")
+    q.add_argument("--max-claim-age", type=int, default=None,
+                   help="fail when a claim was last proved more than N commits ago")
+    q.set_defaults(func=cmd_state)
+
+    q = ssub.add_parser("migrate", parents=[parent, state_common],
+                        help="carry a hand-authored STATE.md into the event log")
+    q.add_argument("--file", default="STATE.md", help="the file to migrate (default: STATE.md)")
+    q.add_argument("--dry-run", action="store_true",
+                   help="print the events instead of appending them")
+    q.set_defaults(func=cmd_state)
 
     sp = sub.add_parser("brief", parents=[parent],
                         help="compact plain-text extract of a plan (or --all for a one-liner index)")

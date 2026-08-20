@@ -1,0 +1,97 @@
+# The enforcement layer from ADR-0004: hooks advise, CI enforces.
+# Local hooks fire only for the agent, on one machine, and .git/hooks is not
+# cloned — so this workflow is the only check a contributor cannot route around.
+# Making it *required* still needs a human with repo admin (Settings → Branches);
+# until that is done this reports without gating, and says so rather than
+# implying protection that is not there.
+#
+# Portable by construction: it resolves plan_tool rather than hardcoding a path,
+# and every step that depends on a directory checks for it first. `plan_tool init`
+# installs this file verbatim into repos whose layout is not cozyplan's own, and
+# an enforcement layer that goes red on day one teaches people to ignore it.
+name: state check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # state check walks history: `merge-base --is-ancestor` and
+          # `rev-list --count` both need the commit STATE.md names to be present.
+          # A shallow clone makes every snapshot look like an unknown commit.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Locate plan_tool
+        id: pt
+        # The same resolution order SKILL.md uses: vendored into the repo first,
+        # then the source layout, then the legacy project-local one.
+        run: |
+          for c in .claude/skills/cozyplan/scripts/plan_tool.py \
+                   skills/cozyplan/scripts/plan_tool.py \
+                   scripts/plan_tool.py; do
+            if [ -f "$c" ]; then
+              echo "path=$c" >> "$GITHUB_OUTPUT"
+              echo "resolved plan_tool -> $c"
+              exit 0
+            fi
+          done
+          echo "::error::plan_tool.py not found. Vendor the skill into .claude/skills/ (plan_tool init --vendor) or commit it under skills/."
+          exit 1
+
+      - name: Test suite
+        # Only when the repo has one. A consuming repo's tests are its own concern
+        # and may live anywhere; cozyplan does not get to assume `tests/`.
+        if: hashFiles('tests/**/*.py') != ''
+        run: |
+          python -m pip install --disable-pip-version-check --quiet pytest
+          python -m pytest tests -q
+
+      - name: Plans validate
+        if: hashFiles('specs/*.html') != ''
+        run: |
+          shopt -s nullglob
+          for plan in specs/*.html; do
+            case "$plan" in *_index*) continue;; esac
+            python "${{ steps.pt.outputs.path }}" validate "$plan"
+          done
+
+      - name: Generated files are current
+        # specs/_index.* is generated and committed. Regenerating must be a no-op;
+        # a diff here means someone hand-edited an aggregate or forgot to rerun the
+        # builder. This is how the index sat stale on a pre-rename title.
+        if: hashFiles('specs/*.html') != ''
+        run: |
+          python "${{ steps.pt.outputs.path }}" index --specs specs
+          if ! git diff --quiet -- specs/_index.json specs/_index.html; then
+            echo "::error::specs/_index.* is out of date — run: plan_tool index --specs specs"
+            git --no-pager diff -- specs/_index.json specs/_index.html
+            exit 1
+          fi
+
+      - name: Wiring
+        # ADR-0004: the failure mode is silent misconfiguration, so the wiring is
+        # asserted rather than assumed. --strict fails on gaps (absent wiring);
+        # warns — no uv, unregistered local hooks — are expected on a runner.
+        run: python "${{ steps.pt.outputs.path }}" doctor --strict
+
+      - name: State check
+        # No --max-drift: on a pull request STATE.md is always behind HEAD by at
+        # least that PR's commits, so failing on drift would make this unusable.
+        # Drift is reported; only structural problems fail (ADR-0004 gap tolerance).
+        run: python "${{ steps.pt.outputs.path }}" state check --max-claim-age 50
+        # Generous on purpose. It is not here to nag on every PR; it is here so a
+        # claim that has gone fifty commits without anyone re-running its proof
+        # stops being a note nobody reads (ADR-0004).

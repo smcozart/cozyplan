@@ -14,4 +14,17 @@
 12. Index - Run `PLAN_TOOL index` to refresh `specs/_index.json` / `specs/_index.html` and surface any dangling references or doc drift
 13. Register - If `STATE_FILE` exists, run the `workflows/sync-state.md` subworkflow to register the plan under In Development and append the ledger entry. If it doesn't and the user wants state tracking, mention that Init State is available and move on.
 14. Open in Browser - Open the saved plan in the default browser using the platform-appropriate command: Windows `start "" PLAN_FILE`, macOS `open PLAN_FILE`, Linux `xdg-open PLAN_FILE`
-15. Report - Provide a summary of the plan's key components
+15. Report - Summarize the plan's key components
+
+**Completion criterion:** `PLAN_TOOL validate PLAN_FILE` exits 0; `PLAN_TOOL brief PLAN_FILE` shows every phase and task anchored with a `[]` marker; `specs/_index.json` lists this plan; and Open Questions holds at least one entry or one line saying why it holds none.
+
+## Authoring contract
+
+- The plan is a **single self-contained `.html` document**, scaffolded by `PLAN_TOOL new`. Never hand-write the scaffold. All CSS lives in the one `<style>` block, so the page opens anywhere with no network.
+- `{{PLACEHOLDER}}` tokens are free-form content slots — replace every one with real content. `new` fills the structural slots (title, `id`, timestamps, metadata, the example phase/task numbers); you fill purpose, problem, solution, file paths, phase and task names, actions, testing approach, notes, and figure subjects.
+- `<!-- repeat -->` blocks are duplicated as many times as the plan needs — one per task, checklist item, global check, relevant file, or open question — then the comment markers are deleted. Phases are appended with `PLAN_TOOL addphase`, never duplicated by hand.
+- `data-*` anchors are the contract `PLAN_TOOL` targets, and `templates/plan.html` is their single source of truth. When you duplicate a task, increment its ids together: `data-task="2.1"` with `data-status-for="2.1"`.
+- Status markers all start `[]` and are flipped only via `PLAN_TOOL status`.
+- Each task line names a file path and a concrete action: a reader who has not seen this conversation can execute it.
+- Each phase's Testing Strategy names the edge case each command proves.
+- Set `provides`/`consumes` on the plan for any contract its work will own or depend on (see [`../reference/plan-tool.md`](../reference/plan-tool.md)) — that is what makes the impact graph answer "what breaks if this changes".

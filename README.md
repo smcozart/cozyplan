@@ -1,377 +1,195 @@
 # CozyPlan — HTML-First Planning for Agentic Engineering
 
 > **A [Mythos-class](https://www.anthropic.com/news/claude-fable-5-mythos-5) planning plugin: two skills that interrogate, write, build, and maintain every plan your agents run — and keep the "why" alive after everyone moves on.**
-> Built for the agent trifecta: you, your team, and your AI agents.
+> Built for you, your team, and your AI agents.
 
 <p align="center">
   <img src="images/meta-skill-v5-multiplier-grid.png" alt="One meta-skill multiplies into countless plans" width="850">
 </p>
 
-Most engineers hand planning to the model and hope. `/plan` goes into a black box, something comes out, and you review whatever you get. CozyPlan inverts that: you template your engineering once (the exact sections, the exact loops, the exact visual identity), and every plan the agent writes mirrors it, forever.
+Most engineers hand planning to the model and hope. `/plan` goes into a black box, something comes out, and you review whatever you get. CozyPlan inverts that: you template your engineering once — the exact sections, the exact loops, the exact visual identity — and every plan the agent writes mirrors it, forever.
 
-The big unlock is the new Mythos-class models (Fable 5 and what follows). They raise the intelligence ceiling far enough to absorb a token-rich, HTML-first plan and hit the *exact* outcomes you specify, which is the next level of planning ability we've been waiting for. CozyPlan was built to pull that capability out of them: it deliberately spends tokens, images, and structure to extract the best plan these models can produce. Every property in the skill exists to capture that ceiling, and the payoff compounds with each more-capable model. **Great planning is great engineering, and this is the skill that encodes yours.**
+Then it does the harder thing. A plan is only worth as much as what survives after it ships, so CozyPlan carries a **state layer derived from git**: what works right now and how that was proven, why the system is shaped this way, what a change would break, and where the work left off. Not a document someone has to remember to update — a projection of history that is regenerated, checked in CI, and honest about its own gaps.
+
+**Great planning is great engineering, and this is the skill that encodes yours.**
 
 ---
 
 ## Install
 
-CozyPlan ships as a **Claude Code plugin**. Installing it is two commands — nothing to compile, no API key to wire, and no files to hand-copy into each project:
+CozyPlan ships as a **Claude Code plugin**. Two commands — nothing to compile, no API key, no per-project setup:
 
 ```
 /plugin marketplace add https://github.com/smcozart/cozyplan.git
 /plugin install cozyplan@cozyplan
 ```
 
-The first command registers this repo as a plugin marketplace; the second installs the `cozyplan` plugin from it. The plugin carries everything as one unit — **two skills** (`cozyplan`, the plan layer, and `discuss`, the understanding loop — each with its own workflows and templates), the deterministic `plan_tool.py` CLI, and the two coherence hooks. Once it's installed, both skills work in every project your harness opens; there's no per-project setup.
+The plugin carries everything as one unit: **two skills** (`cozyplan`, the plan and state layer; `discuss`, the understanding loop), the deterministic `plan_tool.py` CLI, and the coherence hooks.
 
-**Prerequisite: [`uv`](https://docs.astral.sh/uv/) on your `PATH`.** The CLI and both hooks run through `uv run`. If `uv` isn't found the hooks **fail open** — they exit quietly instead of blocking, so the guard that steers raw edits back through `plan_tool` and the lint that validates every plan write both silently stop enforcing. Plans still get written, but nothing is catching drift or malformed HTML for you. Install `uv` first, or accept that plan coherence is on the honor system — there's no error to warn you it lapsed.
+`plan_tool.py` is **stdlib-only Python 3.9+**. [`uv`](https://docs.astral.sh/uv/) is used when present and is not required — a plain `python3` runs everything, hooks included.
 
-Diagrams are the plugin's one external dependency: the globally-installed [`excalidraw-diagram`](#the-workflows) skill renders them locally, key-free. Without it a plan still writes; the `{{...IMAGE}}` slots stay as placeholders until you run the Diagram Generation subworkflow with the skill present.
+Diagrams are the one external dependency: the globally-installed `excalidraw-diagram` skill renders them locally, key-free. Without it a plan still writes; the `{{...IMAGE}}` slots stay as placeholders until you run the Diagram Generation subworkflow.
 
 ### Or: install as bare skills (npx)
 
-The repo is also a valid source for the [`skills` CLI](https://github.com/vercel-labs/skills) — both skill directories are fully self-contained (the `plan_tool.py` CLI and both hook scripts ship inside `skills/cozyplan/scripts/`, so they travel with the skill):
+Both skill directories are fully self-contained — the CLI and hook scripts ship inside `skills/cozyplan/scripts/`, so they travel with the skill:
 
 ```
 npx skills add smcozart/cozyplan
 ```
 
-Select `cozyplan` (and `discuss` — recommended; it's the interview/context half) plus your agent, and the skills install into `.claude/skills/` (`-g` for global). Two differences from the plugin install: the coherence hooks are **not** auto-registered, and updates come from `npx skills update` instead of the plugin marketplace.
-
-**Enable the hooks after an npx install with one command** (from your project root):
+Select `cozyplan` and `discuss` (recommended — it's the interview half). Two differences from the plugin install: the Claude Code hooks are **not** auto-registered, and updates come from `npx skills update`. Register them with:
 
 ```
-uv run .claude/skills/cozyplan/scripts/plan_tool.py hooks install
+python3 .claude/skills/cozyplan/scripts/plan_tool.py hooks install
 ```
 
-Add `--global` to register them user-wide (`~/.claude/settings.json`) instead of per-project; `hooks remove` undoes it. The command is idempotent (safe to re-run; it re-points paths rather than duplicating entries), preserves your other settings, and takes effect on the next Claude Code restart. Skipping it is fine too — every `plan_tool` operation still self-validates; the hooks just add edit-time steering and automatic lint feedback.
+`--global` registers user-wide; `hooks remove` undoes it. Idempotent, preserves your other settings, takes effect on the next restart. Skipping it is fine — every `plan_tool` operation self-validates; the hooks only add edit-time steering.
 
-### Migrating from the copy-install
+### Wire a repo
 
-Earlier versions of CozyPlan were installed by hand-copying the skill and merging hooks into each project. If you did that, undo it when you move to the plugin — otherwise the skill and the hooks each register **twice**:
+```
+python3 <plan_tool> init              # wire everything doctor checks for
+python3 <plan_tool> doctor            # what is actually wired here
+```
 
-- **Delete any hand-copied skill.** Remove `.claude/skills/cozyplan` from any project you copied it into (and `~/.claude/skills/cozyplan` if you installed it globally). The plugin now supplies the skill; a leftover copy shadows it.
-- **Remove the two CozyPlan hook entries** — the `guard_plan_edit.py` PreToolUse block and the `lint_plan.py` PostToolUse block — from any project-local `.claude/settings.json`. The plugin registers these hooks itself, so a project-local copy makes each hook fire twice (plugin + project) on every write.
+`init` is idempotent and additive — it creates only what is missing, never overwrites content, refuses to take over a `core.hooksPath` another hook manager owns, and prints the steps no command can take (branch protection, `gh` auth, the origin remote). On an existing repo it adopts rather than clobbers.
 
-Open decisions are surfaced by default: every plan carries an **Open Questions**
-section recording what the agent assumed rather than confirmed. Ask for it to be
-left out in the prompt if you don't want it.
+**`--vendor` makes a repo self-contained.** It copies the two skills into `.claude/skills/`, which is the first place the resolver looks, so a teammate cloning that repo installs nothing at all — the skills and `plan_tool.py` travel with the code. `doctor` then reports the vendored version and flags a hand-edited copy. `--repo owner/name` supplies the issue-tracker slug when the repo has no `origin` yet.
+
+`doctor` is the one to run in any clone you did not wire yourself. `.git/hooks` is never cloned, so `hooks git-install` is a per-clone step — and `doctor` tells you when a clone has skipped it, rather than letting it fail silently.
+
+**Upgrading from 2.x?** See [`docs/migrating-to-3.0.md`](docs/migrating-to-3.0.md) — `STATE.md` is generated now, and `state render` refuses to overwrite an authored one.
 
 ---
 
-## Why this exists
+## The four questions
 
-<p align="center">
-  <img src="images/02_outsourced_planning.png" alt="Handing the plan to a black box means handing off the result" width="750">
-</p>
+Everything here exists to make these answerable from a clone, by a human or an agent, months later:
 
-There are two hard constraints in agentic engineering: **planning** and **reviewing**. Most engineers spend their effort on the second one: babysitting output, catching drift, re-prompting. That's backwards. A vague `/plan` forces the model to guess what you want; you pay for the guess on every review pass that follows. The upfront plan is the cheapest place to buy correctness.
-
-<p align="center">
-  <img src="images/03_templated_engineering.png" alt="One template stamps the same structured shape every time" width="750">
-</p>
-
-CozyPlan is a **meta-skill**, a skill that produces other artifacts. You write the plan *format* once, and the agent reproduces it across hundreds of executions: same sections, same checklists, same validation loops, same look. That consistency is you teaching the agent *how you engineer*. **More upfront investment in the plan means less reviewing later, and the gap widens with every more-capable model.**
+| Question | Answered by |
+| --- | --- |
+| **How does this system work?** | `SYSTEM.md` components + `discuss`'s Orient workflow, synthesized live from the code |
+| **Why was it built this way?** | `docs/adr/` — and the `ADR:` commit trailer, so `git log -- <path>` names the decisions governing any file |
+| **What breaks if I change this?** | `SYSTEM.md`'s cross-boundary edge table + the `provides`/`consumes` graph across plans |
+| **Where did this leave off?** | `STATE.md`, `plan_tool next`, and `git log` joined on `Plan:` / `Session:` trailers |
 
 ---
 
 ## How it works
 
-CozyPlan takes a prompt and emits a single self-contained `.html` plan into `specs/`. HTML-first is a deliberate trade: it costs more tokens than markdown, and it buys a plan that opens in a browser, embeds synced diagrams, and reads cleanly for all three audiences. Of the trade-off trifecta (performance, speed, cost) this skill spends speed and cost to maximize performance.
+**Plans are HTML-first.** One self-contained `.html` page per plan in `specs/` — browsable by a human, with embedded Excalidraw diagrams on a synced visual identity. `plan_tool new` scaffolds it with every `data-*` anchor stamped; you author content, never structure.
 
-The skill's API is one line:
+**Agents read plans indexed, not wholesale.** `plan_tool brief` renders whole-plan state in a few hundred tokens; `phase` pulls one phase; `next` returns the re-entry point. A build session costs O(current phase), not O(whole plan). Reading a plan end to end costs 4x to 7x what `brief` costs on the plans in this repo, and `next` is eight characters.
 
-```
-/cozyplan "<user prompt>" [questionable]
-```
+**Structured writes go through the CLI.** Status markers, metadata, and amendments are CLI-owned so they stay well-formed; prose and diagrams are edited normally. Every mutation appends to a union-merged event log and takes a lock, so concurrent writers never lose data.
 
-| Input | Meaning |
-|---|---|
-| `USER_PROMPT` | What to plan, build, update, or illustrate — this also selects the workflow |
-| `QUESTIONABLE` | Surfaces open decisions, assumptions, and risks in a toggleable **Open Questions** section; **defaults to `true`** — say so in the prompt to leave it out |
+**State is derived, not remembered.** `STATE.md` is *generated* from an append-only log by `plan_tool state render`. Entries are pointer trails (`plan:` `adr:` `issue:` `session:` `path:`) rather than content, so an entry carries the ids needed to decide whether to follow it, never the detail itself.
 
-On a create run the agent reads the prompt, explores the codebase (plus `AI_DOCS/` and `APP_DOCS/` if present), authors the HTML plan from the template, generates one Excalidraw diagram per section (authored one at a time, rendered locally), validates and indexes the plan via `plan_tool.py`, and opens the result in your default browser.
-
----
-
-## The plan template
-
-<p align="center">
-  <img src="images/04_plan_anatomy.png" alt="The plan template — metadata, purpose, phases with checklists, validation loop, notes" width="780">
-</p>
-
-The heart of the skill is the **Plan Template** in [`SKILL.md`](skills/cozyplan/SKILL.md): the structure the agent mirrors every time. `{{PLACEHOLDER}}` tokens get replaced with real content; `<!-- repeat -->` blocks duplicate per phase, task, or file. Every plan carries:
-
-| Section | What it gives the trifecta |
-|---|---|
-| **Updatable metadata** | write-once `id` and `created`; single-value `owner` (role) and `status`; append-only lists of `modified`, `commits`, `agent`, `session`, and back/forward references — the plan is a living artifact |
-| **Purpose / Problem / Solution** | The why, the pain, the approach — each with a focused diagram |
-| **Relevant Files** | Existing files (tagged) vs new files, so the builder knows the blast radius |
-| **Implementation Phases** | Phased work, each phase carrying per-task checklists and a Testing Strategy |
-| **Validation loop** | A closed loop — *do not exit until every box is `[x]` or `[f]` and every command passes* |
-| **Open Questions** | On by default — the decisions the agent assumed rather than confirmed, each with the rationale it proceeded on |
-| **Notes** | Open canvas where the planning agent runs free — matrices, tradeoffs, rejected approaches |
-| **Amendments** | Append-only history of changes made *after* the plan was first built |
-
-Status markers (`[]` idle · `[wip]` in progress · `[x]` complete · `[f]` failed) live right in the checklist, so the build agent tracks its own progress inside the plan itself. `[f]` is terminal — it means a box genuinely can't be made to pass, and it carries a one-line reason. The metadata, status markers, and amendments are **CLI-managed regions** (marked `data-managed="cli"`): they are written through `plan_tool.py`, never hand-edited. See [Keeping plans consistent](#keeping-plans-consistent).
+**Enforcement is layered honestly.** Local hooks *advise* — the `commit-msg` hook **injects** the trailers it can prove and never rejects, because rejection just teaches `--no-verify`. CI *enforces*. The derivation *tolerates gaps*: an untrailered commit is reported as unattributed work, never a corrupted answer.
 
 ---
 
 ## The workflows
 
-<p align="center">
-  <img src="images/05_five_workflows.png" alt="CozyPlan routes one prompt to one of five dedicated workflows plus a diagram subworkflow" width="780">
-</p>
+| Workflow | Does |
+| --- | --- |
+| **Create Plan** | Interviews first (via `discuss`), then authors the plan, diagrams, and index entry |
+| **Update Plan** | Surgical revision + amendment + reciprocal references |
+| **Build Plan** | Resumes at `next`, works phase by phase, flips markers, records the implementing commit |
+| **Init State** | Scaffolds the state layer in a repo |
+| **Track Record** | Records a decision as an ADR, or files a work item on the issue tracker |
+| **Sync State** | Reconciles the snapshot against git and the tracker |
+| **Diagram Generation** | Renders and embeds the Excalidraw diagrams |
 
-CozyPlan is one skill, but the prompt routes to one of **eight dedicated workflows**, backed by subworkflows for diagrams and state sync. This keeps the plan a living artifact across the whole lifecycle of the codebase, not a write-once document.
+## The `discuss` skill
 
-| Workflow | Trigger | File |
-|---|---|---|
-| **Create Plan** | Plan/spec/design new work, no existing plan referenced — **step 1 runs the `discuss` skill's interview by default** (skip by saying so) | [`create-plan.md`](skills/cozyplan/workflows/create-plan.md) |
-| **Update Plan** | Change, extend, or revise an existing plan (surgical edit + amendment); offers a discuss pass for structural revisions | [`update-plan.md`](skills/cozyplan/workflows/update-plan.md) |
-| **Update References** | Refresh metadata or wire bidirectional back/forward references | [`update-references.md`](skills/cozyplan/workflows/update-references.md) |
-| **Build Plan** | Implement the work in an existing plan, updating status markers as it goes | [`build-plan.md`](skills/cozyplan/workflows/build-plan.md) |
-| **Generate Roles** | Scope a whole project/team into roles and set up who-owns-what (not a single plan) | [`generate-roles.md`](skills/cozyplan/workflows/generate-roles.md) |
-| **Init State** | Set up the project state layer (`STATE.md` + journal + records) in a repo | [`init-state.md`](skills/cozyplan/workflows/init-state.md) |
-| **Track Record** | Record a decision (ADR), register a feature, or open/update/close an issue | [`track-record.md`](skills/cozyplan/workflows/track-record.md) |
-| **Sync State** | Sync, reconcile, or report the project's current working state | [`sync-state.md`](skills/cozyplan/workflows/sync-state.md) |
+The understanding loop. It **interviews in rounds**: the *frontier* is every decision whose prerequisites are settled and that can be stated sharply now, and the whole frontier is asked in one numbered round with a recommended answer each. Twenty decisions cost about four rounds instead of twenty round-trips. It ends on a checkable condition — the frontier is empty — and waits for your confirmation.
 
-| Subworkflow | Called by | File |
-|---|---|---|
-| **Diagram Generation** | Other workflows (e.g. Create Plan) — authors and renders the embedded Excalidraw diagrams locally via the `excalidraw-diagram` skill (no API key) | [`diagram-generation.md`](skills/cozyplan/workflows/diagram-generation.md) |
-| **Sync State** | The closing step of Create/Update/Build Plan when `STATE.md` exists — registers plans, promotes verified results, appends the journal | [`sync-state.md`](skills/cozyplan/workflows/sync-state.md) |
+What settles gets recorded as it lands: ADRs, a `CONTEXT.md` glossary, `STACK.md` deviations, and `SYSTEM.md` nodes and edges. Then it hands **locked inputs** to cozyplan's Create Plan, which does not relitigate them.
 
-The **Build Plan** workflow is the payoff — and it reads the plan as an *index, not a store*. A fresh agent orients with `plan_tool brief` (the whole plan's state in a few hundred tokens), pulls one phase at a time with `plan_tool phase`, and follows a back reference or an embedded image only when the work in front of it needs one. A build session costs O(current phase), not O(whole plan + every back ref + every image).
+Its read side, **Orient**, narrates how the system runs today from the code and never stores the narration — a current-state description is stale the moment the next commit lands. It does repair the map when it finds a missing or dead edge.
 
-It also **resumes**. `plan_tool next` returns the first non-terminal id, so re-entry is mechanical rather than a judgment call: `[x]` phases are skipped outright, a `[wip]` marker is treated as a session interrupted mid-task (re-verified against the codebase, never assumed done *or* undone), and any `[f]` halts the build and surfaces its recorded reason to you. From there it executes phases top to bottom, looping on each phase's tests until they pass, marking `[x]` or `[f]` (via `plan_tool.py`) as it goes.
+## The state layer
 
----
+```
+docs/state.ndjson   append-only, union-merged event log     ← the source
+STATE.md            generated, ordered by commit position   ← the view
+docs/adr/           decisions, versioned, immutable         ← the why
+git trailers        Plan: Phase: Refs: ADR: Verified:       ← the join
+```
 
-## The discuss skill — interrogation + living context
+```bash
+plan_tool init                  # wire a repo (idempotent, additive)
+plan_tool state add --kind claim --what "ingest works" \
+    --proof "pytest tests/ingest" --sha a1b2c3d --paths src/ingest --adr 0007
+plan_tool state render          # rebuild STATE.md
+plan_tool state migrate         # carry a hand-authored STATE.md into the log
+plan_tool state check           # verify it against git
+plan_tool doctor                # verify the wiring itself
+plan_tool issue file --title "…"  # file it, or queue it when gh is away
+```
 
-The plugin's second skill, [`discuss`](skills/discuss/SKILL.md), runs the **understanding loop** around the plans. It exists because a plan is only as good as the thinking before it, and because the "why" behind decisions usually evaporates into chat history the moment a project changes hands.
+`state check` is static — it never executes a proof command it read from a file. It verifies placeholders, sync-block shape, whether the recorded sha exists and is an ancestor of HEAD, drift, claim shape, and ADR-register drift in both directions. It also intersects each claim's `path:` set with what changed since that claim's anchor commit, so a claim whose own code moved gets reported while an unrelated spike stays silent.
 
-**Write side — the interview.** Before a new plan is authored (by default; say "skip the grill" to opt out), discuss interviews the requester relentlessly: one question at a time with a recommended answer, prerequisite decisions first, depth scaled to stakes — a short pass for a small feature, the full decision-tree walk for a new system. It answers from the codebase instead of asking where it can, and challenges technology choices against the project's recorded stack. What crystallizes gets recorded **inline, the moment it lands**:
+**Ordering is commit order**, not wall clock: union merge concatenates without ordering, and same-second commits tie on timestamps. Rank comes from `git log --topo-order --reverse`.
 
-| Record | File | What lands there |
-|---|---|---|
-| Decisions | `docs/adr/NNNN-title.md` | Only when hard-to-reverse **and** surprising-without-context **and** a real trade-off |
-| Vocabulary | `CONTEXT.md` | Glossary only — canonical terms, zero implementation detail |
-| Tech defaults | `STACK.md` | Each entry is *default + when-to-use lane + escape hatch*; deviations link their ADR |
-| Components | `SYSTEM.md` | Nodes only — what exists, who owns it, where its why lives |
+## Keeping it honest
 
-`STACK.md` is seeded on first run: copy an org seed (e.g. [`stack.cozy.md`](skills/discuss/templates/stack.cozy.md)), instantiate the [generic scaffold](skills/discuss/templates/stack.md), or let the skill interview you about your environment.
+- `plan_tool validate` on every plan, run by every operation
+- `plan_tool index` — dangling references, doc drift, and contracts consumed but provided by nothing
+- `plan_tool state check` — the snapshot against git reality
+- `plan_tool doctor` — the wiring, by *running* the hook interpreter rather than assuming it works
+- `.github/workflows/state-check.yml` — all of the above on every PR
 
-**Read side — Orient.** For the engineer who inherits the system in eighteen months (or the architect slotting new work): Orient reads the component map, glossary, stack, and ADRs, then reads the **actual code** of the components in scope and walks you through how the system runs *today*. The walkthrough is never written to a file — a stored description of current behavior drifts on every commit; the map stores the slow-changing nodes, the code is always the source of the edges.
-
-The result: plans record *what and when*, ADRs record *why*, the glossary records *what words mean*, the stack records *what world you build in*, and the map + Orient answer *what runs and how* — a complete picture that survives team turnover.
-
----
-
-## The state layer — snapshot + ledger
-
-One question the artifacts above still don't answer at a glance: **what is the exact working state of this system right now?** The state layer answers it with two complementary files plus records:
-
-- **`STATE.md`** (repo root) — the single-source-of-truth **snapshot**. Overwritten on every sync, it carries only *verified* claims: every line in Current Working State names the command or test that proved it and when (**verified-state discipline** — anything unproven goes to Known Gaps or an issue record, never the snapshot). It's the front door for anyone who clones the repo.
-- **`docs/journal.md`** — the append-only **ledger**: who changed what (from `git config`, plus agent name + session id when an agent did the work), why, and the resulting state. History is never lost even as the snapshot stays clean (**ledger discipline** — entries are never edited or removed).
-- **Records** — features (`docs/features/`) and issues (`docs/issues/`) with status frontmatter and append-only status histories; decisions land in the same `docs/adr/` the discuss skill writes.
-
-`Init State` scaffolds it (idempotently — it adopts what exists), `Sync State` keeps it honest (and runs automatically at the end of Create/Update/Build Plan), and `Track Record` files the decisions, features, and issues. It's observability, not enforcement — git still owns revert points, blame, and acceptance; the state layer records what git history alone can't surface: *why*, and *what verifiably works right now*.
-
----
-
-## Keeping plans consistent
-
-A plan is a living artifact many agents (and, soon, many roles) touch over time. To keep those touches deterministic and merge-friendly, every *structured* write goes through one CLI instead of free-form edits.
-
-**`skills/cozyplan/scripts/plan_tool.py`** — a stdlib-only CLI (run with `uv run`) that owns all managed writes. It targets machine-readable `data-*` anchors baked into the template, so it always writes well-formed HTML:
-
-| Command | What it does |
-|---|---|
-| `new` | Scaffold a fresh plan from `templates/plan.html` — stamps every `data-*` anchor + metadata (`status=draft`); refuses to overwrite |
-| `addphase` | Append a correctly-numbered phase block (`--tasks N [--title …]`) so the agent never hand-authors structural HTML |
-| `status` | Flip a task/phase marker (`idle`/`wip`/`x`/`f`; `f` requires `--reason`) |
-| `meta` | Set or append a metadata field (`id`/`owner`/`status`, or the append-only lists — `modified`, `commits`, `agent`, `session`); refuses `status=built` while any marker is un-terminal (`--force` overrides) |
-| `ref` | Add a reference between two plans — `--type back\|forward` (dedupes, updates both sides) |
-| `amend` | Append an amendment entry |
-| `brief` | The cheap whole-plan index — metadata, every phase/task with its marker, open `[wip]`/`[f]` items + reasons, recent events (or `--all` for a one-liner index of every plan) |
-| `phase` | One phase in full — its tasks, their specific actions, and its Testing Strategy (`--id phase-<n>`) |
-| `next` | The first non-terminal id, or `done` — the build's re-entry point |
-| `validate` | Lint a plan (leftover `{{}}` tokens, markers, metadata, images, refs) |
-| `index` | Scan `specs/` → `_index.json` + `_index.html`, flag dangling refs and doc drift |
-| `init-ids` | Backfill `data-*` anchors on a legacy/un-anchored plan (also stamps the schema) |
-| `roles build` | Generate `roles/_roles.json` (ownership map) + `.github/CODEOWNERS` from `roles/*.md` |
-
-Every mutating command also appends a one-line JSON event to **`specs/<plan>.log.ndjson`** — an append-only, `merge=union` sidecar (see `.gitattributes`) so concurrent writes from different agents/roles combine cleanly instead of colliding — and holds an exclusive `<plan>.lock` for its read-modify-write so two agents touching the same plan never lose an update. (The `--role`/`--agent`/`--session` labels on any command are just free-text tags in that log.)
-
-**Lifecycle.** Each plan carries a single-value `status`: `draft` → `active` → `built`, plus `superseded` (replaced — carries a forward ref to its successor) and `archived` (kept for history). Two gates keep the status honest: a plan leaves `draft` only once every `{{}}` placeholder is filled, and reaches `built` only once every status marker is terminal (`[x]` or `[f]`) — so "built" can't mean "the agent stopped halfway." `--force` overrides either gate when *you* decide to accept the gap. The generated `specs/_index.html` catalog lets `specs/` stay navigable as plans accumulate.
-
-**Schema stamp.** Every plan carries a write-once `schema` version (currently `1`) recording its structural contract. `plan_tool.py` refuses to write a plan stamped newer than it understands (so an older tool never corrupts a newer artifact) and `init-ids` stamps the schema on older/legacy plans to migrate them forward.
-
-**Hooks (bundled with the plugin).** Installing the plugin registers two hooks (`hooks/hooks.json`):
-
-- a **PreToolUse** coherence guard that steers raw `Edit`/`Write` of CLI-managed regions to `plan_tool.py` (and blocks overwriting an existing plan),
-- a **PostToolUse** lint that runs `plan_tool validate` after any write to `specs/*.html` and feeds failures back to the agent.
-
-Both **fail open** — an unexpected error (or a missing `uv`) never hard-blocks the agent; enforcement just quietly stops. The guard is a **coherence aid, not a security boundary**: it nudges in-tool edits through the CLI, but a `Bash` heredoc or any out-of-tool write bypasses it by design. Real enforcement (who may change what, and reverting a bad change) lives in git — branches, PR review, CODEOWNERS, and CI.
-
----
-
-## Roles (opt-in)
-
-Role mode is **optional and off by default** — CozyPlan is a complete planning tool without it, and users running their own custom agentic approach can simply never turn it on. It shines on team projects with source control, where roles tie directly to source-control ownership rules and to each role's planning, executing, and logging docs.
-
-Roles are **new** and project-scoped: on a multi-owner project you opt in by running the **Generate Roles** workflow once at kickoff to scope the project into roles — the owners of its plans, code, and docs — and revise them as the architecture evolves. It's the answer to the merge pain of several people (and agents) pushing to their own scattered `CLAUDE.md`/markdown files with no shared process. Nothing role-related exists until that workflow creates `roles/`.
-
-Each role is **one hand-authored file** at `roles/<role>.md` (from [`templates/role.md`](skills/cozyplan/templates/role.md)) that serves three readers at once: a human onboarding doc, an agent operating brief, and the parsed source `plan_tool roles build` compiles into an ownership map. A role file carries explicit **responsibilities**, a concrete **Definition of Done** (with runnable checks a human and an agent run the same way), and **disjoint ownership globs** — `source_of_truth` and `code` globs may not overlap across roles (`plan_tool roles build` rejects overlap, since overlap is what causes the merge pain in the first place).
-
-From that one source, `plan_tool roles build` generates two artifacts:
-
-- **`roles/_roles.json`** — a **pure ownership map** (role → owned globs). No modes, no acceptance, no enforcement fields.
-- **`.github/CODEOWNERS`** — each role's `github:` identity mapped to its globs for review-time ownership (a role without one is emitted commented-out rather than as an unusable `@role` slug).
-
-**Enforcement is git's job, not CozyPlan's.** There is no edit-time gate on who writes what — CozyPlan compiles the map, git enforces it. Ownership is enforced the way every git project already enforces it: **CODEOWNERS** routes review to the owning role, **PR review** is the acceptance gate, and **`git blame`** answers "who changed my file." The guiding line is **coherence, not compliance**: the tool's job is to make ownership *legible*, then get out of the way.
-
-A plan names its role in the `owner` metadata field, and every `plan_tool` event carries a free-text `--role` label so the plan's `.log.ndjson` records who did what (a label for the log, not an enforced identity). As with `_index.*` and `CODEOWNERS`, the generated aggregates are **generated, never hand-edited**.
-
-When an agent or human assumes role `R`, the role file's **Session bootstrap** sets the read order: `SKILL.md` → `roles/<R>.md` → the `owner=R`-filtered `specs/_index.html` → `roles/<R>/memory.md` → the relevant plan's `.log.ndjson`. Adding or splitting a role is a file plus a `roles build` — ownership is a field and a glob, not a directory move, so it never breaks existing plan references.
-
----
-
-## Priorities
-
-<p align="center">
-  <img src="images/06_priorities.png" alt="Performance over speed over cost — spend tokens to win" width="750">
-</p>
-
-> *`Performance > Speed >= Cost`*
-
-This is the design axis of the whole skill, and it's why CozyPlan looks "expensive." HTML over markdown, embedded images, rich updatable metadata, generated diagrams: none of that is the cheap choice. It's the choice that gives the best plan. When you run state-of-the-art models, **make the sacrifices you need to get state-of-the-art results.** Cost, here, is just tokens.
-
----
-
-## Who it's for
-
-<p align="center">
-  <img src="images/07_trifecta.png" alt="One plan, three readers — you, your team, and your AI agents" width="750">
-</p>
-
-Every choice in CozyPlan serves the **agent trifecta**: the engineer (you), the engineering team, and the AI agents. Most planning systems over-index on one: pure agent JSON nobody can read, or a human doc no agent can act on. The HTML-first format, the embedded diagrams, the checklists, and the metadata header exist so a single plan satisfies all three at once.
-
----
+Marking that check **required** needs a human with repo admin. Nothing here claims otherwise.
 
 ## Folder structure
 
 ```
-cozyplan/                           # the repo IS the plugin (and its own marketplace)
-├── README.md                       # this file
-├── RAW.md                          # the raw think-out-loud spec that started the build
-├── legacy_v1_meta_plan.md          # the V1 markdown spec CozyPlan evolved from
-├── .gitattributes                  # merge=union on specs/*.log.ndjson (clean concurrent appends)
-│
-├── .claude-plugin/
-│   ├── plugin.json                 # plugin manifest (name, version, description)
-│   └── marketplace.json            # lets you /plugin marketplace add <git-url>
-│
-├── hooks/
-│   └── hooks.json                  # PreToolUse guard + PostToolUse lint, registered on install
-│
-├── skills/
-│   ├── cozyplan/                   # SKILL 1 — the plan layer (fully self-contained)
-│   │   ├── SKILL.md                # API, instructions, and plan-template conventions
-│   │   ├── templates/
-│   │   │   ├── plan.html           # the HTML plan template — single source of truth (stamped by plan_tool new)
-│   │   │   ├── role.md             # source template for a project's role files
-│   │   │   ├── STATE.md            # SOT snapshot scaffold (verified claims + proofs)
-│   │   │   ├── journal.md          # append-only ledger seed — its header defines the entry format
-│   │   │   ├── adr.md              # decision record (docs/adr/NNNN-title.md)
-│   │   │   ├── feature.md          # feature record with acceptance criteria + status history
-│   │   │   └── issue.md            # issue record with repro + resolution + status history
-│   │   ├── workflows/              # eight workflows + subworkflows
-│   │   │   ├── create-plan.md      # step 1 invokes the discuss skill by default
-│   │   │   ├── update-plan.md
-│   │   │   ├── update-references.md
-│   │   │   ├── build-plan.md       # close steps maintain SYSTEM.md + sync the state layer
-│   │   │   ├── generate-roles.md   # scope a project into roles / who-owns-what
-│   │   │   ├── init-state.md       # scaffold STATE.md + journal + record dirs (idempotent)
-│   │   │   ├── sync-state.md       # snapshot + ledger update (also closes Create/Update/Build)
-│   │   │   ├── track-record.md     # file/advance ADR, feature, and issue records
-│   │   │   └── diagram-generation.md   # subworkflow — local Excalidraw diagrams
-│   │   └── scripts/                # ships WITH the skill, so bare-skill installs carry the CLI
-│   │       ├── plan_tool.py        # deterministic CLI for all managed plan writes + validate/index/roles
-│   │       └── hooks/
-│   │           ├── guard_plan_edit.py  # PreToolUse — steers raw edits of managed regions to plan_tool
-│   │           └── lint_plan.py        # PostToolUse — validates specs/*.html after any write
-│   └── discuss/                    # SKILL 2 — the understanding loop
-│       ├── SKILL.md                # interview + records + orient
-│       ├── templates/
-│       │   ├── stack.md            # generic STACK.md scaffold (default + lane + escape hatch)
-│       │   ├── stack.cozy.md       # a filled-in org seed (Microsoft/Azure stack)
-│       │   └── system.md           # nodes-only SYSTEM.md component-map template
-│       └── workflows/
-│           ├── interview.md        # the relentless, depth-scaled interview + capture rules
-│           ├── seed-stack.md       # first-run STACK.md creation
-│           └── orient.md           # understand how the system runs today (never stored)
-│
-├── prompts/
-│   └── pi-iroh-coms.md             # the demo prompt
-│
-├── specs/                          # this repo's own live plans
-│   ├── _index.json                 # generated catalog (machine-readable)
-│   ├── _index.html                 # generated catalog (browsable)
-│   └── <plan>.log.ndjson           # per-plan append-only event log (created on first managed write)
-│
-├── examples/
-│   └── pi-iroh-coms-net/           # a REAL CozyPlan plan + its synced diagrams — open the .html in a browser
-│
-└── images/                         # README diagrams
+skills/cozyplan/
+├── SKILL.md              the router
+├── workflows/            one per branch, each with a checkable completion criterion
+├── templates/            plan.html · journal.md · adr.md · state-check.yml
+├── reference/            plan-tool.md — full CLI surface, metadata contract, install paths
+└── scripts/              plan_tool.py + the two Claude Code hooks
 
-# In a project that uses roles, CozyPlan also maintains:
-#   roles/
-#   ├── <role>.md                   # hand-authored role source of truth (from templates/role.md)
-#   ├── <role>/memory.md            # that role's single-writer durable notes
-#   └── _roles.json                 # GENERATED ownership map (plan_tool roles build)
-#   .github/CODEOWNERS              # GENERATED from roles/*.md for review-time ownership
+skills/discuss/
+├── SKILL.md
+├── workflows/            interview · orient · seed-stack
+└── templates/            system.md · stack.md
 
-# In a project that uses the state layer, CozyPlan also maintains:
-#   STATE.md                        # SOT snapshot — verified working state, in-development, gaps
-#   docs/journal.md                 # append-only ledger — who changed what, why, resulting state
-#   docs/features/ docs/issues/     # feature/issue records (docs/adr/ is shared with discuss)
+# In a project using CozyPlan:
+specs/<plan>.html         the plan          specs/_index.html   generated catalog
+specs/<plan>.log.ndjson   plan events       STATE.md            generated state view
+docs/state.ndjson         state events      docs/adr/           decisions
+docs/journal.md           narrative ledger  docs/agents/        issue tracker + label config
+.githooks/                tracked git hooks
 ```
 
----
+## Decisions
 
-## See it in action
+The architecture is recorded in `docs/adr/`, and the repo runs on its own baseline:
 
-<p align="center">
-  <img src="examples/pi-iroh-coms-net/pi-iroh-coms-net/solution.png" alt="A real CozyPlan-generated plan: serverless P2P agent mesh on iroh" width="780">
-</p>
-
-[`examples/pi-iroh-coms-net/pi-iroh-coms-net.html`](examples/pi-iroh-coms-net/pi-iroh-coms-net.html) is a real, unedited CozyPlan output. The prompt in [`prompts/pi-iroh-coms.md`](prompts/pi-iroh-coms.md) asked the agent to re-implement an HTTP agent-communication extension as a serverless peer-to-peer mesh on [iroh](https://iroh.computer). One `/cozyplan` run produced:
-
-- a full HTML plan with metadata, four phases, per-phase checklists, and validation loops
-- eight synced diagrams (hero, problem, solution, one per phase, notes)
-- a freeform Notes section where the agent authored its own feature-parity matrix
-
-Open the `.html` in a browser to see exactly what the skill delivers.
-
-```bash
-start "" examples\pi-iroh-coms-net\pi-iroh-coms-net.html    # Windows
-open examples/pi-iroh-coms-net/pi-iroh-coms-net.html        # macOS
-xdg-open examples/pi-iroh-coms-net/pi-iroh-coms-net.html    # Linux
-```
-
----
+| ADR | Decision |
+| --- | --- |
+| 0001 | GitHub is the source of truth for work items; ADRs stay as files |
+| 0002 | The interview works the design tree in rounds, not one question at a time |
+| 0003 | The system map records cross-boundary contracts only |
+| 0004 | Hooks advise, CI enforces, and derivation tolerates gaps |
+| 0005 | State is a union-merged log projected into capped views |
+| 0008 | The state view shows everything until it cannot |
+| 0009 | Role ownership maps are git's job, not cozyplan's |
+| 0006 | Grounding is a traversal with a declared stopping rule |
+| 0007 | Git hooks are tracked and opted into per clone |
 
 ## Where it can still fail
 
-Honest edges to know before you ship plans with this:
-
-- **It's tuned for top-tier models.** CozyPlan deliberately spends tokens and time. On smaller models the HTML, metadata, and image steps can overwhelm the budget; it runs, but the payoff curve is steepest on Mythos-class models.
-- **Diagrams need the `excalidraw-diagram` skill.** It's CozyPlan's one external dependency (rendered locally, no API key). Without it the plan still writes; the `{{...IMAGE}}` slots just stay as placeholders until you run the Diagram Generation subworkflow with the skill installed.
-- **The agent will sometimes over-reach.** These models take one instruction and run with the whole context, so expect occasional extra edits beyond what you asked. Be surgical in your prompts; review the diff.
-- **Stray context bleeds in.** If other specs sit in `specs/`, a create run may reference them. Keep the output directory clean, or point back references deliberately.
-- **`AI_DOCS/` and `APP_DOCS/` are optional.** The skill reads them if they exist; it won't create them. Add them when you want the plan grounded in your own documentation.
+- **Trailer coverage is earned, not given.** Backward grounding is only as complete as the trailers in history, and history predating the convention has none. `doctor` reports the fraction so a thin answer reads as thin.
+- **A stale edge table is worse than none.** With nodes only, a reader knows to read the code. With a table present, they stop at it — so a *missing* edge is a confident wrong answer. The map declares itself a floor, not a ceiling.
+- **Local hooks are advisory.** `--no-verify` bypasses them, `.git/hooks` is not cloned, and Claude Code hooks fire for one tool on one machine. CI is the only layer a contributor cannot route around.
+- **Branch protection is invisible from a clone.** `doctor` says so rather than implying a gate exists.
+- **`state render` truncates.** It refuses to overwrite a `STATE.md` without the generated marker, because the users at risk are exactly those who do not know the semantics changed. `state migrate` is the way across, and it names everything it could not carry.
 
 ---
 
@@ -384,6 +202,8 @@ CozyPlan is derived from **planf3** by [IndyDevDan](https://www.youtube.com/@ind
 - Follow the [IndyDevDan YouTube channel](https://www.youtube.com/@indydevdan) to improve your agentic coding advantage
 
 > *"Stay Focused and Keep Building"* — IndyDevDan
+
+The interview mechanics in `discuss` — the design tree, the frontier, rounds, and the numbered question format — are adapted from [Matt Pocock's `grilling` skill](https://github.com/mattpocock/skills), with the ADR candidate sweep and glossary discipline from his `domain-modeling`. See ADR-0002.
 
 ---
 

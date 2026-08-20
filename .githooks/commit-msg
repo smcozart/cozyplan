@@ -1,0 +1,12 @@
+#!/bin/sh
+# cozyplan: add the trailers that can be demonstrated from this commit.
+# Advisory by design — never blocks, never rejects (ADR-0004).
+TOOL=$(git config cozyplan.plantool 2>/dev/null) || exit 0
+[ -n "$TOOL" ] || exit 0
+RUN=$(git config cozyplan.runner 2>/dev/null)
+[ -n "$RUN" ] || RUN=python3
+ARG=$(git config cozyplan.runnerarg 2>/dev/null)
+# Quoted: an interpreter path or a repo path may contain spaces. Unquoted, $RUN
+# word-splits, the command is not found, and the trailer vanishes with no error.
+"$RUN" ${ARG:+"$ARG"} "$TOOL" trailers --message-file "$1" >/dev/null 2>&1 || true
+exit 0
