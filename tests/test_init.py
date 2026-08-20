@@ -109,3 +109,22 @@ def test_refuses_outside_a_git_repo(pt, tmp_path, capsys):
 def test_git_init_bootstraps_one(pt, tmp_path, capsys):
     assert pt.main(["init", "--root", str(tmp_path), "--git-init"]) == 0
     assert (tmp_path / ".git").is_dir()
+
+
+def test_gitignores_the_issue_queue(pt, git_repo):
+    """The queue holds intended issues, not repo content (ADR-0001)."""
+    run(pt, git_repo)
+    assert ".scratch/" in read(git_repo / ".gitignore")
+
+
+def test_does_not_duplicate_the_gitignore_entry(pt, git_repo):
+    run(pt, git_repo)
+    run(pt, git_repo)
+    assert read(git_repo / ".gitignore").count(".scratch/") == 1
+
+
+def test_preserves_an_existing_gitignore(pt, git_repo):
+    (git_repo / ".gitignore").write_text("node_modules/\n", encoding="utf-8")
+    run(pt, git_repo)
+    text = read(git_repo / ".gitignore")
+    assert "node_modules/" in text and ".scratch/" in text

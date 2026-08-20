@@ -49,7 +49,9 @@ The full CLI surface, the plan metadata contract, and the install paths. Reached
 
 - **Write-once**: `schema`, `id`, `created`. `schema` is the artifact's structural-contract version (currently `1`) — leave it as the template sets it; `PLAN_TOOL` refuses to write a plan stamped newer than it understands.
 - **Single value**: `status`, `owner`, `kind`.
-- **Append-only lists**: `modified`, `commits`, `agent`, `session`, `back-refs`, `forward-refs`, `provides`, `consumes`.
+- **Append-only lists**: `modified`, `commits`, `agent`, `session`, `back-refs`, `forward-refs`, `provides`, `consumes`, `issues`.
+
+**`issues`** carries the tracker numbers this plan answers to (ADR-0001). The field set is closed, so issue numbers have no other legal home — `back-refs` is for plans. `PLAN_TOOL issue file --plan <id>` writes the reference the other way, from the issue back to the plan.
 
 **`status`** is a closed vocabulary: `draft` (authored, not started) → `active` (approved / being built) → `built` (implemented, tests pass); plus `superseded` (replaced — must carry a forward ref to its successor) and `archived` (kept for history).
 

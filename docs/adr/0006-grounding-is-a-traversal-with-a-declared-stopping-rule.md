@@ -1,7 +1,7 @@
 ---
 id: ADR-0006
 title: Grounding is a traversal with a declared stopping rule
-status: accepted
+status: accepted (deferred — unimplemented as of 3.0.0)
 date: 2026-08-18
 authors: Sean Cozart <seancozart@outlook.com>
 refs: docs/adr/0005-state-is-a-union-merged-log-projected-into-capped-views.md
@@ -47,7 +47,7 @@ four things: the **entry node**, the **direction**, the **stopping rule**, and t
 2. **Expand** — walk typed edges from the resolved nodes. Backward: path → commits →
    trailers → plan / ADR / issue. Forward: plan → phases → components → contracts.
    Sideways: component → the edges where it is `From`, which is its blast radius.
-3. **Rank** — by relevance to the intent, then by the event weight from ADR-0005.
+3. **Rank** — by relevance to the intent, then by commit position. *(This step said "the event weight from ADR-0005"; ADR-0008 removed weight.)*
 4. **Stop** — on the mode's declared rule, or on budget.
 
 **Four presets, each with a checkable bound:**
@@ -109,3 +109,8 @@ session-start remote check and the path-intersection trigger.
 
 - 2026-08-18 — proposed by Sean Cozart
 - 2026-08-18 — accepted by Sean Cozart
+- 2026-08-19 — **deferred** for 3.0.0. The design stands and nothing implements it. The
+  shape question went unanswered across two sessions, which read as an over-specified
+  design rather than missing input. If revived, build the situational fallback alone
+  first — the one this ADR already requires always works — and add presets only once
+  one is actually missed. Tracked as a gap in `STATE.md`.

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # /// script
-# requires-python = ">=3.11"
+# requires-python = ">=3.9"
 # dependencies = []
 # ///
 """cozyplan plan_tool — deterministic writes, validation, and indexing for specs/*.html plans.
@@ -8,9 +8,11 @@
 Every structured mutation of a living plan artifact goes through this tool instead of
 free-form edits, so status markers, append-only metadata, references, and amendments stay
 well-formed. Locating regions relies on machine-readable data-* anchors baked into the
-plan template (see .claude/skills/cozyplan/SKILL.md). Stdlib only — run via `uv run`.
+plan template (see .claude/skills/cozyplan/SKILL.md). Stdlib only, and 3.9 is the
+floor the tests run on: `uv run` and a plain `python3` both work, and neither is
+required by the other (ADR-0004).
 
-Commands:
+Commands (`--help` is authoritative; this list is the map, not the contract):
   new        scaffold a fresh plan from templates/plan.html
   status     flip a task/phase status marker
   meta       set or append a metadata field
@@ -23,6 +25,12 @@ Commands:
   phase      print one phase in full — its tasks, actions, and Testing Strategy
   next       print the first status id that is not [x]/[f] (or 'done')
   addphase   append a correctly-numbered phase block (structure, not content)
+  init       wire a repo for cozyplan (idempotent; implements doctor's check list)
+  doctor     report what is actually wired in this clone (ADR-0004)
+  state      add/render/show/check/migrate the state layer (ADR-0005)
+  issue      file a work item, queueing it when gh is away (ADR-0001)
+  trailers   add the commit trailers this commit can demonstrate (ADR-0007)
+  hooks      install/remove the Claude Code hooks and the tracked .githooks
 
 Scope: cozyplan is the *plan/intent* layer. Enforcement, revert points, and
 accountability are git's job (branches, PRs, CODEOWNERS, tags, CI) — this tool
@@ -53,7 +61,7 @@ VALID_MARKERS = set(STATUS_MARKERS.values())
 TERMINAL_MARKERS = {"[x]", "[f]"}
 STATUS_VOCAB = {"draft", "active", "built", "superseded", "archived"}
 LIST_FIELDS = {"modified", "commits", "agent", "session", "back-refs", "forward-refs",
-               "provides", "consumes"}
+               "provides", "consumes", "issues"}
 SINGLE_FIELDS = {"id", "created", "status", "owner", "schema", "kind"}
 ALL_FIELDS = LIST_FIELDS | SINGLE_FIELDS
 WRITE_ONCE = {"id", "created", "schema"}
@@ -119,85 +127,6 @@ def split_list(v: str) -> list[str]:
 def fail(msg: str) -> int:
     print(f"error: {msg}", file=sys.stderr)
     return 1
-
-
-# ── glob engine (ONE matcher shared by roles-build disjointness AND the guard) ─
-# Semantics, documented once and relied on by both consumers:
-#   **   spans directory boundaries (zero or more path segments)
-#   *    matches within a single segment (never crosses '/')
-#   ?    matches one non-'/' character
-#   [..] a character class (passed through to the regex)
-# Separators are normalized ('\\' -> '/') before matching. The guard imports
-# `glob_match`; `roles build` disjointness uses `glob_overlap`, which is defined
-# purely in terms of `glob_match`, so build-time and enforce-time never disagree.
-_GLOB_CACHE: dict[str, re.Pattern] = {}
-
-
-def _compile_glob(glob: str) -> re.Pattern:
-    cached = _GLOB_CACHE.get(glob)
-    if cached is not None:
-        return cached
-    g = glob.replace("\\", "/")
-    out: list[str] = []
-    i, n = 0, len(g)
-    while i < n:
-        if g[i:i + 3] == "**/":
-            out.append("(?:[^/]+/)*")  # zero or more whole directory segments
-            i += 3
-        elif g[i:i + 2] == "**":
-            out.append(".*")            # trailing/!bare ** -> spans everything
-            i += 2
-        elif g[i] == "*":
-            out.append("[^/]*")
-            i += 1
-        elif g[i] == "?":
-            out.append("[^/]")
-            i += 1
-        elif g[i] == "[":
-            j = g.find("]", i + 1)
-            if j == -1:
-                out.append(re.escape("["))
-                i += 1
-            else:
-                out.append(g[i:j + 1])
-                i = j + 1
-        else:
-            out.append(re.escape(g[i]))
-            i += 1
-    pat = re.compile("".join(out) + r"\Z")
-    _GLOB_CACHE[glob] = pat
-    return pat
-
-
-def glob_match(rel: str, glob: str) -> bool:
-    """True if the relative POSIX path `rel` matches ownership glob `glob`."""
-    return _compile_glob(glob).match(rel.replace("\\", "/")) is not None
-
-
-def _glob_witness(glob: str) -> str:
-    """A concrete path a glob matches — wildcards resolved to sentinel segments.
-
-    Used only to probe overlap through `glob_match`; the sentinels are arbitrary
-    tokens unlikely to collide with real literal segments in another glob.
-    """
-    g = glob.replace("\\", "/")
-    parts = []
-    for seg in g.split("/"):
-        if seg == "**":
-            parts.append("_w_")
-        else:
-            s = re.sub(r"\[.*?\]", "w", seg).replace("**", "w").replace("*", "w").replace("?", "y")
-            parts.append(s if s else "w")
-    return "/".join(p for p in parts if p != "")
-
-
-def glob_overlap(g1: str, g2: str) -> bool:
-    """True if some path could be owned by both globs — expressed via `glob_match`.
-
-    Symmetric probe: a witness path generated from each glob is tested against the
-    other. Correct for the prefix/segment ownership patterns roles use in practice.
-    """
-    return glob_match(_glob_witness(g1), g2) or glob_match(_glob_witness(g2), g1)
 
 
 # ── plan write lock (exclusive, sibling <plan>.lock; Windows-safe) ────────────
@@ -922,7 +851,7 @@ def _ensure_new_fields(text: str, nl: str) -> str:
     additions = ""
     for field, default in (("id", ""), ("owner", ""), ("kind", "plan"),
                            ("status", "draft"), ("schema", str(MIN_SCHEMA)),
-                           ("provides", "—"), ("consumes", "—")):
+                           ("provides", "—"), ("consumes", "—"), ("issues", "—")):
         if f'data-meta="{field}"' not in text:
             additions += f'{nl}        <dt>{field}</dt> <dd data-meta="{field}">{default}</dd>'
     if not additions:
@@ -1732,7 +1661,8 @@ def read_state_log(root: Path, log_path: Path) -> list[dict]:
 def project_state(events: list[dict]) -> dict:
     """Reduce the log to current truth: last write wins per (kind, key), and an
     event marked cleared removes the key. Ordered by commit position, which every
-    writer already shares — the one total order available without a clock."""
+    writer already shares: the one total order available without a clock (ADR-0008
+    removed the weight ranking this used to apply)."""
     current: dict = {}
     for ev in events:
         k = (ev["kind"], ev.get("key") or ev.get("what", ""))
@@ -1750,8 +1680,8 @@ def project_state(events: list[dict]) -> dict:
 
 def refs_line(ev: dict) -> str:
     """The pointer trail. An entry carries the ids needed to decide whether to
-    follow it, never the detail itself — so capping costs immediacy, never
-    reachability (ADR-0005)."""
+    follow it, never the detail itself, so truncating a view would cost immediacy
+    and never reachability (ADR-0005)."""
     r = ev.get("refs") or {}
     bits = []
     for key in ("plan", "phase", "session"):
@@ -1931,6 +1861,21 @@ docs/state.ndjson merge=union
 """
 
 
+
+def state_log_union_merged(root: Path) -> bool:
+    """Ask git, never the file: the attribute can come from .git/info/attributes or a
+    parent directory, so string-matching .gitattributes both misses and duplicates."""
+    ok, attr = git(root, "check-attr", "merge", "--", STATE_LOG_DEFAULT)
+    return ok and attr.strip().endswith(": union")
+
+
+def a_workflow_runs_state_check(root: Path) -> bool:
+    wf = root / ".github" / "workflows"
+    if not wf.is_dir():
+        return False
+    return any("state check" in read(f) or "state_check" in read(f)
+               for f in sorted(list(wf.glob("*.yml")) + list(wf.glob("*.yaml"))))
+
 def cmd_init(args) -> int:
     """Wire a repo for cozyplan: everything `doctor` checks that a command can
     legitimately create. Idempotent and additive — every write is create-if-absent
@@ -2006,8 +1951,7 @@ def cmd_init(args) -> int:
 
     # ── union merge: ask git, not the file. The attribute can come from
     #    .git/info/attributes or a parent dir, and appending blindly duplicates it.
-    ok_attr, attr = git(root, "check-attr", "merge", "--", STATE_LOG_DEFAULT)
-    if ok_attr and attr.strip().endswith(": union"):
+    if state_log_union_merged(root):
         kept.append(".gitattributes (merge=union)")
     else:
         ga = root / ".gitattributes"
@@ -2015,11 +1959,20 @@ def cmd_init(args) -> int:
         write(ga, (existing.rstrip("\n") + "\n\n" if existing.strip() else "") + GITATTRIBUTES_STANZA.lstrip("\n"))
         made.append(".gitattributes (merge=union)")
 
+    # The gh-less queue holds intended issues, not repo content (ADR-0001), so a
+    # fresh repo should not commit it.
+    gi = root / ".gitignore"
+    gi_text = read(gi) if gi.exists() else ""
+    if re.search(r"^\.scratch/?\s*$", gi_text, re.M):
+        kept.append(".gitignore (.scratch/)")
+    else:
+        write(gi, (gi_text.rstrip("\n") + "\n\n" if gi_text.strip() else "")
+              + "# Queued work items awaiting `gh` (ADR-0001) — replayed, never versioned.\n"
+              + ".scratch/\n")
+        made.append(".gitignore (.scratch/)")
+
     # ── CI ───────────────────────────────────────────────────────────────────
-    wf = root / ".github" / "workflows"
-    runs_check = any("state check" in read(f) or "state_check" in read(f)
-                     for f in sorted(list(wf.glob("*.yml")) + list(wf.glob("*.yaml")))) if wf.is_dir() else False
-    if runs_check:
+    if a_workflow_runs_state_check(root):
         kept.append(".github/workflows (a workflow already runs state check)")
     else:
         ensure_from_template(".github/workflows/state-check.yml", "state-check.yml")
@@ -2080,7 +2033,8 @@ def cmd_init(args) -> int:
             for i in items:
                 print(f"    - {i}")
     # Steps no command can do are named, never faked (ADR-0004).
-    checks = {name: (status, detail) for _, status, name, detail in doctor_checks(root, 20)}
+    rows = doctor_checks(root, 20)
+    checks = {name: (status, detail) for _, status, name, detail in rows}
     for name in ("identity", "remote", "gh", "required check"):
         if name in checks and checks[name][0] != OK:
             manual.append(f"{name} — {checks[name][1]}")
@@ -2088,7 +2042,7 @@ def cmd_init(args) -> int:
         print("\n  needs a human:")
         for i in manual:
             print(f"    - {i}")
-    gaps = [(n, d) for _, st, n, d in doctor_checks(root, 20) if st == GAP]
+    gaps = [(n, d) for _, st, n, d in rows if st == GAP]
     print(f"\n  {len(gaps)} gap(s) remain — run `plan_tool doctor` for the full picture.")
     return 0
 
@@ -2120,9 +2074,9 @@ def gh_ready() -> bool:
         return False
 
 
-def slugify(text: str, limit: int = 50) -> str:
+def slugify(text: str) -> str:
     out = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
-    return (out[:limit].rstrip("-") or "issue")
+    return (out[:50].rstrip("-") or "issue")
 
 
 def queue_issue(root: Path, title: str, body: str, labels: list, plan: str) -> tuple:
@@ -2384,6 +2338,21 @@ def subcommand_names() -> set:
     return set()
 
 
+def header_command_drift() -> list:
+    """(direction, verb) where this file's own `Commands:` block disagrees with the
+    parser. The prose check below reads SKILL.md, workflows/, and reference/ — never
+    this script — so the header was the one place drift could hide from it, and did."""
+    known = subcommand_names()
+    if not known:
+        return []
+    m = re.search(r"^Commands[^\n]*:\n(?P<body>(?:  \S.*\n)+)", __doc__ or "", re.M)
+    if not m:
+        return [("missing", "the Commands: block itself")]
+    listed = set(re.findall(r"^  ([a-z][a-z0-9-]*)\s{2,}", m.group("body"), re.M))
+    return ([("undocumented", v) for v in sorted(known - listed)]
+            + [("stale", v) for v in sorted(listed - known)])
+
+
 def doc_command_drift(skill_root: Path) -> list:
     """(file, verb) for every command named in the skill's prose that does not exist."""
     known = subcommand_names()
@@ -2501,11 +2470,11 @@ def doctor_checks(root: Path, commits: int) -> list[tuple[str, str, str, str]]:
 
     skill_root = Path(__file__).resolve().parent.parent
     if (skill_root / "SKILL.md").exists():
-        drift = doc_command_drift(skill_root)
+        drift = ([f"{f}:{v}" for f, v in doc_command_drift(skill_root)]
+                 + [f"plan_tool.py header {d}: {v}" for d, v in header_command_drift()])
         add("enforcement", OK if not drift else GAP, "docs match the CLI",
-            "every command named in the skill prose exists" if not drift
-            else "prose names commands the parser does not have: "
-                 + ", ".join(f"{f}:{v}" for f, v in drift))
+            "the skill prose and this file's own header both match the parser" if not drift
+            else "documented commands disagree with the parser: " + ", ".join(drift))
 
     wf = root / ".github" / "workflows"
     ci = [f.name for f in wf.glob("*.yml")] + [f.name for f in wf.glob("*.yaml")] if wf.is_dir() else []
@@ -2549,7 +2518,8 @@ def doctor_checks(root: Path, commits: int) -> list[tuple[str, str, str, str]]:
     tracker = root / "docs" / "agents" / "issue-tracker.md"
     add("adapter", OK if tracker.exists() else GAP, "issue tracker",
         "docs/agents/issue-tracker.md" if tracker.exists()
-        else "missing — to-spec/to-tickets/triage/wayfinder halt; run /setup-matt-pocock-skills")
+        else "missing — to-spec/to-tickets/triage/wayfinder halt; run `plan_tool init` "
+             "(or /setup-matt-pocock-skills for the wider skill set)")
     agent_doc = next((f for f in ("CLAUDE.md", "AGENTS.md") if (root / f).exists()), None)
     add("adapter", OK if agent_doc else GAP, "agent doc",
         f"{agent_doc} present" if agent_doc else "no CLAUDE.md or AGENTS.md — a clone has no entry point")
@@ -2618,8 +2588,8 @@ TOOL=$(git config cozyplan.plantool 2>/dev/null) || exit 0
 RUN=$(git config cozyplan.runner 2>/dev/null)
 [ -n "$RUN" ] || RUN=python3
 ARG=$(git config cozyplan.runnerarg 2>/dev/null)
-# Quoted: an interpreter path or a repo path may contain spaces. Unquoted, $RUN
-# word-splits, the command is not found, and the trailer vanishes with no error.
+# Quoted: an interpreter path may contain spaces. Unquoted, $RUN word-splits and the
+# drift report silently never runs.
 "$RUN" ${ARG:+"$ARG"} "$TOOL" state check 2>/dev/null | grep -E "behind HEAD|FAIL" || true
 exit 0
 """

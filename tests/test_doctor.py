@@ -154,3 +154,21 @@ def test_the_command_list_is_read_off_the_parser(pt):
     names = pt.subcommand_names()
     assert {"init", "doctor", "state", "brief", "validate"} <= names
     assert "ground" not in names
+
+
+def test_the_header_command_list_must_match_the_parser(pt, monkeypatch):
+    """The prose check reads SKILL.md, workflows/, and reference/, never this script —
+    so the file's own Commands: block was the one place drift could hide from it, and did."""
+    assert pt.header_command_drift() == []
+    trimmed = pt.__doc__.replace("  issue      file a work item, queueing it when gh is away (ADR-0001)\n", "")
+    monkeypatch.setattr(pt, "__doc__", trimmed + "")
+    # __doc__ is read inside the function, so patching the module attribute is enough
+    assert ("undocumented", "issue") in pt.header_command_drift()
+
+
+def test_a_header_naming_a_command_that_does_not_exist_is_drift(pt, monkeypatch):
+    monkeypatch.setattr(pt, "__doc__",
+                        pt.__doc__.replace("  doctor     report what is actually wired in this clone (ADR-0004)",
+                                           "  doctor     report what is actually wired in this clone (ADR-0004)\n"
+                                           "  ground     traverse the id space"))
+    assert ("stale", "ground") in pt.header_command_drift()

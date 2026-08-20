@@ -22,7 +22,7 @@
 plan_tool init
 ```
 
-Idempotent and additive: it creates only what is missing and never overwrites content. Read its report — anything under **needs a human** is a step no command can take (branch protection, `gh` auth, the origin remote, git identity).
+Idempotent: it creates only what is missing and never overwrites content you wrote. The two exceptions are the tracked `.githooks/` scripts and the Claude hook registration, which it rewrites every run so they re-point at a moved interpreter; its report lists those under **refreshed**. Read the report — anything under **needs a human** is a step no command can take (branch protection, `gh` auth, the origin remote, git identity).
 
 **2. Carry your `STATE.md` into the event log.**
 
