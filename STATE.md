@@ -6,25 +6,27 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-19T18:56:20-05:00 |
-| Repo state | baseline-audit @ 2f0e12e |
+| Last synced | 2026-08-19T19:13:49-05:00 |
+| Repo state | baseline-audit @ a036519 |
 
 ## Current Working State
 
-- plan_tool init takes a greenfield repo from five doctor gaps to zero, and adopts a brownfield one without overwriting anything — verified by `python3 -m pytest tests/test_init.py` (2026-08-19, e38dff5)
-  ↳ session:s-audit-03 adr:0004 adr:0007 path:skills/cozyplan/scripts/plan_tool.py path:skills/cozyplan/templates path:tests/test_init.py
-- state render cannot silently destroy a hand-authored STATE.md, and state migrate carries one into the log while naming what it could not carry — verified by `python3 -m pytest tests/test_state_migrate.py` (2026-08-19, e38dff5)
-  ↳ session:s-audit-03 adr:0005 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_state_migrate.py
-- commit-msg trailer injection survives an interpreter path containing spaces, and doctor tests the runner the clone actually recorded — verified by `python3 -m pytest tests/test_trailers.py` (2026-08-19, e38dff5)
-  ↳ session:s-audit-03 adr:0004 adr:0007 path:skills/cozyplan/scripts/plan_tool.py path:.githooks
-- plan_tool CLI and both hooks pass their suite — verified by `python3 -m pytest tests` (2026-08-19, 9bfb3fe)
-  ↳ session:s-audit-03 path:tests path:skills/cozyplan/scripts
-- Plan validation runs without uv installed — verified by `python3 skills/cozyplan/scripts/plan_tool.py validate` (2026-08-19, 9bfb3fe)
-  ↳ session:s-audit-03 path:skills/cozyplan/scripts
 - The provides/consumes graph flags unprovided contracts — verified by `plan_tool index --specs specs` (2026-08-19, 9bfb3fe)
   ↳ session:s-audit-03 path:specs
-- doctor catches a dead hook runner and prose naming commands that do not exist; state check can fail on a claim nobody re-proved — verified by `python3 -m pytest tests/test_doctor.py tests/test_state_check.py` (2026-08-19, 2f0e12e)
-  ↳ session:s-audit-03 adr:0004 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_doctor.py path:tests/test_state_check.py
+- plan_tool CLI and both hooks pass their suite — verified by `python3 -m pytest tests` (2026-08-19, a036519)
+  ↳ session:s-audit-03 path:tests path:skills/cozyplan/scripts
+- plan_tool init takes a greenfield repo from five doctor gaps to zero, and adopts a brownfield one without overwriting anything — verified by `python3 -m pytest tests/test_init.py` (2026-08-19, a036519)
+  ↳ session:s-audit-03 adr:0004 adr:0007 path:skills/cozyplan/scripts/plan_tool.py path:skills/cozyplan/templates path:tests/test_init.py
+- state render cannot silently destroy a hand-authored STATE.md, and state migrate carries one into the log while naming what it could not carry — verified by `python3 -m pytest tests/test_state_migrate.py` (2026-08-19, a036519)
+  ↳ session:s-audit-03 adr:0005 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_state_migrate.py
+- commit-msg trailer injection survives an interpreter path containing spaces, and doctor tests the runner the clone actually recorded — verified by `python3 -m pytest tests/test_trailers.py` (2026-08-19, a036519)
+  ↳ session:s-audit-03 adr:0004 adr:0007 path:skills/cozyplan/scripts/plan_tool.py path:.githooks
+- doctor catches a dead hook runner and prose naming commands that do not exist; state check reports a claim whose own paths moved — verified by `python3 -m pytest tests/test_doctor.py tests/test_state_check.py` (2026-08-19, a036519)
+  ↳ session:s-audit-03 adr:0004 adr:0006 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_doctor.py path:tests/test_state_check.py
+- issue file queues a replayable gh command when gh is absent, one command per line, and replay never files without --run — verified by `python3 -m pytest tests/test_issue.py` (2026-08-19, a036519)
+  ↳ session:s-audit-03 adr:0001 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_issue.py
+- Plan validation runs without uv installed — verified by `python3 skills/cozyplan/scripts/plan_tool.py validate` (2026-08-19, a036519)
+  ↳ session:s-audit-03 path:skills/cozyplan/scripts
 
 ## In Development
 
