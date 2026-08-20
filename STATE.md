@@ -6,8 +6,8 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-19T20:17:40-05:00 |
-| Repo state | baseline-audit @ a941128 |
+| Last synced | 2026-08-19T21:19:23-05:00 |
+| Repo state | baseline-audit @ 5c307c7 |
 
 ## Current Working State
 
@@ -31,6 +31,8 @@
   ↳ session:s-audit-03 adr:0001 adr:0009 path:skills/cozyplan/scripts/plan_tool.py path:tests path:docs/adr
 - The provides/consumes graph flags unprovided contracts, on stdout and in the generated catalog — verified by `python3 -m pytest tests/test_index.py` (2026-08-19, d22801c)
   ↳ session:s-audit-03 adr:0003 path:skills/cozyplan/scripts/plan_tool.py path:specs path:tests/test_index.py
+- plan_tool init installs a CI workflow that resolves plan_tool instead of hardcoding a path, so an adopting repo is not red on day one — verified by `gh run list --branch baseline-audit` (2026-08-19, 5c307c7)
+  ↳ session:s-audit-03 adr:0004 path:skills/cozyplan/templates/state-check.yml path:.github/workflows
 
 ## In Development
 
@@ -62,8 +64,6 @@
   ↳ session:s-audit-03 adr:0004
 - README routes 'how does this work' and 'what breaks if I change this' to SYSTEM.md; nothing creates it, this repo has none, and the generated STATE.md links to it anyway
   ↳ session:s-audit-03 adr:0003
-- plan_tool init installs cozyplan own state-check.yml verbatim: it runs "pytest tests" and a hardcoded skills/cozyplan/scripts/plan_tool.py path, so an adopting repo gets a red CI on day one
-  ↳ session:s-audit-03 adr:0004
 
 ## Registers
 
