@@ -6,8 +6,8 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-19T19:20:09-05:00 |
-| Repo state | baseline-audit @ 24e7b3c |
+| Last synced | 2026-08-19T19:28:48-05:00 |
+| Repo state | baseline-audit @ aeed33a |
 
 ## Current Working State
 
@@ -27,11 +27,11 @@
   ↳ session:s-audit-03 adr:0001 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_issue.py
 - Plan validation runs without uv installed — verified by `python3 skills/cozyplan/scripts/plan_tool.py validate` (2026-08-19, a036519)
   ↳ session:s-audit-03 path:skills/cozyplan/scripts
+- state-check.yml runs green on a real runner: tests, plan validity, generated-file currency, doctor --strict, and state check --max-claim-age 50 — verified by `gh run view 32317371478` (2026-08-19, aeed33a)
+  ↳ session:s-audit-03 adr:0004 path:.github/workflows path:skills/cozyplan/scripts path:tests
 
 ## In Development
 
-- state check wired as a CI gate — in-development · architect
-  ↳ session:s-audit-01 adr:0004
 - DECIDED: released as 3.0.0, not 2.3.0 — v2.2.0 is a published tag and this removes file-based work items and changes who owns STATE.md. Migration note at docs/migrating-to-3.0.md — decided · architect
   ↳ session:s-audit-03 adr:0001 adr:0005
 - DEFERRED: ground (ADR-0006) is not being built in 3.0. The shape question went unanswered across two sessions, which read as the spec being too large rather than as missing input. If revived, start with the situational fallback alone — branch, uncommitted changes, position vs remote, wip plans, last session — which ADR-0006 already requires always work, and add presets only once one is missed — deferred · architect
@@ -39,6 +39,8 @@
 - DECIDED: features earn their place only when deletion breaks something nameable. weight and --cap failed that test and were removed (ADR-0008); roles/CODEOWNERS is the next candidate if it stays unused — decided · architect
   ↳ session:s-audit-03 adr:0008
 - DECIDED: items 4-8 are closed, so baseline-audit is pushed and goes to PR. state-check.yml runs on a real runner for the first time there; a red first run most likely means the two new gates (doctor --strict on docs-match-the-CLI, state check --max-claim-age 50) rather than broken code — decided · architect
+  ↳ session:s-audit-03 adr:0004
+- state check is wired as a CI gate and has now executed green on a runner; it reports but does not block until the check is marked required — decided · architect
   ↳ session:s-audit-03 adr:0004
 
 ## Known Gaps / Risks
@@ -52,6 +54,8 @@
   ↳ adr:0007
 - ground (ADR-0006) is decided but deliberately unbuilt — the ADR stands as the design, nothing implements it
   ↳ session:s-audit-03 adr:0006
+- actions/checkout@v4 and actions/setup-python@v5 target Node 20, which GitHub has deprecated and is force-running on Node 24; pin newer majors before it becomes a hard failure
+  ↳ session:s-audit-03
 
 ## Registers
 
