@@ -1,6 +1,6 @@
 ---
 name: discuss
-description: Stress-test a design by interviewing in rounds until every open decision is settled, recording what settles as ADRs, glossary terms, stack defaults, and system-map edges, then handing the locked decisions to a plan; also explains how an existing system runs today. Use when a design needs grilling before it is built, when a plan would otherwise rest on unsettled decisions, or when someone needs orienting in a running system.
+description: Stress-test a design until every open decision is settled, recording what settles as ADRs, glossary terms, and stack defaults. Use when a design needs grilling before it is built, when a plan would otherwise rest on unsettled decisions, or when someone needs orienting in a running system.
 ---
 
 # Discuss

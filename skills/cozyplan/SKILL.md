@@ -1,6 +1,6 @@
 ---
 name: cozyplan
-description: HTML-first implementation plans in specs/, built and tracked through a deterministic CLI, plus a project state layer derived from git. Use when the user wants to plan new work, build or update an existing plan in specs/, wire a repo for planning, record a decision, or sync and report the project's working state.
+description: HTML-first implementation plans in specs/, plus a project state layer derived from git. Use when the user wants to plan new work, build or update an existing plan, wire a repo for planning, record a decision, or sync and report the project's working state.
 argument-hint: "[user-prompt]"
 ---
 

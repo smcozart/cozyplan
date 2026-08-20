@@ -42,3 +42,5 @@ The render writes a `.png` next to the `.excalidraw` file. The `.excalidraw` sou
 3. **Re-render** — Run `render_excalidraw.py` on the edited `.excalidraw` to overwrite the PNG. Read the PNG and iterate until correct.
 4. **Verify embed** — Confirm the `<img>` still points at the updated PNG; update `src`/`alt`/`<figcaption>` if the change warrants it.
 5. **Report** — List the diagrams updated and what changed.
+
+**Completion criterion:** every `{{...IMAGE}}` slot in the plan is either an `<img>` whose `src` resolves to a PNG that exists on disk, or named in the report as deliberately left empty. `PLAN_TOOL validate PLAN_FILE` passes.
