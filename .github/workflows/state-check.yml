@@ -20,7 +20,9 @@ permissions:
   contents: read
 
 jobs:
-  check:
+  # The job id becomes the status context name that branch protection pins.
+  # `check` is too generic to live in a protection rule forever.
+  state-check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
