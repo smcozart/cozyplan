@@ -6,6 +6,8 @@ Driven as a subprocess with a JSON payload on stdin (the Claude Code hook protoc
 import json
 from pathlib import Path
 
+import pytest
+
 from conftest import GUARD_HOOK, run_hook, hook_decision
 
 
@@ -132,13 +134,41 @@ def test_draft_denies_amendments_edit(tmp_path):
 # On a case-insensitive filesystem SPECS/plan.html and specs/plan.html are the same
 # file; a trailing dot (plan.html.) resolves to plan.html on Windows. The guard must
 # treat all of these as the plan they are, not wave them through.
+def _fs_is_case_insensitive(tmp_path) -> bool:
+    probe = tmp_path / "CaseProbe"
+    probe.write_text("x", encoding="utf-8")
+    try:
+        return (tmp_path / "caseprobe").exists()
+    finally:
+        probe.unlink()
+
+
 def test_capitalized_specs_segment_still_guarded(tmp_path):
+    """The bypass this closes only exists where the filesystem is case-insensitive.
+
+    On macOS and Windows, SPECS/plan.html IS specs/plan.html, so a Write to it would
+    overwrite the plan and must be denied. On Linux it is a genuinely different path
+    that does not exist, so allowing it is correct: that is creating a new plan, not
+    overwriting one. This test asserted the macOS outcome on every platform and only
+    failed once CI ran it on a Linux runner for the first time."""
+    if not _fs_is_case_insensitive(tmp_path):
+        pytest.skip("case-sensitive filesystem: SPECS/plan.html is not the plan")
     d = tmp_path / "specs"
     d.mkdir(exist_ok=True)
     (d / "plan.html").write_text("existing", encoding="utf-8")
-    # reference the existing plan via an upper-case SPECS segment
     payload = _payload("Write", tmp_path / "SPECS" / "plan.html", tmp_path,
                        content="PWNED")
+    assert _is_deny(run_hook(GUARD_HOOK, payload))
+
+
+def test_capitalized_specs_segment_is_still_recognised_as_a_plan(tmp_path):
+    """Platform-independent half: whatever the filesystem, an Edit through an
+    upper-case SPECS segment must still reach the managed-region check."""
+    d = tmp_path / "specs"
+    d.mkdir(exist_ok=True)
+    (d / "plan.html").write_text("existing", encoding="utf-8")
+    payload = _payload("Edit", tmp_path / "SPECS" / "plan.html", tmp_path,
+                       old_string=_marker(), new_string=_marker(state="wip"))
     assert _is_deny(run_hook(GUARD_HOOK, payload))
 
 
