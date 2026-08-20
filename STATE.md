@@ -6,8 +6,8 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-19T19:13:49-05:00 |
-| Repo state | baseline-audit @ a036519 |
+| Last synced | 2026-08-19T19:20:09-05:00 |
+| Repo state | baseline-audit @ 24e7b3c |
 
 ## Current Working State
 
@@ -34,12 +34,12 @@
   ↳ session:s-audit-01 adr:0004
 - DECIDED: released as 3.0.0, not 2.3.0 — v2.2.0 is a published tag and this removes file-based work items and changes who owns STATE.md. Migration note at docs/migrating-to-3.0.md — decided · architect
   ↳ session:s-audit-03 adr:0001 adr:0005
-- DECIDED: baseline-audit stays local and unpushed until items 4-8 are complete. state-check.yml has still never run on a runner, so a PR is the first real test of it — decided · architect
-  ↳ session:s-audit-03 adr:0004
 - DEFERRED: ground (ADR-0006) is not being built in 3.0. The shape question went unanswered across two sessions, which read as the spec being too large rather than as missing input. If revived, start with the situational fallback alone — branch, uncommitted changes, position vs remote, wip plans, last session — which ADR-0006 already requires always work, and add presets only once one is missed — deferred · architect
   ↳ session:s-audit-03 adr:0006
 - DECIDED: features earn their place only when deletion breaks something nameable. weight and --cap failed that test and were removed (ADR-0008); roles/CODEOWNERS is the next candidate if it stays unused — decided · architect
   ↳ session:s-audit-03 adr:0008
+- DECIDED: items 4-8 are closed, so baseline-audit is pushed and goes to PR. state-check.yml runs on a real runner for the first time there; a red first run most likely means the two new gates (doctor --strict on docs-match-the-CLI, state check --max-claim-age 50) rather than broken code — decided · architect
+  ↳ session:s-audit-03 adr:0004
 
 ## Known Gaps / Risks
 
