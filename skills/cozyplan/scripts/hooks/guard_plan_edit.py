@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # /// script
-# requires-python = ">=3.11"
+# requires-python = ">=3.9"
 # dependencies = []
 # ///
 """PreToolUse guard: managed-region COHERENCE for plan artifacts.

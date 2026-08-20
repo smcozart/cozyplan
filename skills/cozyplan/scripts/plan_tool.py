@@ -957,7 +957,8 @@ def scan_drift(root: Path) -> list[tuple[str, int, str]]:
     return hits
 
 
-def render_index_html(plans: list[dict], dangling: list, as_of: str = "") -> str:
+def render_index_html(plans: list[dict], dangling: list, as_of: str = "",
+                      unprovided: list = ()) -> str:
     order = ["active", "draft", "built", "superseded", "archived", ""]
     by_status: dict[str, list[dict]] = {}
     for p in plans:
@@ -986,6 +987,13 @@ def render_index_html(plans: list[dict], dangling: list, as_of: str = "") -> str
     if dangling:
         items = "".join(f"<li>{esc(f)} [{esc(fld)}] → {esc(r)}</li>" for f, fld, r in dangling)
         danger = f'<div class="danger"><strong>Dangling references:</strong><ul>{items}</ul></div>'
+    if unprovided:
+        # The half worth flagging (ADR-0003): a dead edge wastes a lookup, a missing
+        # one makes "nothing depends on this" read as confident and true.
+        items = "".join(f"<li>{esc(f)} consumes → <code>{esc(c)}</code></li>" for f, c in unprovided)
+        danger += (f'<div class="danger"><strong>Consumed but provided by nothing:</strong>'
+                   f'<ul>{items}</ul>'
+                   f'<p>Mark it <code>external:&lt;contract&gt;</code> if it is owned outside this repo.</p></div>')
     owner_facet = ""
     if owners:
         owner_facet = '<p class="facet">Owners: ' + ", ".join(esc(o) for o in owners) + "</p>"
@@ -1083,7 +1091,8 @@ def cmd_index(args) -> int:
                    indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
-    (specs / "_index.html").write_text(render_index_html(plans, dangling, as_of), encoding="utf-8")
+    (specs / "_index.html").write_text(
+        render_index_html(plans, dangling, as_of, unprovided), encoding="utf-8")
 
     drift = scan_drift(Path(args.root))
 
@@ -1096,8 +1105,17 @@ def cmd_index(args) -> int:
         print(f"  docs-drift hits ({len(drift)}) [retired-pipeline tokens]:")
         for f, ln, tok in drift[:50]:
             print(f"    {f}:{ln}: {tok}")
-    if not dangling and not drift:
-        print("  clean: no dangling refs, no doc drift")
+    # A contract consumed but provided by nothing was computed into _index.json and
+    # then never surfaced: the command printed a clean bill of health while the gap
+    # sat in the file. ADR-0003 names that exact failure — a confident "nothing
+    # depends on this" is worse than no answer at all.
+    if unprovided:
+        print(f"  consumed but provided by nothing ({len(unprovided)}):")
+        for f, c in unprovided:
+            print(f"    {f} consumes -> {c}")
+        print("    (mark it `external:<contract>` if it is owned outside this repo)")
+    if not dangling and not drift and not unprovided:
+        print("  clean: no dangling refs, no unprovided contracts, no doc drift")
     return 0
 
 
@@ -1389,7 +1407,9 @@ def cmd_hooks(args) -> int:
         ]
         removed = before - len(entries)
         if args.hooks_cmd == "install":
-            cmd_str = f'uv run "{(hook_dir / script).as_posix()}"'
+            exe, arg = _hook_runner_parts()
+            cmd_str = " ".join(shlex.quote(x) for x in ([exe] + ([arg] if arg else []))
+                               + [(hook_dir / script).as_posix()])
             entries.append({"matcher": matcher,
                             "hooks": [{"type": "command", "command": cmd_str}]})
             changed.append(f"{event}: {script} registered" + (" (re-pointed)" if removed else ""))

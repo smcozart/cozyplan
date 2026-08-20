@@ -6,13 +6,11 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-19T20:02:20-05:00 |
-| Repo state | baseline-audit @ bae0893 |
+| Last synced | 2026-08-19T20:17:19-05:00 |
+| Repo state | baseline-audit @ d22801c |
 
 ## Current Working State
 
-- The provides/consumes graph flags unprovided contracts — verified by `plan_tool index --specs specs` (2026-08-19, 9bfb3fe)
-  ↳ session:s-audit-03 path:specs
 - plan_tool CLI and both hooks pass their suite — verified by `python3 -m pytest tests` (2026-08-19, a036519)
   ↳ session:s-audit-03 path:tests path:skills/cozyplan/scripts
 - plan_tool init takes a greenfield repo from five doctor gaps to zero, and adopts a brownfield one without overwriting anything — verified by `python3 -m pytest tests/test_init.py` (2026-08-19, a036519)
@@ -31,6 +29,8 @@
   ↳ session:s-audit-03 adr:0004 path:.github/workflows path:skills/cozyplan/scripts path:tests
 - the two-axis review's 12 findings are fixed: replay cannot duplicate into the tracker, roles removal is recorded as ADR-0009, and doctor now checks its own header against the parser — verified by `python3 -m pytest tests` (2026-08-19, bae0893)
   ↳ session:s-audit-03 adr:0001 adr:0009 path:skills/cozyplan/scripts/plan_tool.py path:tests path:docs/adr
+- The provides/consumes graph flags unprovided contracts, on stdout and in the generated catalog — verified by `python3 -m pytest tests/test_index.py` (2026-08-19, d22801c)
+  ↳ session:s-audit-03 adr:0003 path:skills/cozyplan/scripts/plan_tool.py path:specs path:tests/test_index.py
 
 ## In Development
 
@@ -60,6 +60,10 @@
   ↳ session:s-audit-03
 - 212+ tests drive the CLI and assert on printed text; zero call check_state/validate_text/migrate_state/project_state/render_state directly, so every print string is load-bearing contract (architecture review, top recommendation)
   ↳ session:s-audit-03 adr:0004
+- plan_tool init installs cozyplan's own state-check.yml verbatim; it runs  and a hardcoded skills/cozyplan/scripts/plan_tool.py path, so an adopting repo gets a red CI on day one
+  ↳ session:s-audit-03 adr:0004
+- README routes 'how does this work' and 'what breaks if I change this' to SYSTEM.md; nothing creates it, this repo has none, and the generated STATE.md links to it anyway
+  ↳ session:s-audit-03 adr:0003
 
 ## Registers
 
