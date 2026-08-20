@@ -55,6 +55,8 @@ python3 <plan_tool> doctor            # what is actually wired here
 
 `init` is idempotent and additive — it creates only what is missing, never overwrites content, refuses to take over a `core.hooksPath` another hook manager owns, and prints the steps no command can take (branch protection, `gh` auth, the origin remote). On an existing repo it adopts rather than clobbers.
 
+**`--vendor` makes a repo self-contained.** It copies the two skills into `.claude/skills/`, which is the first place the resolver looks, so a teammate cloning that repo installs nothing at all — the skills and `plan_tool.py` travel with the code. `doctor` then reports the vendored version and flags a hand-edited copy. `--repo owner/name` supplies the issue-tracker slug when the repo has no `origin` yet.
+
 `doctor` is the one to run in any clone you did not wire yourself. `.git/hooks` is never cloned, so `hooks git-install` is a per-clone step — and `doctor` tells you when a clone has skipped it, rather than letting it fail silently.
 
 **Upgrading from 2.x?** See [`docs/migrating-to-3.0.md`](docs/migrating-to-3.0.md) — `STATE.md` is generated now, and `state render` refuses to overwrite an authored one.

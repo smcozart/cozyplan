@@ -128,3 +128,71 @@ def test_preserves_an_existing_gitignore(pt, git_repo):
     run(pt, git_repo)
     text = read(git_repo / ".gitignore")
     assert "node_modules/" in text and ".scratch/" in text
+
+
+def _fake_skill_source(tmp_path):
+    """A skills/ dir shaped like the real one, so --vendor has something to copy
+    without this test depending on the repo it runs in."""
+    src = tmp_path / "upstream" / "skills"
+    for name in ("cozyplan", "discuss"):
+        (src / name / "scripts").mkdir(parents=True)
+        (src / name / "SKILL.md").write_text(f"# {name}\n", encoding="utf-8")
+        (src / name / "scripts" / "x.py").write_text("x = 1\n", encoding="utf-8")
+    return src
+
+
+def test_vendor_copies_both_skills_into_the_repo(pt, git_repo, tmp_path, monkeypatch):
+    """A teammate cloning a vendored repo installs nothing: the skills and plan_tool
+    travel with the repo, and the template resolver already looks in .claude/skills first."""
+    src = _fake_skill_source(tmp_path)
+    monkeypatch.setattr(pt, "__file__", str(src / "cozyplan" / "scripts" / "plan_tool.py"))
+    run(pt, git_repo, "--vendor", "--repo", "acme/widget")
+    for name in ("cozyplan", "discuss"):
+        assert (git_repo / ".claude" / "skills" / name / "SKILL.md").exists(), name
+    assert "version" in read(git_repo / ".claude" / "skills" / "VENDORED.md")
+
+
+def test_vendor_records_what_it_vendored(pt, git_repo, tmp_path, monkeypatch):
+    """A consuming repo cannot see upstream, so the only honest drift signal is a
+    recorded origin a human can compare against."""
+    src = _fake_skill_source(tmp_path)
+    monkeypatch.setattr(pt, "__file__", str(src / "cozyplan" / "scripts" / "plan_tool.py"))
+    run(pt, git_repo, "--vendor")
+    text = read(git_repo / ".claude" / "skills" / "VENDORED.md")
+    assert "source commit" in text and "vendored from" in text
+
+
+def test_doctor_flags_a_hand_edited_vendored_skill(pt, git_repo, tmp_path, monkeypatch, capsys):
+    src = _fake_skill_source(tmp_path)
+    monkeypatch.setattr(pt, "__file__", str(src / "cozyplan" / "scripts" / "plan_tool.py"))
+    run(pt, git_repo, "--vendor")
+    git(git_repo, "add", "-A")
+    git(git_repo, "commit", "-m", "vendor")
+    capsys.readouterr()
+    pt.main(["doctor", "--root", str(git_repo)])
+    assert "committed in-repo" in capsys.readouterr().out
+    (git_repo / ".claude" / "skills" / "cozyplan" / "SKILL.md").write_text("tampered\n", encoding="utf-8")
+    pt.main(["doctor", "--root", str(git_repo)])
+    assert "are modified" in capsys.readouterr().out
+
+
+def test_repo_flag_breaks_the_init_doctor_loop(pt, git_repo, capsys):
+    """Without an origin, doctor said 'run init' and init said 'needs a human'. --repo
+    is the way out; a guessed slug would point every issue command at someone else."""
+    assert run(pt, git_repo, "--repo", "acme/widget") == 0
+    text = read(git_repo / "docs" / "agents" / "issue-tracker.md")
+    assert "acme/widget" in text and "{{REPO_SLUG}}" not in text
+    capsys.readouterr()
+    assert gaps(pt, git_repo) == []
+
+
+def test_vendoring_into_the_skill_source_itself_is_refused(pt, git_repo, capsys):
+    """Running --vendor in cozyplan's own repo would copy skills/ into .claude/skills/."""
+    (git_repo / "skills" / "cozyplan" / "scripts").mkdir(parents=True)
+    import types
+    pt_file = git_repo / "skills" / "cozyplan" / "scripts" / "plan_tool.py"
+    pt_file.write_text("x\n", encoding="utf-8")
+    import unittest.mock as _m
+    with _m.patch.object(pt, "__file__", str(pt_file)):
+        run(pt, git_repo, "--vendor")
+    assert "vendoring it into" in capsys.readouterr().out

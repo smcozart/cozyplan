@@ -39,7 +39,7 @@ The full CLI surface, the plan metadata contract, and the install paths. Reached
 
 | Install | Command |
 | --- | --- |
-| Wire a whole repo (idempotent; implements `doctor`'s check list) | `PLAN_TOOL init [--git-init] [--force-hooks] [--no-claude-hooks]` |
+| Wire a whole repo (idempotent; implements `doctor`'s check list) | `PLAN_TOOL init [--vendor] [--repo OWNER/NAME] [--git-init] [--force-hooks] [--no-claude-hooks]` |
 | Claude Code hooks (needs user approval — hooks execute commands) | `PLAN_TOOL hooks install [--global]` · `hooks remove` |
 | Tracked git hooks + `core.hooksPath` | `PLAN_TOOL hooks git-install [--dir .githooks]` · `hooks git-remove` |
 

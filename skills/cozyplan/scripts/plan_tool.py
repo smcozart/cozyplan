@@ -1865,8 +1865,20 @@ Start here, in this order. Each answers a different question.
 `STATE.md` is **generated** by `plan_tool state render` from `docs/state.ndjson`.
 Never hand-edit it: append an event with `plan_tool state add`, then re-render.
 
-Run `plan_tool doctor` to see what is actually wired in this clone.
+## First session in a fresh clone
 
+`.git/hooks` is never cloned, so a clone arrives with the tracked hooks present and
+inactive. Git refuses to let a clone set its own config, which is a security property,
+not an oversight — so this one step cannot be automated away, only done for the human.
+
+At the start of a session in a clone you did not wire yourself, run `plan_tool doctor`.
+If it reports `git hooks  core.hooksPath unset`, run `plan_tool hooks git-install` once.
+Both commands are idempotent, and `doctor` reports the result rather than assuming it.
+
+Skipping this is safe. The hooks only inject commit trailers, which makes history
+answer "why was it built this way" further back. Without them the derived reports get
+thinner, never wrong (ADR-0004).
+{vendor_note}
 ## Agent skills
 
 ### Issue tracker
@@ -1950,16 +1962,60 @@ def cmd_init(args) -> int:
         write(f, text)
         made.append(rel)
 
+    # ── vendoring: the repo carries the skill, so a teammate installs nothing ──
+    if args.vendor:
+        skill_root = Path(__file__).resolve().parent.parent      # <skills>/cozyplan
+        src_dir = skill_root.parent                              # <skills>
+        dest_dir = root / ".claude" / "skills"
+        if src_dir.resolve() == (root / "skills").resolve():
+            manual.append(".claude/skills — this repo IS the skill source; vendoring it into "
+                          "itself would duplicate it. Run --vendor in the consuming repo.")
+        else:
+            for name in ("cozyplan", "discuss"):
+                src = src_dir / name
+                dst = dest_dir / name
+                if not src.is_dir():
+                    manual.append(f".claude/skills/{name} — not found at {src}")
+                    continue
+                existed = dst.exists()
+                if existed:
+                    shutil.rmtree(dst)
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(src, dst,
+                                ignore=shutil.ignore_patterns("__pycache__", "*.pyc", ".venv*"))
+                (refreshed if existed else made).append(f".claude/skills/{name}")
+            # What was vendored, and from where. A consuming repo cannot see upstream,
+            # so the only honest drift signal is a recorded origin a human can compare.
+            ver = ""
+            for cand in (src_dir.parent / ".claude-plugin" / "plugin.json",):
+                if cand.exists():
+                    with contextlib.suppress(Exception):
+                        ver = json.loads(read(cand)).get("version", "")
+            ok_sha, sha = git(src_dir.parent, "rev-parse", "--short", "HEAD")
+            write(dest_dir / "VENDORED.md",
+                  "# Vendored cozyplan\n\n"
+                  "These skills are committed into this repo so a clone needs no install.\n"
+                  "Do not hand-edit them: re-vendor with `plan_tool init --vendor` from a\n"
+                  "newer cozyplan, and review the diff.\n\n"
+                  f"| Field | Value |\n| --- | --- |\n"
+                  f"| version | {ver or 'unknown'} |\n"
+                  f"| source commit | {sha if ok_sha else 'unknown'} |\n"
+                  f"| vendored from | {src_dir.parent} |\n\n"
+                  "`state check` reports a stale claim when anything under `.claude/skills/`\n"
+                  "changes, which is how a drifted copy surfaces.\n")
+            made.append(".claude/skills/VENDORED.md")
+
     # ── records and the event log ────────────────────────────────────────────
     ensure_dir("docs/adr")
     ensure_file(STATE_LOG_DEFAULT, "")
     ensure_from_template("docs/journal.md", "journal.md")
 
-    ok_rem, remote = git(root, "remote", "get-url", "origin")
-    slug = ""
-    if ok_rem and remote:
-        m = re.search(r"[:/]([^/:]+/[^/]+?)(?:\.git)?$", remote.strip())
-        slug = m.group(1) if m else ""
+    slug = (args.repo or "").strip()
+    if not slug:
+        ok_rem, remote = git(root, "remote", "get-url", "origin")
+        if ok_rem and remote:
+            m = re.search(r"[:/]([^/:]+/[^/]+?)(?:\.git)?$", remote.strip())
+            slug = m.group(1) if m else ""
     if slug:
         ensure_from_template("docs/agents/issue-tracker.md", "issue-tracker.md",
                              {"{{REPO_SLUG}}": slug})
@@ -1967,7 +2023,9 @@ def cmd_init(args) -> int:
         kept.append("docs/agents/issue-tracker.md")
     else:
         manual.append("docs/agents/issue-tracker.md — no `origin` remote, so the repo slug "
-                      "cannot be filled in. Add a remote and re-run, or write it by hand")
+                      "cannot be filled in. Re-run with `--repo <owner>/<name>`, add a remote, "
+                      "or write the file by hand. A guessed slug would point every issue "
+                      "command at someone else's repo.")
 
     # ── union merge: ask git, not the file. The attribute can come from
     #    .git/info/attributes or a parent dir, and appending blindly duplicates it.
@@ -2024,7 +2082,12 @@ def cmd_init(args) -> int:
     if (root / "CLAUDE.md").exists() or (root / "AGENTS.md").exists():
         kept.append("CLAUDE.md / AGENTS.md")
     else:
-        ensure_file("CLAUDE.md", CLAUDE_MD_STUB.format(name=root.resolve().name))
+        vendor_note = ("\nNothing else needs installing: the cozyplan and discuss skills are "
+                       "committed\nunder `.claude/skills/`, and `plan_tool.py` ships inside them. "
+                       "See\n`.claude/skills/VENDORED.md` for the version this repo carries.\n"
+                       if args.vendor else "")
+        ensure_file("CLAUDE.md", CLAUDE_MD_STUB.format(name=root.resolve().name,
+                                                       vendor_note=vendor_note))
 
     # ── STATE.md last: render refuses to overwrite an authored snapshot, which
     #    is exactly the behaviour we want here, so route the user to migrate.
@@ -2496,6 +2559,17 @@ def doctor_checks(root: Path, commits: int) -> list[tuple[str, str, str, str]]:
             "the skill prose and this file's own header both match the parser" if not drift
             else "documented commands disagree with the parser: " + ", ".join(drift))
 
+    vend = root / ".claude" / "skills" / "VENDORED.md"
+    if vend.exists():
+        m = re.search(r"\| version \| ([^|]+) \|", read(vend))
+        ver = (m.group(1).strip() if m else "unknown")
+        ok_d, dirty = git(root, "status", "--porcelain", "--", ".claude/skills")
+        modified = [l for l in dirty.splitlines() if l.strip()] if ok_d else []
+        add("adapter", WARN if modified else OK, "vendored skills",
+            f"cozyplan {ver}, committed in-repo — a clone needs no install" if not modified
+            else f"cozyplan {ver}, but {len(modified)} file(s) under .claude/skills/ are "
+                 f"modified — re-vendor with `init --vendor` rather than hand-editing")
+
     wf = root / ".github" / "workflows"
     ci = [f.name for f in wf.glob("*.yml")] + [f.name for f in wf.glob("*.yaml")] if wf.is_dir() else []
     has_state_ci = any("state check" in read(wf / f) or "state_check" in read(wf / f) for f in ci) if ci else False
@@ -2810,6 +2884,11 @@ def build_parser() -> argparse.ArgumentParser:
                     help="run `git init` when root is not a repository")
     sp.add_argument("--force-hooks", action="store_true",
                     help="take over core.hooksPath even when another hook manager owns it")
+    sp.add_argument("--vendor", action="store_true",
+                    help="copy the cozyplan and discuss skills into .claude/skills/ so a "
+                         "clone of this repo needs no install")
+    sp.add_argument("--repo", default=None, metavar="OWNER/NAME",
+                    help="repo slug for the issue-tracker adapter when there is no origin")
     sp.add_argument("--no-claude-hooks", dest="claude_hooks", action="store_false",
                     help="skip registering the Claude Code hooks in .claude/settings.json")
     sp.set_defaults(func=cmd_init, claude_hooks=True)
