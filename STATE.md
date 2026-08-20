@@ -6,8 +6,8 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-19T21:24:21-05:00 |
-| Repo state | baseline-audit @ ba0dd16 |
+| Last synced | 2026-08-19T22:05:14-05:00 |
+| Repo state | main @ 0f0d0a8 |
 
 ## Current Working State
 
@@ -35,6 +35,8 @@
   ↳ session:s-audit-03 adr:0004 path:skills/cozyplan/templates/state-check.yml path:.github/workflows
 - SYSTEM.md exists and every Contract string in its edge table is greppable in the source of both sides, which is ADR-0003's falsifiability test — verified by `grep -rl <each Contract> skills/ .githooks/ .github/` (2026-08-19, ba0dd16)
   ↳ session:s-audit-03 adr:0003 path:SYSTEM.md path:skills/cozyplan/scripts/plan_tool.py
+- state-check is a required status check on main, so CI gates rather than reports — verified by `gh api repos/smcozart/cozyplan/branches/main/protection` (2026-08-19, 0f0d0a8)
+  ↳ session:s-audit-03 adr:0004 path:.github/workflows
 
 ## In Development
 
@@ -51,8 +53,6 @@
 
 ## Known Gaps / Risks
 
-- The CI check is not marked required yet, so it reports without gating
-  ↳ adr:0004
 - Each clone must run `plan_tool hooks git-install` once; .git/hooks is not cloned
   ↳ adr:0007
 - The README ADR table is hand-maintained and will drift from docs/adr/
