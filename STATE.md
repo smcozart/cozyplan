@@ -6,8 +6,8 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-19T22:05:14-05:00 |
-| Repo state | main @ 0f0d0a8 |
+| Last synced | 2026-08-19T22:05:45-05:00 |
+| Repo state | main @ 6f06ff9 |
 
 ## Current Working State
 
@@ -35,7 +35,7 @@
   ↳ session:s-audit-03 adr:0004 path:skills/cozyplan/templates/state-check.yml path:.github/workflows
 - SYSTEM.md exists and every Contract string in its edge table is greppable in the source of both sides, which is ADR-0003's falsifiability test — verified by `grep -rl <each Contract> skills/ .githooks/ .github/` (2026-08-19, ba0dd16)
   ↳ session:s-audit-03 adr:0003 path:SYSTEM.md path:skills/cozyplan/scripts/plan_tool.py
-- state-check is a required status check on main, so CI gates rather than reports — verified by `gh api repos/smcozart/cozyplan/branches/main/protection` (2026-08-19, 0f0d0a8)
+- state-check is required on main: it gates merges and pushes for everyone except repo admins, whose pushes GitHub allows and announces as a logged bypass (enforce_admins is off) — verified by `gh api repos/smcozart/cozyplan/branches/main/protection; observed a real admin push report 'Bypassed rule violations'` (2026-08-19, 6f06ff9)
   ↳ session:s-audit-03 adr:0004 path:.github/workflows
 
 ## In Development
@@ -63,6 +63,8 @@
 - actions/checkout@v4 and actions/setup-python@v5 target Node 20, which GitHub has deprecated and is force-running on Node 24; pin newer majors before it becomes a hard failure
   ↳ session:s-audit-03
 - 212+ tests drive the CLI and assert on printed text; zero call check_state/validate_text/migrate_state/project_state/render_state directly, so every print string is load-bearing contract (architecture review, top recommendation)
+  ↳ session:s-audit-03 adr:0004
+- enforce_admins is off, so a repo admin can push to main past a failing state-check; GitHub logs and announces the bypass but does not block it. Set enforce_admins true to close it, at the cost of routing every admin change through a PR
   ↳ session:s-audit-03 adr:0004
 
 ## Registers
