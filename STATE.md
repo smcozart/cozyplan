@@ -6,8 +6,8 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-19T20:17:19-05:00 |
-| Repo state | baseline-audit @ d22801c |
+| Last synced | 2026-08-19T20:17:40-05:00 |
+| Repo state | baseline-audit @ a941128 |
 
 ## Current Working State
 
@@ -60,10 +60,10 @@
   ↳ session:s-audit-03
 - 212+ tests drive the CLI and assert on printed text; zero call check_state/validate_text/migrate_state/project_state/render_state directly, so every print string is load-bearing contract (architecture review, top recommendation)
   ↳ session:s-audit-03 adr:0004
-- plan_tool init installs cozyplan's own state-check.yml verbatim; it runs  and a hardcoded skills/cozyplan/scripts/plan_tool.py path, so an adopting repo gets a red CI on day one
-  ↳ session:s-audit-03 adr:0004
 - README routes 'how does this work' and 'what breaks if I change this' to SYSTEM.md; nothing creates it, this repo has none, and the generated STATE.md links to it anyway
   ↳ session:s-audit-03 adr:0003
+- plan_tool init installs cozyplan own state-check.yml verbatim: it runs "pytest tests" and a hardcoded skills/cozyplan/scripts/plan_tool.py path, so an adopting repo gets a red CI on day one
+  ↳ session:s-audit-03 adr:0004
 
 ## Registers
 
