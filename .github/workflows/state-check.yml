@@ -29,6 +29,11 @@ jobs:
         with:
           python-version: '3.11'
 
+      # plan_tool itself is stdlib-only, so pytest is the single dev dependency and
+      # there is no requirements file to install. It still has to be installed.
+      - name: Install pytest
+        run: python -m pip install --disable-pip-version-check --quiet pytest
+
       - name: Test suite
         run: python -m pytest tests -q
 
