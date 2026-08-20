@@ -55,7 +55,7 @@ The full CLI surface, the plan metadata contract, and the install paths. Reached
 
 **`id`** is a short immutable slug set once at Create. References, event logs, and commit trailers point at it, so it survives renames — which is why history keys on it rather than the filename.
 
-**`owner`** is the role that owns the plan (`architect`, `engineer-<component>`, `ux`); only the owner edits plan content. It is a label on the plan, not an enforcement mechanism: review routing is git's job via CODEOWNERS, which this tool no longer generates (ADR-0008).
+**`owner`** is the role that owns the plan (`architect`, `engineer-<component>`, `ux`); only the owner edits plan content. It is a label on the plan, not an enforcement mechanism: review routing is git's job via CODEOWNERS, which this tool no longer generates (ADR-0009).
 
 **`provides`/`consumes` are the plan's impact edges.** `provides` names the contracts this plan's work will own — a route, a queue topic, an event name, a shared table; `consumes` names the ones it depends on. Record the **literal string that crosses the boundary**, never a description, so the edge stays greppable in both sides' source. `PLAN_TOOL index` aggregates them across `specs/` into the dependency graph that answers "what breaks if this changes", and flags any contract consumed but provided by nothing. Calls that stay inside one component are not edges — `find references` answers those exactly and for free. (ADR-0003)
 

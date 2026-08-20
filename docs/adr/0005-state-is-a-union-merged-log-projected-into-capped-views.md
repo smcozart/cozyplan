@@ -44,7 +44,7 @@ and its trailers, a new `docs/state.ndjson`, the existing `specs/*.log.ndjson` a
 component change becomes an **event** rather than an edit.
 
 **Tier 2 — Projections.** Generated, never hand-edited, and **capped**: `STATE.md`,
-`specs/_index.*`, the `SYSTEM.md` edge table, `roles/_roles.json`, `.github/CODEOWNERS`.
+`specs/_index.*`, and the `SYSTEM.md` edge table. *(Superseded in part by ADR-0009: `roles/_roles.json` and `.github/CODEOWNERS` are no longer generated.)*
 `STATE.md` joins the family that already carries the rule "never hand-edit them; rerun the
 command that builds them."
 

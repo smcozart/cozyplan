@@ -177,6 +177,7 @@ The architecture is recorded in `docs/adr/`, and the repo runs on its own baseli
 | 0004 | Hooks advise, CI enforces, and derivation tolerates gaps |
 | 0005 | State is a union-merged log projected into capped views |
 | 0008 | The state view shows everything until it cannot |
+| 0009 | Role ownership maps are git's job, not cozyplan's |
 | 0006 | Grounding is a traversal with a declared stopping rule |
 | 0007 | Git hooks are tracked and opted into per clone |
 

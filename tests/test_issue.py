@@ -92,3 +92,51 @@ def test_replay_run_refuses_without_gh(pt, git_repo, monkeypatch, capsys):
 def test_file_requires_a_title(pt, git_repo, capsys):
     assert pt.main(["issue", "file", "--root", str(git_repo), "--body", "b"]) == 1
     assert "--title is required" in capsys.readouterr().err
+
+
+def _fake_gh(tmp_path, monkeypatch):
+    """A gh on PATH that fails only for a title containing FAIL, so a partial
+    replay can be exercised without touching a real tracker."""
+    bin_dir = tmp_path / "fakebin"
+    bin_dir.mkdir(exist_ok=True)
+    gh = bin_dir / "gh"
+    gh.write_text('#!/bin/sh\ncase "$*" in *FAIL*) exit 1;; esac\nexit 0\n', encoding="utf-8")
+    gh.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    return bin_dir
+
+
+def test_replay_does_not_refile_what_already_succeeded(pt, git_repo, tmp_path, monkeypatch):
+    """Running the whole script and leaving it untouched on failure meant the commands
+    that already ran stayed queued, so the next --run duplicated them in the tracker."""
+    _fake_gh(tmp_path, monkeypatch)
+    file_issue(pt, git_repo, "first ok")
+    file_issue(pt, git_repo, "second FAIL here")
+    file_issue(pt, git_repo, "third ok")
+    assert pt.main(["issue", "replay", "--root", str(git_repo), "--run"]) == 1
+    left = [l for l in read(script(git_repo)).splitlines() if l.startswith("gh ")]
+    assert len(left) == 2, left
+    assert "first ok" not in read(script(git_repo)), "a filed issue must leave the queue"
+    assert "second FAIL here" in left[0]
+
+
+def test_replay_clears_the_queue_when_every_command_succeeds(pt, git_repo, tmp_path, monkeypatch):
+    _fake_gh(tmp_path, monkeypatch)
+    file_issue(pt, git_repo, "one")
+    file_issue(pt, git_repo, "two")
+    assert pt.main(["issue", "replay", "--root", str(git_repo), "--run"]) == 0
+    assert [l for l in read(script(git_repo)).splitlines() if l.startswith("gh ")] == []
+
+
+def test_a_second_replay_after_a_partial_failure_files_only_what_is_left(pt, git_repo,
+                                                                        tmp_path, monkeypatch):
+    """The property that matters: retrying must never duplicate."""
+    _fake_gh(tmp_path, monkeypatch)
+    file_issue(pt, git_repo, "alpha")
+    file_issue(pt, git_repo, "beta FAIL")
+    pt.main(["issue", "replay", "--root", str(git_repo), "--run"])
+    # the operator fixes whatever was wrong; the failing title stops failing
+    text = read(script(git_repo)).replace("beta FAIL", "beta fixed")
+    script(git_repo).write_text(text, encoding="utf-8")
+    assert pt.main(["issue", "replay", "--root", str(git_repo), "--run"]) == 0
+    assert [l for l in read(script(git_repo)).splitlines() if l.startswith("gh ")] == []

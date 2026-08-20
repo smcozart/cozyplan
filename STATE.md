@@ -7,7 +7,7 @@
 | Sync | |
 |---|---|
 | Last synced | 2026-08-19T19:28:48-05:00 |
-| Repo state | baseline-audit @ aeed33a |
+| Repo state | baseline-audit @ 40d9ffe |
 
 ## Current Working State
 
@@ -69,5 +69,6 @@
   - ADR-0006 — Grounding is a traversal with a declared stopping rule
   - ADR-0007 — Git hooks are tracked and opted into per clone
   - ADR-0008 — The state view shows everything until it cannot
+  - ADR-0009 — Role ownership maps are git's job, not cozyplan's
 - **Components** — [SYSTEM.md](SYSTEM.md)
 - **Ledger** — [docs/journal.md](docs/journal.md)

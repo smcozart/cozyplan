@@ -2203,10 +2203,23 @@ def cmd_issue(args) -> int:
         if not gh_ready():
             return fail("gh is not installed or not authenticated — nothing was replayed")
         script = root / SCRATCH_DIR / "pending-gh.sh"
-        r = subprocess.run(["sh", str(script)], cwd=str(root))
-        if r.returncode != 0:
-            return fail(f"replay stopped at the first failure; {script} is unchanged")
-        write(script, QUEUE_SCRIPT_HEADER)
+
+        def rewrite(pending: list) -> None:
+            write(script, QUEUE_SCRIPT_HEADER + ("\n".join(pending) + "\n" if pending else ""))
+
+        # One command at a time, and the queue is rewritten after each success. Running
+        # the whole script and leaving it untouched on failure meant the commands that
+        # already succeeded stayed queued, so the next --run filed them a second time —
+        # duplicates in the tracker ADR-0001 made the source of truth.
+        pending = list(cmds)
+        for cmd in cmds:
+            r = subprocess.run(["sh", "-c", cmd], cwd=str(root))
+            if r.returncode != 0:
+                rewrite(pending)
+                return fail(f"replay stopped at a failing command; {len(pending)} still "
+                            f"queued in {script}. The ones already filed were removed.")
+            pending.pop(0)
+            rewrite(pending)
         print(f"issue: replayed {len(cmds)} queued issue(s); {script} reset")
         return 0
     return fail(f"unknown issue command: {args.issue_cmd}")
