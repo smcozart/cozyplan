@@ -70,9 +70,13 @@ clone actually wired?"
 activation is one command per clone — which `doctor` then detects and reports.
 
 **Human-only steps are named, never faked.** Enabling branch protection and marking a
-status check required needs repository admin in the GitHub UI. No skill can do it, and
-claiming otherwise would manufacture exactly the guarantee this ADR exists to prevent.
-Those steps are handed to the `wizard` skill and printed for a human.
+status check required needs repository **admin**. A tool holding an admin token can make
+the call — `gh api -X PUT .../branches/<b>/protection` — and `scripts/adopt.sh` does
+exactly that, after asking. What no skill can do is *grant itself* admin, or know that
+the person running it wants their repository settings changed. So the rule is consent and
+capability, not impossibility: the step is always named, always confirmed, and always
+falls back to the click path when the token cannot do it or a protection rule already
+exists that a blind PUT would replace.
 
 ## Consequences
 
@@ -104,3 +108,6 @@ as the check it runs; then the CI workflow; then `.githooks/` plus `core.hooksPa
 
 - 2026-08-18 — proposed by Sean Cozart
 - 2026-08-18 — accepted by Sean Cozart
+- 2026-08-19 — corrected: the human-only clause overstated the constraint. Branch
+  protection is admin-gated, not tool-impossible; `scripts/adopt.sh` performs it with
+  consent and falls back to the UI path.
