@@ -6,8 +6,8 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-19T21:19:23-05:00 |
-| Repo state | baseline-audit @ 5c307c7 |
+| Last synced | 2026-08-19T21:24:21-05:00 |
+| Repo state | baseline-audit @ ba0dd16 |
 
 ## Current Working State
 
@@ -33,6 +33,8 @@
   ↳ session:s-audit-03 adr:0003 path:skills/cozyplan/scripts/plan_tool.py path:specs path:tests/test_index.py
 - plan_tool init installs a CI workflow that resolves plan_tool instead of hardcoding a path, so an adopting repo is not red on day one — verified by `gh run list --branch baseline-audit` (2026-08-19, 5c307c7)
   ↳ session:s-audit-03 adr:0004 path:skills/cozyplan/templates/state-check.yml path:.github/workflows
+- SYSTEM.md exists and every Contract string in its edge table is greppable in the source of both sides, which is ADR-0003's falsifiability test — verified by `grep -rl <each Contract> skills/ .githooks/ .github/` (2026-08-19, ba0dd16)
+  ↳ session:s-audit-03 adr:0003 path:SYSTEM.md path:skills/cozyplan/scripts/plan_tool.py
 
 ## In Development
 
@@ -62,8 +64,6 @@
   ↳ session:s-audit-03
 - 212+ tests drive the CLI and assert on printed text; zero call check_state/validate_text/migrate_state/project_state/render_state directly, so every print string is load-bearing contract (architecture review, top recommendation)
   ↳ session:s-audit-03 adr:0004
-- README routes 'how does this work' and 'what breaks if I change this' to SYSTEM.md; nothing creates it, this repo has none, and the generated STATE.md links to it anyway
-  ↳ session:s-audit-03 adr:0003
 
 ## Registers
 

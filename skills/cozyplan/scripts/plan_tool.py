@@ -1120,7 +1120,7 @@ def cmd_index(args) -> int:
 
 
 # ── new (deterministic plan scaffolding from templates/plan.html) ─────────────
-def template_candidates(name: str = "plan.html") -> list[Path]:
+def template_candidates(name: str = "plan.html", skill: str = "cozyplan") -> list[Path]:
     """Ordered locations to look for a named template.
 
     Mirrors how the hooks resolve plan_tool.py: prefer CLAUDE_PLUGIN_ROOT (the
@@ -1128,8 +1128,9 @@ def template_candidates(name: str = "plan.html") -> list[Path]:
     with the in-project `.claude/skills/...` layout and the moved-as-a-unit layout.
     """
     rels = [
-        Path(".claude") / "skills" / "cozyplan" / "templates" / name,
-        Path("skills") / "cozyplan" / "templates" / name,
+        Path(".claude") / "skills" / skill / "templates" / name,
+        Path("skills") / skill / "templates" / name,
+        Path(skill) / "templates" / name,   # from a <skills>/ root, for a sibling skill
         Path("templates") / name,
     ]
     roots: list[Path] = []
@@ -1138,6 +1139,7 @@ def template_candidates(name: str = "plan.html") -> list[Path]:
         roots.append(Path(pr))
     roots.append(Path.cwd())
     roots.append(Path(__file__).resolve().parent.parent)  # <skill>/scripts/ -> <skill>/ (templates/ sits beside scripts/)
+    roots.append(Path(__file__).resolve().parent.parent.parent)  # -> <skills>/, for a sibling skill
     seen: list[Path] = []
     for root in roots:
         for rel in rels:
@@ -1147,8 +1149,8 @@ def template_candidates(name: str = "plan.html") -> list[Path]:
     return seen
 
 
-def resolve_template(name: str = "plan.html") -> Path | None:
-    for c in template_candidates(name):
+def resolve_template(name: str = "plan.html", skill: str = "cozyplan") -> Path | None:
+    for c in template_candidates(name, skill):
         if c.exists():
             return c
     return None
@@ -1908,6 +1910,26 @@ def a_workflow_runs_state_check(root: Path) -> bool:
     return any("state check" in read(f) or "state_check" in read(f)
                for f in sorted(list(wf.glob("*.yml")) + list(wf.glob("*.yaml"))))
 
+
+def strip_example_rows(text: str) -> str:
+    """Drop a template's illustrative table rows. A fresh repo that ships a map of
+    fictional components is the confident-wrong-answer failure SYSTEM.md's own footer
+    warns about: a reader stops at the table instead of reading the code."""
+    out: list[str] = []
+    in_table = False
+    for ln in text.splitlines():
+        if re.match(r"^\|[\s|:-]+\|\s*$", ln):          # the header separator
+            cols = ln.count("|") - 1
+            out.append(ln)
+            out.append("| _none recorded yet_ " + "| " * (cols - 1) + "|")
+            in_table = True
+            continue
+        if in_table and ln.startswith("|"):
+            continue                                       # an example row
+        in_table = False
+        out.append(ln)
+    return "\n".join(out) + "\n"
+
 def cmd_init(args) -> int:
     """Wire a repo for cozyplan: everything `doctor` checks that a command can
     legitimately create. Idempotent and additive — every write is create-if-absent
@@ -2077,6 +2099,20 @@ def cmd_init(args) -> int:
         else:
             manual.append(".claude/settings.json — hook registration failed; run "
                           "`plan_tool hooks install` and read the error")
+
+    # SYSTEM.md answers "what breaks if I change this" (ADR-0003), and the README
+    # routes two of the four questions at it. Nothing created it, so every repo shipped
+    # a dead link — including the generated STATE.md's own Registers block.
+    if (root / "SYSTEM.md").exists():
+        kept.append("SYSTEM.md")
+    else:
+        src = resolve_template("system.md", skill="discuss")
+        if src is None:
+            manual.append("SYSTEM.md — the discuss skill's templates/system.md was not found "
+                          "beside this script; copy it by hand")
+        else:
+            write(root / "SYSTEM.md", strip_example_rows(read(src)))
+            made.append("SYSTEM.md")
 
     # ── entry point ──────────────────────────────────────────────────────────
     if (root / "CLAUDE.md").exists() or (root / "AGENTS.md").exists():

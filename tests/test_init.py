@@ -196,3 +196,36 @@ def test_vendoring_into_the_skill_source_itself_is_refused(pt, git_repo, capsys)
     with _m.patch.object(pt, "__file__", str(pt_file)):
         run(pt, git_repo, "--vendor")
     assert "vendoring it into" in capsys.readouterr().out
+
+
+def test_scaffolds_system_md(pt, git_repo):
+    """README routes 'how does this work' and 'what breaks if I change this' at
+    SYSTEM.md, and nothing created it, so every repo shipped a dead link."""
+    run(pt, git_repo, "--repo", "acme/widget")
+    assert (git_repo / "SYSTEM.md").exists()
+    text = read(git_repo / "SYSTEM.md")
+    assert "## Components" in text and "## Edges" in text
+
+
+def test_the_scaffolded_map_carries_no_fictional_components(pt, git_repo):
+    """A fresh repo shipping a table of invented components is the confident-wrong-
+    answer failure SYSTEM.md's own footer warns about: readers stop at the table."""
+    run(pt, git_repo, "--repo", "acme/widget")
+    text = read(git_repo / "SYSTEM.md")
+    for example in ("Orders API", "Billing Worker", "Fulfillment", "Stripe"):
+        assert example not in text, example
+    assert "_none recorded yet_" in text
+
+
+def test_an_existing_system_md_is_never_clobbered(pt, git_repo):
+    (git_repo / "SYSTEM.md").write_text("# System\n\nour real map\n", encoding="utf-8")
+    run(pt, git_repo, "--repo", "acme/widget")
+    assert "our real map" in read(git_repo / "SYSTEM.md")
+
+
+def test_strip_example_rows_keeps_headers_and_prose(pt):
+    src = ("| A | B |\n| --- | --- |\n| x | y |\n| p | q |\n\nprose stays\n")
+    out = pt.strip_example_rows(src)
+    assert "| A | B |" in out and "prose stays" in out
+    assert "| x | y |" not in out
+    assert "_none recorded yet_" in out
