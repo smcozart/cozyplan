@@ -6,8 +6,8 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-19T19:28:48-05:00 |
-| Repo state | baseline-audit @ 40d9ffe |
+| Last synced | 2026-08-19T20:02:20-05:00 |
+| Repo state | baseline-audit @ bae0893 |
 
 ## Current Working State
 
@@ -29,6 +29,8 @@
   ↳ session:s-audit-03 path:skills/cozyplan/scripts
 - state-check.yml runs green on a real runner: tests, plan validity, generated-file currency, doctor --strict, and state check --max-claim-age 50 — verified by `gh run view 32317371478` (2026-08-19, aeed33a)
   ↳ session:s-audit-03 adr:0004 path:.github/workflows path:skills/cozyplan/scripts path:tests
+- the two-axis review's 12 findings are fixed: replay cannot duplicate into the tracker, roles removal is recorded as ADR-0009, and doctor now checks its own header against the parser — verified by `python3 -m pytest tests` (2026-08-19, bae0893)
+  ↳ session:s-audit-03 adr:0001 adr:0009 path:skills/cozyplan/scripts/plan_tool.py path:tests path:docs/adr
 
 ## In Development
 
@@ -56,6 +58,8 @@
   ↳ session:s-audit-03 adr:0006
 - actions/checkout@v4 and actions/setup-python@v5 target Node 20, which GitHub has deprecated and is force-running on Node 24; pin newer majors before it becomes a hard failure
   ↳ session:s-audit-03
+- 212+ tests drive the CLI and assert on printed text; zero call check_state/validate_text/migrate_state/project_state/render_state directly, so every print string is load-bearing contract (architecture review, top recommendation)
+  ↳ session:s-audit-03 adr:0004
 
 ## Registers
 
