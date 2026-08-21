@@ -46,6 +46,20 @@ python3 .claude/skills/cozyplan/scripts/plan_tool.py hooks install
 
 `--global` registers user-wide; `hooks remove` undoes it. Idempotent, preserves your other settings, takes effect on the next restart. Skipping it is fine — every `plan_tool` operation self-validates; the hooks only add edit-time steering.
 
+### Or: bootstrap with nothing installed
+
+Cold start, on a machine with no cozyplan at all. Run these from inside the project you're adopting:
+
+```bash
+git clone --depth 1 https://github.com/smcozart/cozyplan.git /tmp/cozyplan
+python3 /tmp/cozyplan/skills/cozyplan/scripts/plan_tool.py init --root . --vendor --repo <owner>/<name>
+rm -rf /tmp/cozyplan
+```
+
+Then `git add -A && git commit`. `--vendor` copies both skills into `.claude/skills/`, which is the first place the tool looks for its own templates — so the project keeps working after the clone is deleted, and **anyone who clones your repo installs nothing at all**. The adoption wizard travels too, at `.claude/skills/cozyplan/scripts/adopt.sh`.
+
+Vendoring pins a version per repo, which is the trade for zero-install teammates. `doctor` reports which version a repo carries and warns when someone hand-edits it; pulling a newer cozyplan means re-running the three lines and reviewing the diff.
+
 ### Wire a repo
 
 ```
