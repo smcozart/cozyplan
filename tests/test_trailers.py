@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 import stat
 
-from conftest import git, read
+from conftest import EXEC_BIT_IS_MEANINGFUL, git, read
 
 
 def infer(pt, repo, capsys):
@@ -102,7 +102,8 @@ def test_git_install_writes_executable_hooks_and_sets_hookspath(pt, git_repo, ca
     for name in ("commit-msg", "pre-push"):
         p = hooks / name
         assert p.exists(), name
-        assert os.stat(p).st_mode & stat.S_IXUSR, f"{name} must be executable"
+        if EXEC_BIT_IS_MEANINGFUL:
+            assert os.stat(p).st_mode & stat.S_IXUSR, f"{name} must be executable"
     assert git(git_repo, "config", "core.hooksPath").stdout.strip() == ".githooks"
     assert git(git_repo, "config", "cozyplan.plantool").stdout.strip().endswith("plan_tool.py")
 

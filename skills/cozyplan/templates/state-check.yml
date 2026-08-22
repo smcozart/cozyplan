@@ -22,8 +22,19 @@ permissions:
 jobs:
   # The job id becomes the status context name that branch protection pins.
   # `check` is too generic to live in a protection rule forever.
+  #
+  # One OS by default — your CI minutes, your call. To verify on more, add a
+  # `strategy.matrix.os` here and `runs-on: ${{ matrix.os }}`, then move this job
+  # id onto a small `needs:` job so the pinned context name survives the matrix
+  # (cozyplan's own .github/workflows/state-check.yml does exactly that).
   state-check:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        # The steps below are POSIX sh/bash (shopt, case, for). Windows runners
+        # default to pwsh, where every one of them is a syntax error — so this is
+        # set even on a Linux-only matrix, to keep the file portable.
+        shell: bash
     steps:
       - uses: actions/checkout@v4
         with:

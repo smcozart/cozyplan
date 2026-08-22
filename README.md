@@ -168,7 +168,7 @@ skills/cozyplan/
 ├── workflows/            one per branch, each with a checkable completion criterion
 ├── templates/            plan.html · journal.md · adr.md · state-check.yml
 ├── reference/            plan-tool.md — full CLI surface, metadata contract, install paths
-└── scripts/              plan_tool.py + the two Claude Code hooks
+└── scripts/              plan_tool.py + the four Claude Code hooks
 
 skills/discuss/
 ├── SKILL.md

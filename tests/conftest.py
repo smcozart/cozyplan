@@ -24,6 +24,12 @@ SCRIPTS = REPO / "skills" / "cozyplan" / "scripts"
 PLAN_TOOL_PY = SCRIPTS / "plan_tool.py"
 GUARD_HOOK = SCRIPTS / "hooks" / "guard_plan_edit.py"
 LINT_HOOK = SCRIPTS / "hooks" / "lint_plan.py"
+STEER_HOOK = SCRIPTS / "hooks" / "steer_build.py"
+DRIFT_HOOK = SCRIPTS / "hooks" / "report_drift.py"
+
+# NTFS has no POSIX exec bit: chmod(0o755) is a no-op there and git for Windows runs
+# hooks through sh regardless, so asserting the bit tests the filesystem, not the code.
+EXEC_BIT_IS_MEANINGFUL = os.name != "nt"
 
 
 def _load_plan_tool():
@@ -79,12 +85,25 @@ def filled_plan(pt, new_plan):
 
 
 def git(cwd: Path, *args: str):
-    return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True)
+    # stdin=DEVNULL, never inherited. Under pytest the parent's stdin is a captured
+    # handle, and on Windows a child that closes it leaves every later spawn raising
+    # WinError 6 at Popen — which surfaces as dozens of unrelated fixture errors.
+    return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True,
+                          stdin=subprocess.DEVNULL)
 
 
 @pytest.fixture
-def git_repo(tmp_path):
-    """A tmp git repo with one commit; skips the test if git is unavailable."""
+def git_repo(tmp_path, monkeypatch):
+    """A tmp git repo with one commit; skips the test if git is unavailable.
+
+    Isolated from the developer's global and system gitconfig. Without this, a test
+    that unsets local user.name still sees the machine's global identity and asserts
+    the opposite of what a bare CI runner produces — green on the runner, red on a
+    laptop, for a reason that has nothing to do with the code."""
+    # GLOBAL only, never SYSTEM: Git for Windows keeps core settings (notably
+    # line-ending handling) in the system config, and blanking it changes how files
+    # are written — which broke commit-order rendering while hiding nothing useful.
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "no-global-gitconfig"))
     r = git(tmp_path, "init")
     if r.returncode != 0:
         pytest.skip("git not available")

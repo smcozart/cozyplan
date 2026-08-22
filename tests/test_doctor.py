@@ -79,11 +79,22 @@ def test_claude_hooks_registration_is_detected(pt, git_repo, capsys):
 
     settings = git_repo / ".claude" / "settings.json"
     settings.parent.mkdir(parents=True)
+
+    # Half-wired reads as unwired. A settings.json carrying the two tool hooks but
+    # neither steering hook used to report "registered", which is the same lie as a
+    # registered-but-unrunnable hook — the human stops looking at exactly the point
+    # the layer is incomplete.
     settings.write_text(json.dumps({"hooks": {"PreToolUse": [
         {"hooks": [{"command": "uv run guard_plan_edit.py"}]}],
         "PostToolUse": [{"hooks": [{"command": "uv run lint_plan.py"}]}]}}), encoding="utf-8")
     run(pt, git_repo)
-    assert "guard + lint registered" in capsys.readouterr().out
+    assert "not registered" in capsys.readouterr().out
+
+    # All of them, whatever HOOK_MATCHERS currently holds.
+    settings.write_text(json.dumps({"hooks": {"All": [
+        {"hooks": [{"command": f"uv run {s}"}]} for s in pt.HOOK_MATCHERS]}}), encoding="utf-8")
+    run(pt, git_repo)
+    assert f"all {len(pt.HOOK_MATCHERS)} registered" in capsys.readouterr().out
 
 
 def test_ci_workflow_must_actually_run_state_check(pt, git_repo, capsys):

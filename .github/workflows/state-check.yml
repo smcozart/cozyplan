@@ -20,10 +20,20 @@ permissions:
   contents: read
 
 jobs:
-  # The job id becomes the status context name that branch protection pins.
-  # `check` is too generic to live in a protection rule forever.
-  state-check:
-    runs-on: ubuntu-latest
+  # cozyplan has to run where its users are, so the checks run on all three.
+  # fail-fast off: "green on Linux, red on Windows" is the finding, and cancelling
+  # the other legs the moment one fails hides exactly half of it.
+  checks:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        # The steps below are POSIX sh/bash (shopt, case, for). Windows runners
+        # default to pwsh, where every one of them is a syntax error.
+        shell: bash
     steps:
       - uses: actions/checkout@v4
         with:
@@ -97,3 +107,17 @@ jobs:
         # Generous on purpose. It is not here to nag on every PR; it is here so a
         # claim that has gone fifty commits without anyone re-running its proof
         # stops being a note nobody reads (ADR-0004).
+
+  # The job id becomes the status context name that branch protection pins, and a
+  # matrix does not have one — it publishes `checks (ubuntu-latest)` and friends,
+  # so a rule pinned to a single name silently stops matching and the gate opens
+  # without anyone being told. This job keeps that one stable name.
+  state-check:
+    needs: checks
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every platform passed
+        run: |
+          echo "matrix result: ${{ needs.checks.result }}"
+          [ "${{ needs.checks.result }}" = "success" ] || exit 1

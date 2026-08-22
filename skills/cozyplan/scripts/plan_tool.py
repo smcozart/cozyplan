@@ -1368,9 +1368,14 @@ def cmd_next(args) -> int:
 # Bare-skill installs (npx skills add) carry the hook scripts but nothing
 # registers them — this command closes that gap. Keyed by script filename so
 # re-running re-points a stale path instead of duplicating the entry.
+# Tool events take a matcher; session and prompt events do not. "" means register
+# without one — the loop below omits the key entirely rather than writing a field
+# Claude Code ignores, which would read as a filter that is silently doing nothing.
 HOOK_MATCHERS = {
     "guard_plan_edit.py": ("PreToolUse", "Edit|MultiEdit|Write"),
     "lint_plan.py": ("PostToolUse", "Edit|MultiEdit|Write|Bash"),
+    "steer_build.py": ("UserPromptSubmit", ""),
+    "report_drift.py": ("SessionStart", ""),
 }
 
 
@@ -1412,8 +1417,10 @@ def cmd_hooks(args) -> int:
             exe, arg = _hook_runner_parts()
             cmd_str = " ".join(shlex.quote(x) for x in ([exe] + ([arg] if arg else []))
                                + [(hook_dir / script).as_posix()])
-            entries.append({"matcher": matcher,
-                            "hooks": [{"type": "command", "command": cmd_str}]})
+            block = {"hooks": [{"type": "command", "command": cmd_str}]}
+            if matcher:
+                block["matcher"] = matcher
+            entries.append(block)
             changed.append(f"{event}: {script} registered" + (" (re-pointed)" if removed else ""))
         elif removed:
             changed.append(f"{event}: {script} removed")
@@ -1459,6 +1466,7 @@ def git(root: Path, *argv: str) -> tuple[bool, str]:
     git binary or a non-repo is a condition the caller reports, not a crash."""
     try:
         r = subprocess.run(["git", *argv], cwd=str(root), capture_output=True,
+                           stdin=subprocess.DEVNULL,
                            text=True, timeout=30)
     except (OSError, subprocess.SubprocessError):
         return False, ""
@@ -2188,6 +2196,7 @@ def gh_ready() -> bool:
         return False
     try:
         return subprocess.run(["gh", "auth", "status"], capture_output=True,
+                              stdin=subprocess.DEVNULL,
                               timeout=30).returncode == 0
     except (OSError, subprocess.SubprocessError):
         return False
@@ -2219,7 +2228,10 @@ def queue_issue(root: Path, title: str, body: str, labels: list, plan: str) -> t
     write(body_path, text + "\n")
 
     rel = body_path.relative_to(root) if body_path.is_relative_to(root) else body_path
-    argv = ["gh", "issue", "create", "--title", title, "--body-file", str(rel)]
+    # as_posix(), not str(): this line is replayed through `sh -c`, and a Windows
+    # backslash path is eaten as escape characters there — the queued command would
+    # name a file that does not exist, on the one path where nothing re-checks it.
+    argv = ["gh", "issue", "create", "--title", title, "--body-file", rel.as_posix()]
     for lb in labels:
         argv += ["--label", lb]
     script = scratch / "pending-gh.sh"
@@ -2250,7 +2262,8 @@ def cmd_issue(args) -> int:
             argv = ["gh", "issue", "create", "--title", args.title, "--body", body]
             for lb in labels:
                 argv += ["--label", lb]
-            r = subprocess.run(argv, cwd=str(root), capture_output=True, text=True)
+            r = subprocess.run(argv, cwd=str(root), capture_output=True, text=True,
+                               stdin=subprocess.DEVNULL)
             if r.returncode == 0:
                 print(f"issue: filed {r.stdout.strip()}")
                 return 0
@@ -2552,11 +2565,14 @@ def doctor_checks(root: Path, commits: int) -> list[tuple[str, str, str, str]]:
     if settings.exists():
         try:
             blob = json.dumps(json.loads(read(settings)))
-            registered = "guard_plan_edit" in blob and "lint_plan" in blob
+            # Sourced from HOOK_MATCHERS rather than a hardcoded pair: a settings.json
+            # carrying half the hooks reporting "registered" is the same failure this
+            # check exists to catch, and the pair went stale the moment a third landed.
+            registered = all(Path(s).stem in blob for s in HOOK_MATCHERS)
         except (json.JSONDecodeError, ValueError):
             registered = False
     add("enforcement", OK if registered else WARN, "claude hooks",
-        "guard + lint registered in .claude/settings.json" if registered
+        f"all {len(HOOK_MATCHERS)} registered in .claude/settings.json" if registered
         else "not registered — run `plan_tool hooks install` (advisory layer only)")
 
     # The check that matters: does the interpreter those hooks name actually run?
@@ -2567,7 +2583,8 @@ def doctor_checks(root: Path, commits: int) -> list[tuple[str, str, str, str]]:
     # commit-msg hook was dead, because the break was in the runner, not the tool.
     try:
         r = subprocess.run(runner + [str(tool), "trailers", "--print", "--root", str(root)],
-                           capture_output=True, text=True, timeout=30, cwd=str(root))
+                           capture_output=True, text=True, timeout=30, cwd=str(root),
+                           stdin=subprocess.DEVNULL)
         runs = r.returncode == 0
     except (OSError, subprocess.SubprocessError):
         runs = False
@@ -2617,6 +2634,7 @@ def doctor_checks(root: Path, commits: int) -> list[tuple[str, str, str, str]]:
     # ── tooling ──────────────────────────────────────────────────────────────
     if shutil.which("gh"):
         authed = subprocess.run(["gh", "auth", "status"], capture_output=True,
+                                stdin=subprocess.DEVNULL,
                                 text=True).returncode == 0
         add("tooling", OK if authed else WARN, "gh",
             "installed and authenticated" if authed else "installed but not authenticated (`gh auth login`)")

@@ -73,6 +73,8 @@ def main() -> int:
         payload = json.load(sys.stdin)
     except (json.JSONDecodeError, ValueError):
         return 0
+    if not isinstance(payload, dict):
+        return 0  # valid JSON, wrong shape -> fail open like a parse error
 
     plans = plan_paths_from_payload(payload)
     if not plans:

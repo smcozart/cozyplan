@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import stat
 
-from conftest import git, read
+from conftest import EXEC_BIT_IS_MEANINGFUL, git, read
 
 
 def file_issue(pt, repo, title, body="b", *extra):
@@ -60,7 +60,8 @@ def test_labels_and_plan_are_carried(pt, git_repo):
 def test_the_queue_script_is_runnable(pt, git_repo):
     file_issue(pt, git_repo, "runnable")
     assert read(script(git_repo)).startswith("#!/bin/sh")
-    assert os.stat(script(git_repo)).st_mode & stat.S_IXUSR
+    if EXEC_BIT_IS_MEANINGFUL:
+        assert os.stat(script(git_repo)).st_mode & stat.S_IXUSR
 
 
 def test_replay_lists_without_filing_by_default(pt, git_repo, capsys):

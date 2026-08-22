@@ -162,6 +162,8 @@ def main() -> int:
         payload = json.load(sys.stdin)
     except (json.JSONDecodeError, ValueError):
         return 0  # fail-open
+    if not isinstance(payload, dict):
+        return 0  # valid JSON, wrong shape -> fail open like a parse error
 
     tool = payload.get("tool_name", "")
     ti = payload.get("tool_input", {}) or {}
