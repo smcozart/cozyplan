@@ -22,7 +22,7 @@ Ask the whole frontier in one round. Then stop and wait.
 
 Each round's answers reshape the tree: settled decisions push the frontier outward and unblock the questions that depended on them. Recompute the frontier and ask the next round. A question whose answer depends on another question still open in this round belongs to a *later* round, not this one.
 
-A frontier past about seven questions means the tree was not cut at its prerequisites. Find the upstream decision the rest hang off and ask that one alone.
+A frontier past about seven questions usually means the tree was not cut at its prerequisites: look for the upstream decision the rest hang off and lead the round with it. That is a reason to **re-cut the tree**, never a reason to drip-feed — if seven questions really are all unblocked and sharp, ask all seven. A round of one is correct only when the frontier genuinely holds one question.
 
 ### Round format
 
@@ -33,6 +33,8 @@ Number every question and give your recommended answer:
 
 ➡️ <your recommended answer> — <the one-line reason>
 ```
+
+**Deliver the whole round as one message of plain text.** Do not use `AskUserQuestion` to put the frontier to the user: it serializes a round into one card at a time, caps the options, and destroys the thing that makes a round cheap — seeing every open decision at once and answering them in one pass. One question per turn turns a five-minute interview into a twenty-turn interrogation. Ask, then stop and wait for the reply.
 
 The number is the user's handle: it lets them answer "1 yes, 2 your call, 3 no because…" in a single pass. The recommendation makes a round cheap to answer — they react to a proposal instead of staring at a blank — and the reason is what makes it safe, because it gives them something to attack. Where you have no real basis to prefer, say so and name the axis the choice turns on rather than manufacturing a preference: a recommendation with nothing behind it anchors without informing.
 

@@ -23,3 +23,12 @@ __pycache__/
 
 # Queued work items awaiting `gh` (ADR-0001) — replayed, never versioned.
 .scratch/
+
+# Locally-installed Claude plugins/skills used while working in this repo
+# (ponytail, mattpocock-skills, etc.). NOTE: do not ignore .claude/ wholesale —
+# `init --vendor` tracks .claude/skills/ on purpose so clones install nothing.
+.claude/plugins/
+.claude/skills/ponytail*/
+.claude/skills/mattpocock*/
+skills/ponytail*/
+skills/mattpocock*/

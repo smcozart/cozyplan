@@ -96,3 +96,23 @@ def test_the_registered_command_is_runnable_on_this_machine(pt, tmp_path):
     argv = shlex.split(cmd)
     r = subprocess.run(argv, input="{}", capture_output=True, text=True, timeout=30)
     assert r.returncode == 0, f"registered hook is not runnable: {cmd}\n{r.stderr[:300]}"
+
+
+def test_plugin_manifest_registers_every_hook_in_HOOK_MATCHERS(pt):
+    """The plugin manifest and HOOK_MATCHERS are two registration paths for the
+    same four hooks, and they silently disagreed: hooks.json shipped 2 of 4, so
+    a plugin install got half the enforcement layer and doctor — which requires
+    all of HOOK_MATCHERS — could never report it as wired."""
+    manifest = json.loads(pt.PLUGIN_HOOKS_JSON.read_text(encoding="utf-8"))
+    registered = {
+        (event, blk.get("matcher", ""), h.get("command", ""))
+        for event, blocks in manifest["hooks"].items()
+        for blk in blocks
+        for h in blk.get("hooks", [])
+    }
+    for script, (event, matcher) in pt.HOOK_MATCHERS.items():
+        assert any(
+            e == event and m == matcher and script in cmd
+            for e, m, cmd in registered
+        ), f"{script} ({event}, matcher={matcher!r}) is missing from hooks/hooks.json"
+    assert len(registered) == len(pt.HOOK_MATCHERS), "hooks.json registers something HOOK_MATCHERS does not know about"

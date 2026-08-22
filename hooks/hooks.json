@@ -1,5 +1,5 @@
 {
-  "description": "cozyplan plan-write hardening. PreToolUse guard steers raw Edit/Write of CLI-managed plan regions (status/metadata/amendments) to plan_tool. PostToolUse lint runs plan_tool validate after any write to specs/*.html and reports failures back to the agent. Both fail open — if uv is missing, enforcement silently disappears.",
+  "description": "cozyplan plan-write hardening. PreToolUse guard steers raw Edit/Write of CLI-managed plan regions (status/metadata/amendments) to plan_tool. PostToolUse lint runs plan_tool validate after any write to specs/*.html and reports failures back to the agent. UserPromptSubmit steers build turns to the current phase; SessionStart reports wiring drift. All four fail open. This file must stay in sync with HOOK_MATCHERS in skills/cozyplan/scripts/plan_tool.py — tests/test_hooks_install.py fails if it drifts. Hooks are launched with `uv run`; on a host without uv they do not run, and `plan_tool doctor` reports it.",
   "hooks": {
     "PreToolUse": [
       {
@@ -19,6 +19,26 @@
           {
             "type": "command",
             "command": "uv run \"${CLAUDE_PLUGIN_ROOT}/skills/cozyplan/scripts/hooks/lint_plan.py\""
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run \"${CLAUDE_PLUGIN_ROOT}/skills/cozyplan/scripts/hooks/steer_build.py\""
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run \"${CLAUDE_PLUGIN_ROOT}/skills/cozyplan/scripts/hooks/report_drift.py\""
           }
         ]
       }

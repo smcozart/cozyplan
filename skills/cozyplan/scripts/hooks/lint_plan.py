@@ -22,6 +22,13 @@ from pathlib import Path
 
 HTML_IN_TEXT = re.compile(r'([^\s"\']*specs[\\/][^\s"\']*\.html)')
 
+# One definition of "is a plan", shared with the guard hook that ships beside
+# this one. Two predicates drifted apart before: the guard handled case-
+# insensitive filesystems and Windows trailing dots, this one did not, so
+# `SPECS/plan.html` was denied by one hook and silently skipped by the other.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from guard_plan_edit import is_plan_path  # noqa: E402
+
 
 def resolve_tool(project_root: Path) -> Path | None:
     """Locate plan_tool.py: prefer the copy that ships beside this hook (the
@@ -46,7 +53,7 @@ def plan_paths_from_payload(payload: dict) -> list[str]:
     ti = payload.get("tool_input", {}) or {}
     found: list[str] = []
     fp = ti.get("file_path", "")
-    if fp and fp.replace("\\", "/").endswith(".html") and "specs" in Path(fp.replace("\\", "/")).parts:
+    if is_plan_path(fp):
         found.append(fp)
     if tool == "Bash":
         cmd = ti.get("command", "")

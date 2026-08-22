@@ -1378,6 +1378,23 @@ HOOK_MATCHERS = {
     "report_drift.py": ("SessionStart", ""),
 }
 
+# The plugin manifest that registers the same four hooks for a plugin install.
+# Absent on a bare-skill (`npx skills add`) or vendored layout, where the skill
+# travels without the plugin wrapper — callers must tolerate it not existing.
+PLUGIN_HOOKS_JSON = Path(__file__).resolve().parents[3] / "hooks" / "hooks.json"
+
+
+def active_plugin_hooks_json() -> Path | None:
+    """The manifest, but only when we are actually running as an installed
+    plugin. The file existing beside this script proves nothing — a source
+    checkout has one too — so doctor must not read it as "wired" there. The
+    host sets CLAUDE_PLUGIN_ROOT only when the plugin is genuinely loaded."""
+    root = os.environ.get("CLAUDE_PLUGIN_ROOT")
+    if not root:
+        return None
+    p = Path(root) / "hooks" / "hooks.json"
+    return p if p.exists() else None
+
 
 def cmd_hooks(args) -> int:
     hook_dir = Path(__file__).resolve().parent / "hooks"
@@ -1483,6 +1500,14 @@ def git(root: Path, *argv: str) -> tuple[bool, str]:
     return r.returncode == 0, r.stdout.strip()
 
 
+def rev_count(root: Path, rng: str) -> int | None:
+    """Commits in `rng`, or None when git could not answer. None is not zero: a
+    missing binary, shallow clone or corrupt object must be reported, never read
+    as "no drift" — that silently opens every gate built on this count."""
+    ok, out = git(root, "rev-list", "--count", rng)
+    return int(out) if ok and out.isdigit() else None
+
+
 def section_body(text: str, heading: str) -> str:
     """The lines under a `## heading`, up to the next heading of the same level."""
     m = re.search(rf"^##\s+{re.escape(heading)}\s*$(?P<body>.*?)(?=^##\s|\Z)",
@@ -1532,11 +1557,14 @@ def check_state(state_path: Path, root: Path, adr_dir: Path, journal: Path,
                     f"Repo state {sha} is not an ancestor of HEAD — the snapshot was taken "
                     "on a branch this one does not contain")
             else:
-                ok_cnt, out = git(root, "rev-list", "--count", f"{sha}..HEAD")
-                behind = int(out or 0) if ok_cnt else 0
-                notes.append(f"snapshot is {behind} commit(s) behind HEAD")
-                if max_drift is not None and behind > max_drift:
-                    problems.append(f"snapshot is {behind} commit(s) behind HEAD (max-drift {max_drift})")
+                behind = rev_count(root, f"{sha}..HEAD")
+                if behind is None:
+                    problems.append(
+                        f"cannot compute drift: `git rev-list --count {sha}..HEAD` failed")
+                else:
+                    notes.append(f"snapshot is {behind} commit(s) behind HEAD")
+                    if max_drift is not None and behind > max_drift:
+                        problems.append(f"snapshot is {behind} commit(s) behind HEAD (max-drift {max_drift})")
         ok_st, dirty = git(root, "status", "--porcelain")
         if ok_st and dirty:
             warns.append(f"working tree has {len(dirty.splitlines())} uncommitted change(s); "
@@ -1578,9 +1606,11 @@ def check_state(state_path: Path, root: Path, adr_dir: Path, journal: Path,
                 problems.append(f"claim cites {sha}, which is not a commit in this repo: "
                                 f"{m.group('what')[:60]}")
                 continue
-            ok_cnt, out = git(root, "rev-list", "--count", f"{sha}..HEAD")
-            age = int(out or 0) if ok_cnt else 0
-            if age:
+            age = rev_count(root, f"{sha}..HEAD")
+            if age is None:
+                problems.append(f"cannot compute claim age: `git rev-list --count "
+                                f"{sha}..HEAD` failed: {m.group('what')[:60]}")
+            elif age:
                 # A claim nobody re-proves is the thing this layer exists to prevent,
                 # so it can be made fatal rather than only mentioned.
                 msg = f"claim proved {age} commit(s) ago: {m.group('what')[:60]}"
@@ -1595,6 +1625,9 @@ def check_state(state_path: Path, root: Path, adr_dir: Path, journal: Path,
             paths = re.findall(r"path:(\S+)", trail)
             if paths:
                 ok_d, changed = git(root, "diff", "--name-only", f"{sha}..HEAD", "--", *paths)
+                if not ok_d:
+                    warns.append(f"cannot check whether the claim's own code changed: "
+                                 f"`git diff` failed: {m.group('what')[:60]}")
                 touched = [c for c in changed.splitlines() if c.strip()] if ok_d else []
                 if touched:
                     warns.append(
@@ -2591,19 +2624,29 @@ def doctor_checks(root: Path, commits: int) -> list[tuple[str, str, str, str]]:
             "user.name/user.email unset — journal entries and ADR authorship land blank")
 
     # ── enforcement layering (ADR-0004) ──────────────────────────────────────
-    settings = root / ".claude" / "settings.json"
-    registered = False
-    if settings.exists():
+    # Two ways to be wired, and both count. A plugin install registers via the
+    # bundled hooks/hooks.json and never writes settings.json, so checking only
+    # settings.json reported "not registered" to every plugin user forever.
+    def _registers_all(path: Path) -> bool:
+        if not path.exists():
+            return False
         try:
-            blob = json.dumps(json.loads(read(settings)))
-            # Sourced from HOOK_MATCHERS rather than a hardcoded pair: a settings.json
-            # carrying half the hooks reporting "registered" is the same failure this
-            # check exists to catch, and the pair went stale the moment a third landed.
-            registered = all(Path(s).stem in blob for s in HOOK_MATCHERS)
+            blob = json.dumps(json.loads(read(path)))
         except (json.JSONDecodeError, ValueError):
-            registered = False
-    add("enforcement", OK if registered else WARN, "claude hooks",
-        f"all {len(HOOK_MATCHERS)} registered in .claude/settings.json" if registered
+            return False
+        # Sourced from HOOK_MATCHERS rather than a hardcoded pair: a manifest
+        # carrying half the hooks reporting "registered" is the same failure this
+        # check exists to catch, and the pair went stale the moment a third landed.
+        return all(Path(s).stem in blob for s in HOOK_MATCHERS)
+
+    settings = root / ".claude" / "settings.json"
+    via_settings = _registers_all(settings)
+    plugin_manifest = active_plugin_hooks_json()
+    via_plugin = _registers_all(plugin_manifest) if plugin_manifest else False
+    add("enforcement", OK if (via_settings or via_plugin) else WARN, "claude hooks",
+        f"all {len(HOOK_MATCHERS)} registered in "
+        + (".claude/settings.json" if via_settings else "the plugin manifest")
+        if (via_settings or via_plugin)
         else "not registered — run `plan_tool hooks install` (advisory layer only)")
 
     # The check that matters: does the interpreter those hooks name actually run?
@@ -2664,9 +2707,7 @@ def doctor_checks(root: Path, commits: int) -> list[tuple[str, str, str, str]]:
 
     # ── tooling ──────────────────────────────────────────────────────────────
     if shutil.which("gh"):
-        authed = subprocess.run([which_exe("gh"), "auth", "status"], capture_output=True,
-                                stdin=subprocess.DEVNULL,
-                                text=True).returncode == 0
+        authed = gh_ready()
         add("tooling", OK if authed else WARN, "gh",
             "installed and authenticated" if authed else "installed but not authenticated (`gh auth login`)")
     else:

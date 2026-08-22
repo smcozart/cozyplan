@@ -226,3 +226,11 @@ def test_a_claim_with_no_path_set_is_not_flagged(pt, git_repo, capsys):
     git(git_repo, "commit", "-m", "c")
     assert run(pt, git_repo) == 0
     assert "own code changed" not in capsys.readouterr().out
+
+
+def test_rev_count_reports_failure_instead_of_fabricating_zero(pt, git_repo):
+    """`int(out or 0) if ok else 0` read a git failure as 'zero commits behind',
+    which silently opened --max-drift and --max-claim-age. None is not zero."""
+    assert pt.rev_count(git_repo, "HEAD..HEAD") == 0
+    assert pt.rev_count(git_repo, "nope-not-a-ref..HEAD") is None
+    assert pt.rev_count(pt.Path(git_repo) / "definitely-not-a-repo", "HEAD..HEAD") is None

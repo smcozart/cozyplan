@@ -183,3 +183,22 @@ def test_a_header_naming_a_command_that_does_not_exist_is_drift(pt, monkeypatch)
                                            "  doctor     report what is actually wired in this clone (ADR-0004)\n"
                                            "  ground     traverse the id space"))
     assert ("stale", "ground") in pt.header_command_drift()
+
+
+def test_plugin_manifest_counts_as_registration(pt, git_repo, capsys, monkeypatch):
+    """A plugin install registers hooks via the bundled manifest and never writes
+    .claude/settings.json, so doctor reported 'not registered' to every plugin
+    user permanently — a check that can never go green teaches you to ignore it."""
+    monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", str(pt.PLUGIN_HOOKS_JSON.parents[1]))
+    run(pt, git_repo)
+    out = capsys.readouterr().out
+    assert "not registered" not in out
+    assert "plugin manifest" in out
+
+
+def test_a_source_checkout_is_not_mistaken_for_a_plugin_install(pt, git_repo, capsys, monkeypatch):
+    """hooks/hooks.json sitting beside plan_tool.py proves nothing — a source
+    checkout has one too. Only the host setting CLAUDE_PLUGIN_ROOT does."""
+    monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)
+    run(pt, git_repo)
+    assert "not registered" in capsys.readouterr().out
