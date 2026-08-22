@@ -26,7 +26,15 @@ CozyPlan ships as a **Claude Code plugin**. Two commands — nothing to compile,
 
 The plugin carries everything as one unit: **two skills** (`cozyplan`, the plan and state layer; `discuss`, the understanding loop), the deterministic `plan_tool.py` CLI, and the coherence hooks.
 
-`plan_tool.py` is **stdlib-only Python 3.9+**. [`uv`](https://docs.astral.sh/uv/) is used when present and is not required — a plain `python3` runs everything, hooks included.
+`plan_tool.py` is **stdlib-only Python 3.9+** and runs on a plain `python3` — macOS, Linux and Windows are all tested in CI on every push.
+
+One caveat, and it is the plugin install only: the bundled `hooks/hooks.json` launches the four coherence hooks with `uv run`, so **on a machine without [`uv`](https://docs.astral.sh/uv/) those hooks do not fire.** Nothing breaks — every `plan_tool` operation self-validates and the hooks are the advisory layer (ADR-0004) — but you lose edit-time steering, silently. `plan_tool doctor` reports it. Install `uv`, or register the hooks against your own interpreter instead, which resolves it per machine:
+
+```
+python3 <plan_tool> hooks install     # --global for user-wide
+```
+
+Hook registration is **per machine** and `hooks git-install` is **per clone** — neither travels with the repo. On a second machine (a Mac alongside a Windows box, say), run `doctor` there and wire what it reports.
 
 Diagrams are the one external dependency: the globally-installed `excalidraw-diagram` skill renders them locally, key-free. Without it a plan still writes; the `{{...IMAGE}}` slots stay as placeholders until you run the Diagram Generation subworkflow.
 
