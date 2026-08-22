@@ -1461,6 +1461,16 @@ LAST_SYNCED_RE = re.compile(r"^\|\s*Last synced\s*\|\s*(?P<ts>[^|]+?)\s*\|", re.
 ADR_FILE_RE = re.compile(r"^(?P<num>\d{4})-")
 
 
+def which_exe(name: str) -> str:
+    """Absolute path to `name`, or `name` unchanged when it cannot be found.
+
+    Windows CreateProcess appends only `.exe` when searching PATH, so a tool installed
+    as a `.cmd` or `.bat` shim — which is how gh arrives from several package managers
+    — is invisible to subprocess even though it is plainly on PATH. shutil.which
+    honours PATHEXT and finds it. A no-op on POSIX."""
+    return shutil.which(name) or name
+
+
 def git(root: Path, *argv: str) -> tuple[bool, str]:
     """Run a git command, returning (ok, stripped stdout). Never raises: a missing
     git binary or a non-repo is a condition the caller reports, not a crash."""
@@ -2195,7 +2205,7 @@ def gh_ready() -> bool:
     if not shutil.which("gh"):
         return False
     try:
-        return subprocess.run(["gh", "auth", "status"], capture_output=True,
+        return subprocess.run([which_exe("gh"), "auth", "status"], capture_output=True,
                               stdin=subprocess.DEVNULL,
                               timeout=30).returncode == 0
     except (OSError, subprocess.SubprocessError):
@@ -2259,7 +2269,7 @@ def cmd_issue(args) -> int:
         if args.plan:
             body = f"{body}\n\nPlan: {args.plan}".strip("\n")
         if gh_ready() and not args.queue:
-            argv = ["gh", "issue", "create", "--title", args.title, "--body", body]
+            argv = [which_exe("gh"), "issue", "create", "--title", args.title, "--body", body]
             for lb in labels:
                 argv += ["--label", lb]
             r = subprocess.run(argv, cwd=str(root), capture_output=True, text=True,
@@ -2299,11 +2309,32 @@ def cmd_issue(args) -> int:
         # duplicates in the tracker ADR-0001 made the source of truth.
         pending = list(cmds)
         for cmd in cmds:
-            r = subprocess.run(["sh", "-c", cmd], cwd=str(root))
+            # shlex.split, not `sh -c`: Windows has no sh unless Git Bash happens to
+            # be on PATH, which made replay a POSIX-only command while looking portable.
+            # Every queued line is `shlex.quote`d argv from queue_issue, and quote/split
+            # are inverses — so this runs exactly what was queued, and without a shell
+            # there is no line for a title with a backtick in it to escape into.
+            try:
+                argv_cmd = shlex.split(cmd)
+            except ValueError as e:
+                rewrite(pending)
+                return fail(f"replay stopped: cannot parse queued command ({e}): {cmd}")
+            argv_cmd = [which_exe(argv_cmd[0])] + argv_cmd[1:]
+            # Every stream is explicit — none inherited. gh reads no stdin when it is
+            # fully argumented, and a parent whose stdout handle another child already
+            # invalidated would otherwise turn the whole replay into WinError 6 at
+            # Popen. Capturing costs the streaming view of one URL per issue and buys
+            # a failure message that can name what gh actually said.
+            r = subprocess.run(argv_cmd, cwd=str(root), stdin=subprocess.DEVNULL,
+                               capture_output=True, text=True)
+            if r.stdout.strip():
+                print(f"  {r.stdout.strip()}")
             if r.returncode != 0:
                 rewrite(pending)
+                why = (r.stderr or r.stdout or "").strip().splitlines()
                 return fail(f"replay stopped at a failing command; {len(pending)} still "
-                            f"queued in {script}. The ones already filed were removed.")
+                            f"queued in {script}. The ones already filed were removed."
+                            + (f"\n  gh said: {why[-1][:200]}" if why else ""))
             pending.pop(0)
             rewrite(pending)
         print(f"issue: replayed {len(cmds)} queued issue(s); {script} reset")
@@ -2633,7 +2664,7 @@ def doctor_checks(root: Path, commits: int) -> list[tuple[str, str, str, str]]:
 
     # ── tooling ──────────────────────────────────────────────────────────────
     if shutil.which("gh"):
-        authed = subprocess.run(["gh", "auth", "status"], capture_output=True,
+        authed = subprocess.run([which_exe("gh"), "auth", "status"], capture_output=True,
                                 stdin=subprocess.DEVNULL,
                                 text=True).returncode == 0
         add("tooling", OK if authed else WARN, "gh",

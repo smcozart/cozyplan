@@ -97,13 +97,24 @@ def test_file_requires_a_title(pt, git_repo, capsys):
 
 def _fake_gh(tmp_path, monkeypatch):
     """A gh on PATH that fails only for a title containing FAIL, so a partial
-    replay can be exercised without touching a real tracker."""
+    replay can be exercised without touching a real tracker.
+
+    Two things here are per-platform, and both were POSIX-only until a Windows
+    runner said so: PATH is `;`-separated on Windows, and a `#!/bin/sh` script named
+    `gh` is not something CreateProcess can launch — the shim has to be a .cmd."""
     bin_dir = tmp_path / "fakebin"
     bin_dir.mkdir(exist_ok=True)
-    gh = bin_dir / "gh"
-    gh.write_text('#!/bin/sh\ncase "$*" in *FAIL*) exit 1;; esac\nexit 0\n', encoding="utf-8")
-    gh.chmod(0o755)
-    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    if os.name == "nt":
+        gh = bin_dir / "gh.cmd"
+        gh.write_text("@echo off\r\n"
+                      'echo %*| findstr /C:"FAIL" >nul\r\n'
+                      "if %errorlevel%==0 exit /b 1\r\n"
+                      "exit /b 0\r\n", encoding="utf-8")
+    else:
+        gh = bin_dir / "gh"
+        gh.write_text('#!/bin/sh\ncase "$*" in *FAIL*) exit 1;; esac\nexit 0\n', encoding="utf-8")
+        gh.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
     return bin_dir
 
 

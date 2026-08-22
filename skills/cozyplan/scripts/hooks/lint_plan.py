@@ -88,9 +88,11 @@ def main() -> int:
     messages = []
     for plan in plans:
         try:
+            # stdin=DEVNULL, never inherited — see report_drift.py.
             r = subprocess.run(
                 runner(tool_script) + ["validate", plan],
-                capture_output=True, text=True, cwd=str(root), timeout=60,
+                capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                cwd=str(root), timeout=60,
             )
         except (OSError, subprocess.SubprocessError):
             return 0  # interpreter failed to launch -> fail-open
