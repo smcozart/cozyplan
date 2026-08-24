@@ -6,8 +6,8 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-24T14:51:46-05:00 |
-| Repo state | main @ 13ed160 |
+| Last synced | 2026-08-24T15:24:28-05:00 |
+| Repo state | main @ 026b540 |
 
 ## Current Working State
 
@@ -82,6 +82,8 @@
   ↳ session:s-enforce-01 adr:0010
 - Version skew is undetectable: hooks selftest proves the layer RUNS but not WHICH VERSION runs, so a stale vendored or plugin-cached copy passes 4/4. VENDORED.md records 'source commit: unknown', so there is no provenance to compare against
   ↳ session:s-enforce-01 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:skills/cozyplan/templates
+- state check --root <other-repo> reads the event log relative to cwd, not to --root, so it checks this repo's claims against that repo's git and reports every commit as unknown. Found while rehearsing the cozycode upgrade; harmless from inside a repo, wrong from outside
+  ↳ session:s-enforce-01 path:skills/cozyplan/scripts/plan_tool.py
 
 ## Registers
 
