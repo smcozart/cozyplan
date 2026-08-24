@@ -30,7 +30,8 @@ Commands (`--help` is authoritative; this list is the map, not the contract):
   state      add/render/show/check/migrate the state layer (ADR-0005)
   issue      file a work item, queueing it when gh is away (ADR-0001)
   trailers   add the commit trailers this commit can demonstrate (ADR-0007)
-  hooks      install/remove the Claude Code hooks and the tracked .githooks
+  hooks      install/remove the Claude Code hooks and the tracked .githooks;
+             `hooks selftest` proves they actually run here (ADR-0010)
 
 Scope: cozyplan is the *plan/intent* layer. Enforcement, revert points, and
 accountability are git's job (branches, PRs, CODEOWNERS, tags, CI) — this tool
@@ -50,6 +51,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -1383,17 +1385,70 @@ HOOK_MATCHERS = {
 # travels without the plugin wrapper — callers must tolerate it not existing.
 PLUGIN_HOOKS_JSON = Path(__file__).resolve().parents[3] / "hooks" / "hooks.json"
 
+# What each hook exits when no interpreter resolves, mirrored in hooks/hooks.json.
+# 2 blocks on the events that can block; UserPromptSubmit must NEVER use 2,
+# because exit 2 there erases the user's prompt instead of reporting anything.
+HOOK_DEAD_EXIT = {
+    "guard_plan_edit.py": 2,
+    "lint_plan.py": 2,
+    "steer_build.py": 1,
+    "report_drift.py": 1,
+}
 
-def active_plugin_hooks_json() -> Path | None:
-    """The manifest, but only when we are actually running as an installed
-    plugin. The file existing beside this script proves nothing — a source
-    checkout has one too — so doctor must not read it as "wired" there. The
-    host sets CLAUDE_PLUGIN_ROOT only when the plugin is genuinely loaded."""
-    root = os.environ.get("CLAUDE_PLUGIN_ROOT")
-    if not root:
-        return None
-    p = Path(root) / "hooks" / "hooks.json"
-    return p if p.exists() else None
+# Where a plugin install records itself. Read rather than assumed, because the
+# install path is version-pinned and lives outside any repo.
+PLUGIN_STATE = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
+
+
+def plugin_install_roots(root: Path) -> list[Path]:
+    """Installed cozyplan plugin roots that are actually active for `root`.
+
+    CLAUDE_PLUGIN_ROOT is set only WHILE a hook is executing, so a `doctor` or
+    `hooks selftest` run from a terminal never sees it. Reading only that
+    variable reported "not registered" to every plugin user forever — a record
+    consulted in the one context where it is always empty, which is the exact
+    error this layer exists to catch, inside the check meant to catch it.
+
+    A project-scoped install belongs to one projectPath and is inert everywhere
+    else, so an install pinned to another repo must not count as wiring here.
+    """
+    out: list[Path] = []
+    env_root = os.environ.get("CLAUDE_PLUGIN_ROOT")
+    if env_root:
+        out.append(Path(env_root))
+    if not PLUGIN_STATE.exists():
+        return out
+    try:
+        data = json.loads(read(PLUGIN_STATE))
+    except (OSError, ValueError):
+        return out
+    for key, installs in (data.get("plugins") or {}).items():
+        if key.split("@")[0] != "cozyplan":
+            continue
+        for inst in installs or []:
+            path = inst.get("installPath")
+            if not path:
+                continue
+            if inst.get("scope") == "project":
+                owner = inst.get("projectPath")
+                try:
+                    if not owner or Path(owner).resolve() != root.resolve():
+                        continue  # installed, but scoped to a different project
+                except OSError:
+                    continue
+            out.append(Path(path))
+    return out
+
+
+def active_plugin_hooks_json(root: Path | None = None) -> Path | None:
+    """The manifest, but only when the plugin is genuinely installed AND active
+    for this project. The file existing beside this script proves nothing — a
+    source checkout has one too — so this never falls back to the checkout."""
+    for base in plugin_install_roots(root or Path(".")):
+        p = base / "hooks" / "hooks.json"
+        if p.exists():
+            return p
+    return None
 
 
 def cmd_hooks(args) -> int:
@@ -1454,6 +1509,262 @@ def cmd_hooks(args) -> int:
     for c in changed:
         print(f"hooks: {c}")
     print(f"hooks: wrote {settings_path} — restart Claude Code (or reload settings) to take effect")
+    return 0
+
+
+# ── hooks selftest (ADR-0010) ────────────────────────────────────────────────
+# The four-probe problem this closes. guard_plan_edit fails open on an
+# unreadable payload, on a non-plan path, and on a new file. Each is correct.
+# Each also exits 0 in silence, which is indistinguishable from the hook never
+# having run — the state a machine without uv was actually in. Three consecutive
+# probes therefore "passed" while the layer was inert, and a report written after
+# any of them would have looked exactly like a correct one.
+#
+# So this drives every hook with a payload that MUST produce a visible reaction,
+# through the command the host actually registered, and fails when any hook stays
+# silent. Registration is a record. A refusal is an outcome.
+
+SELFTEST_PLAN = """<!doctype html>
+<html><body>
+<span data-meta="status">active</span>
+<div class="phase" data-phase="1">
+  <code class="status" data-status-for="phase-1">[]</code>
+</div>
+</body></html>
+"""
+
+
+def _selftest_fixture(tmp: Path) -> None:
+    """A throwaway repo shaped so all four hooks have something to say.
+
+    Deliberately NOT the caller's repo: a selftest whose result depends on
+    whether this project happens to have an active plan today reports the
+    repo's contents, not whether the hook layer runs."""
+    (tmp / "specs").mkdir(parents=True, exist_ok=True)
+    (tmp / "docs").mkdir(parents=True, exist_ok=True)
+    # report_drift returns early unless this exists — it is the one artifact
+    # every wired cozyplan repo has and no other tool creates.
+    write(tmp / "docs" / "state.ndjson", "")
+    write(tmp / "specs" / "selftest-plan.html", SELFTEST_PLAN)
+    # Anchored but defective, NOT merely malformed. `validate` classifies a file
+    # with no data-* anchors as legacy and passes it with reduced checks, so the
+    # obvious "garbage html" fixture made lint_plan correctly say nothing and
+    # read as a dead hook. The defect has to be one validate actually rejects.
+    write(tmp / "specs" / "broken-plan.html", SELFTEST_PLAN.replace("[]", "[bogus]"))
+    write(tmp / "specs" / "_index.json", json.dumps(
+        {"plans": [{"id": "selftest", "file": "selftest-plan.html", "status": "active"}]}))
+
+
+def _selftest_cases(tmp: Path) -> dict:
+    plan = (tmp / "specs" / "selftest-plan.html").as_posix()
+    broken = (tmp / "specs" / "broken-plan.html").as_posix()
+    return {
+        "guard_plan_edit.py": {
+            "payload": {"tool_name": "Edit", "cwd": str(tmp), "tool_input": {
+                "file_path": plan,
+                "old_string": '<span data-meta="status">active</span>',
+                "new_string": '<span data-meta="status">built</span>'}},
+            "expect": "refuse",
+            "want": "deny an edit that rewrites a CLI-managed metadata region",
+        },
+        "lint_plan.py": {
+            "payload": {"tool_name": "Write", "cwd": str(tmp),
+                        "tool_input": {"file_path": broken}},
+            "expect": "context",
+            "want": "report a validate failure for a malformed plan",
+        },
+        "steer_build.py": {
+            "payload": {"cwd": str(tmp), "prompt": "continue the build"},
+            "expect": "context",
+            "want": "surface the active plan's re-entry point",
+        },
+        "report_drift.py": {
+            "payload": {"cwd": str(tmp), "source": "startup"},
+            "expect": "context",
+            "want": "report wiring gaps (the fixture repo is deliberately unwired)",
+        },
+    }
+
+
+def _selftest_observe(expect: str, stdout: str) -> str | None:
+    """What the hook was observed to DO, or None when it said nothing.
+
+    None is the failure. It is also what a hook that never ran produces, which
+    is the point: the two are the same result and must both count as broken."""
+    text = (stdout or "").strip()
+    if not text.startswith("{"):
+        return None  # silence, or plain text where a decision was required
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return None
+    out = data.get("hookSpecificOutput") or {}
+    if expect == "refuse":
+        return "DENIED the edit" if out.get("permissionDecision") == "deny" else None
+    ctx = (out.get("additionalContext") or "").strip()
+    if not ctx:
+        return None
+    return "reported: " + ctx.splitlines()[0][:52]
+
+
+def registered_hook_commands(root: Path) -> tuple[dict, str, Path | None]:
+    """({script: command}, where-it-came-from, plugin root) for this project.
+
+    settings.json wins over the plugin manifest only because a project that has
+    run `hooks install` is stating a preference; both are reported by doctor."""
+    settings = root / ".claude" / "settings.json"
+    manifest = active_plugin_hooks_json(root)
+    for label, path, proot in (("`.claude/settings.json`", settings, None),
+                               ("the plugin manifest", manifest,
+                                manifest.parent.parent if manifest else None)):
+        if not path or not path.exists():
+            continue
+        try:
+            data = json.loads(read(path))
+        except (OSError, ValueError):
+            continue
+        found = {}
+        for _event, blocks in (data.get("hooks") or {}).items():
+            for blk in blocks or []:
+                for h in (blk.get("hooks") or []):
+                    cmd = (h.get("command") or "") if isinstance(h, dict) else ""
+                    for script in HOOK_MATCHERS:
+                        if script in cmd:
+                            found[script] = cmd
+        if found:
+            return found, label, proot
+    return {}, "", None
+
+
+def _shipped_hook_commands() -> tuple[dict, str, Path | None]:
+    """The hooks as they ship, launched exactly the way the manifest launches
+    them — through run-hook.sh. Lets a developer (and this repo's own CI, which
+    is not a plugin install) verify the scripts before any wiring exists."""
+    launcher = PLUGIN_HOOKS_JSON.parent / "run-hook.sh"
+    hook_dir = Path(__file__).resolve().parent / "hooks"
+    cmds = {}
+    for script in HOOK_MATCHERS:
+        target = hook_dir / script
+        if launcher.exists():
+            cmds[script] = (f'sh {shlex.quote(launcher.as_posix())} '
+                            f'{shlex.quote(target.as_posix())} {HOOK_DEAD_EXIT[script]}')
+        else:
+            exe, arg = _hook_runner_parts()
+            cmds[script] = " ".join(shlex.quote(x) for x in
+                                    ([exe] + ([arg] if arg else []) + [target.as_posix()]))
+    return cmds, "the shipped scripts (not registered anywhere)", None
+
+
+def _run_registered(cmd: str, payload: dict, cwd: Path, plugin_root: Path | None):
+    """Run a registered hook command the way the host runs it: through a shell,
+    with the ${...} placeholders Claude Code substitutes already expanded."""
+    expanded = cmd.replace("${CLAUDE_PROJECT_DIR}", str(cwd))
+    if plugin_root:
+        expanded = expanded.replace("${CLAUDE_PLUGIN_ROOT}", str(plugin_root))
+    elif "${CLAUDE_PLUGIN_ROOT}" in expanded:
+        expanded = expanded.replace("${CLAUDE_PLUGIN_ROOT}",
+                                    str(PLUGIN_HOOKS_JSON.parent.parent))
+    if shutil.which("sh"):
+        argv = ["sh", "-c", expanded]
+    else:
+        # No POSIX shell. hooks.json pins "shell": "bash", so this host cannot run
+        # the plugin hooks at all — say so by failing, never by skipping.
+        argv = shlex.split(expanded)
+    # report_drift runs `doctor`, and doctor runs this selftest. Without a marker
+    # the two call each other forever: doctor -> selftest -> report_drift ->
+    # doctor -> ... Each level is a real subprocess, so it exhausts the machine
+    # rather than raising RecursionError. doctor skips its selftest row when set.
+    env = os.environ.copy()
+    env["COZYPLAN_SELFTEST"] = "1"
+    return subprocess.run(argv, input=json.dumps(payload), capture_output=True,
+                          text=True, cwd=str(cwd), timeout=90, env=env)
+
+
+def run_hooks_selftest(root: Path, shipped: bool = False):
+    """(rows, failures, source), where rows are (script, event, result, ok).
+
+    Shared by `hooks selftest` and `doctor` so the two can never disagree about
+    whether the layer runs. Empty rows means nothing was registered — which is a
+    finding, not an absence of one, and each caller says so in its own voice."""
+    if shipped:
+        commands, source, plugin_root = _shipped_hook_commands()
+    else:
+        commands, source, plugin_root = registered_hook_commands(root)
+    if not commands:
+        return [], [], ""
+
+    rows, failures = [], []
+    with tempfile.TemporaryDirectory(prefix="cozyplan-selftest-") as td:
+        tmp = Path(td)
+        _selftest_fixture(tmp)
+        for script, case in _selftest_cases(tmp).items():
+            event = HOOK_MATCHERS[script][0]
+            cmd = commands.get(script)
+            if not cmd:
+                rows.append((script, event, "NOT REGISTERED", False))
+                failures.append((script, "no command registered for this hook"))
+                continue
+            try:
+                r = _run_registered(cmd, case["payload"], tmp, plugin_root)
+            except (OSError, subprocess.SubprocessError) as e:
+                rows.append((script, event, "COULD NOT LAUNCH", False))
+                failures.append((script, f"launching it raised {type(e).__name__}: {e}"))
+                continue
+            observed = _selftest_observe(case["expect"], r.stdout)
+            if observed:
+                rows.append((script, event, observed, True))
+            else:
+                rows.append((script, event, "SILENT", False))
+                detail = f"expected it to {case['want']}"
+                err = (r.stderr or "").strip().splitlines()
+                if err:
+                    detail += f"; stderr: {err[0][:90]}"
+                detail += f"; exit {r.returncode}"
+                failures.append((script, detail))
+
+    return rows, failures, source
+
+
+def _doctor_selftest(root: Path) -> tuple[int, int, str]:
+    """(observed, total, detail) for doctor's outcome row.
+
+    Never falls back to --shipped: that would report "4/4 observed" on a repo
+    where nothing is wired, which is the reassuring-but-false line this whole
+    change exists to delete."""
+    rows, failures, source = run_hooks_selftest(root)
+    if not rows:
+        return 0, 0, "no hooks registered, so none can run (`plan_tool hooks install`)"
+    observed = sum(1 for r in rows if r[3])
+    if failures:
+        return observed, len(rows), (f"via {source}; silent: "
+                                     + ", ".join(s for s, _ in failures))
+    return observed, len(rows), f"via {source}"
+
+
+def cmd_hooks_selftest(args) -> int:
+    root = Path(args.root)
+    rows, failures, source = run_hooks_selftest(root, shipped=args.shipped)
+    if not rows:
+        print("cozyplan hooks selftest — nothing is registered for this project.\n")
+        print("  Not a warning: an unregistered hook layer is silent in exactly the")
+        print("  way a broken one is. Nothing checked any plan write here.\n")
+        print("  Fix with one of:")
+        print("    plan_tool hooks install      register in .claude/settings.json")
+        print("    /plugin install cozyplan     register via the plugin manifest")
+        print("  Or test the shipped scripts without wiring: --shipped")
+        return 1
+
+    print(f"cozyplan hooks selftest — via {source}\n")
+    width = max(len(s) for s in HOOK_MATCHERS)
+    for script, event, result, ok in rows:
+        print(f"  [{_MARK[OK] if ok else _MARK[GAP]}] {script:<{width}}  {event:<16} {result}")
+
+    print(f"\n{len(rows) - len(failures)}/{len(rows)} observed")
+    if failures:
+        print("\nsilent hooks are indistinguishable from absent ones — both are broken:")
+        for script, detail in failures:
+            print(f"  - {script}: {detail}")
+        return 1
     return 0
 
 
@@ -2641,13 +2952,40 @@ def doctor_checks(root: Path, commits: int) -> list[tuple[str, str, str, str]]:
 
     settings = root / ".claude" / "settings.json"
     via_settings = _registers_all(settings)
-    plugin_manifest = active_plugin_hooks_json()
+    plugin_manifest = active_plugin_hooks_json(root)
     via_plugin = _registers_all(plugin_manifest) if plugin_manifest else False
-    add("enforcement", OK if (via_settings or via_plugin) else WARN, "claude hooks",
-        f"all {len(HOOK_MATCHERS)} registered in "
+    # Deliberately labelled as a record, and deliberately never OK on its own.
+    # `all 4 registered` printed as a healthy row is what let an inert hook layer
+    # read as a working one; registration is a claim about a config file and says
+    # nothing about whether any hook ran. The row below is the one that knows.
+    add("enforcement", WARN if not (via_settings or via_plugin) else OK,
+        "hooks registered",
+        f"a record only — all {len(HOOK_MATCHERS)} listed in "
         + (".claude/settings.json" if via_settings else "the plugin manifest")
         if (via_settings or via_plugin)
         else "not registered — run `plan_tool hooks install` (advisory layer only)")
+
+    # The outcome. Runs each hook against a payload it must react to, and reports
+    # what was observed rather than what is configured (ADR-0010).
+    if os.environ.get("COZYPLAN_SELFTEST"):
+        add("enforcement", WARN, "hooks observed",
+            "not evaluated — already inside a selftest (recursion guard)")
+    else:
+        observed, total, detail = _doctor_selftest(root)
+        # A gap is reserved for the dangerous state: registered, and inert anyway.
+        # That is the one that reads as protection while providing none. Nothing
+        # registered is honest absence — the row above already says so, and it is
+        # the normal condition on a CI runner, where a gap would fail --strict on
+        # every run and teach the team to drop the flag.
+        if not total:
+            status = WARN
+        elif observed == total:
+            status = OK
+        else:
+            status = GAP
+        add("enforcement", status, "hooks observed",
+            f"{observed}/{total} produced the reaction they owe — {detail}" if total
+            else f"nothing to observe — {detail}")
 
     # The check that matters: does the interpreter those hooks name actually run?
     tool = Path(__file__).resolve()
@@ -2713,8 +3051,19 @@ def doctor_checks(root: Path, commits: int) -> list[tuple[str, str, str, str]]:
     else:
         add("tooling", WARN, "gh",
             "not installed — issue operations queue to .scratch/ instead (ADR-0001)")
-    add("tooling", OK if shutil.which("uv") else WARN, "uv",
-        "present" if shutil.which("uv") else "absent — plan_tool runs on plain python3, so this is fine")
+    # "so this is fine" was true of plan_tool and false of the hooks, and the two
+    # sat one line apart reading as a clean bill of health on a host where the
+    # hook layer could not start. uv is now a fallback, not a requirement: the
+    # hooks resolve python3/python/py first (see hooks/run-hook.sh), so what
+    # matters is whether ANY interpreter resolves — which `hooks observed` above
+    # answers by running them. This row is inventory, so it never reads as proof.
+    _py = next((c for c in ("python3", "python", "py") if shutil.which(c)), None)
+    add("tooling", OK if (shutil.which("uv") or _py) else GAP, "hook runtime",
+        (f"{_py or 'uv'} resolves"
+         + ("" if _py else " (uv only — no bare python on PATH)")
+         + "; see `hooks observed` for whether the hooks actually ran")
+        if (shutil.which("uv") or _py)
+        else "no python3/python/py/uv on PATH — every hook exits without running")
     add("tooling", OK, "python", sys.version.split()[0])
 
     # ── state layer (ADR-0005) ───────────────────────────────────────────────
@@ -2970,9 +3319,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("hooks", parents=[parent],
                         help="register/unregister the coherence hooks in .claude/settings.json (for bare-skill installs)")
-    sp.add_argument("hooks_cmd", choices=["install", "remove", "git-install", "git-remove"],
-                    help="install/remove the Claude Code hooks, or git-install/git-remove "
-                         "the tracked .githooks (commit-msg trailer injection, pre-push drift)")
+    sp.add_argument("hooks_cmd",
+                    choices=["install", "remove", "git-install", "git-remove", "selftest"],
+                    help="install/remove the Claude Code hooks, git-install/git-remove "
+                         "the tracked .githooks (commit-msg trailer injection, pre-push "
+                         "drift), or selftest to prove the registered hooks actually run")
+    sp.add_argument("--shipped", action="store_true",
+                    help="selftest: test the shipped hook scripts even when nothing is "
+                         "registered (for CI and pre-install verification)")
     sp.add_argument("--dir", dest="dir", default=".githooks",
                     help="git-install: tracked hooks directory (default: .githooks)")
     sp.add_argument("--root", default=".", help="repo root (default: .)")
@@ -2980,7 +3334,9 @@ def build_parser() -> argparse.ArgumentParser:
                     help="explicit settings.json path (default: ./.claude/settings.json)")
     sp.add_argument("--global", dest="global_", action="store_true",
                     help="target ~/.claude/settings.json instead of the project settings")
-    sp.set_defaults(func=lambda a: cmd_hooks_git(a) if a.hooks_cmd.startswith("git-") else cmd_hooks(a))
+    sp.set_defaults(func=lambda a: cmd_hooks_git(a) if a.hooks_cmd.startswith("git-")
+                    else cmd_hooks_selftest(a) if a.hooks_cmd == "selftest"
+                    else cmd_hooks(a))
 
     sp = sub.add_parser("trailers", parents=[parent],
                         help="add the commit trailers this commit can demonstrate (advisory)")

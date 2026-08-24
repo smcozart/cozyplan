@@ -28,13 +28,19 @@ The plugin carries everything as one unit: **two skills** (`cozyplan`, the plan 
 
 `plan_tool.py` is **stdlib-only Python 3.9+** and runs on a plain `python3` — macOS, Linux and Windows are all tested in CI on every push.
 
-One caveat, and it is the plugin install only: the bundled `hooks/hooks.json` launches the four coherence hooks with `uv run`, so **on a machine without [`uv`](https://docs.astral.sh/uv/) those hooks do not fire.** Nothing breaks — every `plan_tool` operation self-validates and the hooks are the advisory layer (ADR-0004) — but you lose edit-time steering, silently. `plan_tool doctor` reports it. Install `uv`, or register the hooks against your own interpreter instead, which resolves it per machine:
+The hooks resolve an interpreter at call time — `python3`, `python`, `py`, then [`uv`](https://docs.astral.sh/uv/) — so no host needs any particular one of them. `uv` is a fallback, not a requirement. (It used to be hardcoded, and the hooks did not fire without it; ADR-0010.)
+
+When a hook **cannot run at all** — no interpreter, a stale install — it says so and exits non-zero rather than passing quietly, and the `PreToolUse` guard refuses the write rather than letting it through unchecked. Silence from a hook means "looked, nothing to say". It never means "never looked".
+
+Prove it on any machine:
 
 ```
-python3 <plan_tool> hooks install     # --global for user-wide
+python3 <plan_tool> hooks selftest    # --shipped to test before registering
 ```
 
-Hook registration is **per machine** and `hooks git-install` is **per clone** — neither travels with the repo. On a second machine (a Mac alongside a Windows box, say), run `doctor` there and wire what it reports.
+Each hook is driven with a payload it must react to, and the command fails if any stays silent. Check it this way rather than by eye: the guard legitimately stays quiet on a non-plan path, a new file, and a prose edit, so a hand probe that picks one of those looks identical on a working machine and a dead one.
+
+Hook registration is **per machine** and `hooks git-install` is **per clone** — neither travels with the repo. On a second machine (a Mac alongside a Windows box, say), run `hooks selftest` and `doctor` there and wire what they report. `doctor` keeps the two facts apart: `hooks registered` is a record, `hooks observed` is the outcome.
 
 Diagrams are the one external dependency: the globally-installed `excalidraw-diagram` skill renders them locally, key-free. Without it a plan still writes; the `{{...IMAGE}}` slots stay as placeholders until you run the Diagram Generation subworkflow.
 

@@ -94,7 +94,20 @@ def test_claude_hooks_registration_is_detected(pt, git_repo, capsys):
     settings.write_text(json.dumps({"hooks": {"All": [
         {"hooks": [{"command": f"uv run {s}"}]} for s in pt.HOOK_MATCHERS]}}), encoding="utf-8")
     run(pt, git_repo)
-    assert f"all {len(pt.HOOK_MATCHERS)} registered" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert f"all {len(pt.HOOK_MATCHERS)} listed" in out
+
+    # Registration must never present itself as proof. These four commands name
+    # scripts that do not exist at those paths, so the layer is registered and
+    # entirely inert — the exact state that used to print as a healthy row.
+    # doctor has to carry both facts, and the outcome row is the one that objects.
+    assert "a record only" in out, "registration must be labelled as a record"
+    assert "hooks observed" in out, "doctor must report an observed outcome too"
+    reg_line = next(l for l in out.splitlines() if "hooks registered" in l)
+    obs_line = next(l for l in out.splitlines() if "hooks observed" in l)
+    assert "ok" in reg_line and "gap" in obs_line, (
+        "a registered-but-inert layer must show ok on the record and a gap on the "
+        f"outcome; got:\n{reg_line}\n{obs_line}")
 
 
 def test_ci_workflow_must_actually_run_state_check(pt, git_repo, capsys):

@@ -93,6 +93,20 @@ jobs:
             exit 1
           fi
 
+      - name: Hooks actually run
+        # ADR-0010. Every hook is driven with a payload it must react to, and the
+        # step fails if any of them stays silent. Deliberately NOT `exit 0 means
+        # fine`: the guard fails open on an unreadable payload, a non-plan path
+        # and a new file, so exit 0 is also exactly what a hook that never ran
+        # produces — three probes "passed" that way on an inert machine.
+        #
+        # --shipped because a runner registers nothing; this asserts the scripts
+        # and hooks/run-hook.sh work HERE. That matters most on windows-latest,
+        # where the interpreter the manifest used to hardcode does not exist and
+        # the resolver has to find python/py through Git Bash instead.
+        if: hashFiles('hooks/run-hook.sh') != ''
+        run: python "${{ steps.pt.outputs.path }}" hooks selftest --shipped
+
       - name: Wiring
         # ADR-0004: the failure mode is silent misconfiguration, so the wiring is
         # asserted rather than assumed. --strict fails on gaps (absent wiring);

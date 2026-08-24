@@ -40,7 +40,7 @@ The full CLI surface, the plan metadata contract, and the install paths. Reached
 | Install | Command |
 | --- | --- |
 | Wire a whole repo (idempotent; implements `doctor`'s check list) | `PLAN_TOOL init [--vendor] [--repo OWNER/NAME] [--git-init] [--force-hooks] [--no-claude-hooks]` |
-| Claude Code hooks (needs user approval — hooks execute commands) | `PLAN_TOOL hooks install [--global]` · `hooks remove` |
+| Claude Code hooks (needs user approval — hooks execute commands) | `PLAN_TOOL hooks install [--global]` · `hooks remove` · `hooks selftest` |
 | Tracked git hooks + `core.hooksPath` | `PLAN_TOOL hooks git-install [--dir .githooks]` · `hooks git-remove` |
 
 ## Metadata contract
@@ -79,7 +79,11 @@ Record the implementing commit with `meta --field commits --value <sha>`, and ta
 
 ## Install paths
 
-The `PreToolUse` guard steers raw edits of CLI-owned regions back to `PLAN_TOOL`; the `PostToolUse` hook validates after every write. Both are **advisory**: a Bash/`sed`/out-of-tool write bypasses them by design. Correctness comes from `validate`, which every op runs — not from the hook. (ADR-0004)
+The `PreToolUse` guard steers raw edits of CLI-owned regions back to `PLAN_TOOL`; the `PostToolUse` hook validates after every write. Both are **advisory about your plan**: a Bash/`sed`/out-of-tool write bypasses them by design. Correctness comes from `validate`, which every op runs — not from the hook. (ADR-0004)
+
+They are **not** advisory about themselves. A hook that cannot run — no interpreter, missing script — says so on stderr and exits non-zero, and the guard exits 2 so the write is refused rather than proceeding unchecked (ADR-0010). Silence means "looked, nothing to say"; it must never also mean "never looked".
+
+Verify with `PLAN_TOOL hooks selftest`, which drives every hook with a payload it must react to and fails when any stays silent. Use it rather than checking exit codes by hand: the guard legitimately exits 0 on a non-plan path, on a new file, and on a prose edit, so a probe that picks any of those passes on a machine where the hook is absent entirely. `PLAN_TOOL doctor` reports the same outcome as `hooks observed`, next to — and separate from — `hooks registered`, which is only a record.
 
 **Bare-skill installs** (`npx skills add`, no plugin) do not auto-register those hooks. Correctness still holds because every op self-validates. To restore edit-time steering, offer `PLAN_TOOL hooks install` — with the user's explicit approval, never silently, since hooks execute commands. It is idempotent (re-running re-points stale paths rather than duplicating entries), preserves unrelated settings, and `hooks remove` undoes it. A Claude Code restart is needed before they fire.
 
