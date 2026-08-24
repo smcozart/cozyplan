@@ -19,15 +19,20 @@ def test_install_creates_settings_with_both_entries(pt, tmp_path):
     assert len(pre) == 1 and len(post) == 1
     assert pre[0]["matcher"] == "Edit|MultiEdit|Write"
     assert "guard_plan_edit.py" in pre[0]["hooks"][0]["command"]
-    # It used to hardcode `uv run`, so on a machine without uv the registered hook was
-    # `uv run …` — command not found, silently. The git-hook half already resolved the
-    # runner; this half did not, and doctor reported "registered" either way.
-    # Parsed, not string-matched: the interpreter path may contain spaces and be quoted.
+    # It used to resolve the interpreter at INSTALL time and write `uv run <abs path>`.
+    # That is right on exactly one machine at one moment: a host that later loses uv,
+    # or a colleague who never had it, gets a registered hook that cannot start and
+    # says nothing. Registration now goes through run-hook.sh, which resolves at CALL
+    # time and fails loud, so both this route and the plugin manifest behave the same.
+    # Parsed, not string-matched: these paths contain spaces and are quoted.
     import shlex as _shlex
-    exe, arg = pt._hook_runner_parts()
     argv = _shlex.split(pre[0]["hooks"][0]["command"])
-    assert argv[0] == exe
-    assert (argv[1] == arg) if arg else argv[1].endswith("guard_plan_edit.py")
+    assert argv[0] == "sh"
+    assert argv[1].endswith("run-hook.sh"), f"not launched through the resolver: {argv}"
+    assert argv[2].endswith("guard_plan_edit.py")
+    assert int(argv[3]) == pt.HOOK_DEAD_EXIT["guard_plan_edit.py"]
+    # No interpreter may be named here — that was the whole bug.
+    assert "uv run" not in pre[0]["hooks"][0]["command"]
     assert post[0]["matcher"] == "Edit|MultiEdit|Write|Bash"
     assert "lint_plan.py" in post[0]["hooks"][0]["command"]
 
@@ -93,9 +98,51 @@ def test_the_registered_command_is_runnable_on_this_machine(pt, tmp_path):
     settings = tmp_path / ".claude" / "settings.json"
     pt.main(["hooks", "install", "--settings", str(settings)])
     cmd = read(settings)["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    # Claude Code substitutes this before the shell sees it; do the same here.
+    cmd = cmd.replace("${CLAUDE_PROJECT_DIR}", str(pt.Path(".").resolve()))
     argv = shlex.split(cmd)
     r = subprocess.run(argv, input="{}", capture_output=True, text=True, timeout=30)
     assert r.returncode == 0, f"registered hook is not runnable: {cmd}\n{r.stderr[:300]}"
+
+
+def test_registration_inside_a_project_is_portable(pt, tmp_path):
+    """.claude/settings.json is committed, so an absolute path in it is correct on
+    one machine and wrong on every teammate's. When the scripts live inside the
+    project, the registration must be written against ${CLAUDE_PROJECT_DIR}."""
+    settings = tmp_path / ".claude" / "settings.json"
+    repo_root = pt.Path(pt.__file__).resolve().parents[3]
+    pt.main(["hooks", "install", "--settings", str(settings), "--root", str(repo_root)])
+    cmd = read(settings)["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    assert "${CLAUDE_PROJECT_DIR}" in cmd
+    assert str(repo_root) not in cmd, (
+        f"an absolute project path leaked into a committed file: {cmd}")
+
+
+def test_a_vendored_copy_is_registered_over_the_running_tool(pt, tmp_path):
+    """`init --vendor` copies the skill into the repo so a clone needs no install.
+    Registering the *running* tool instead left the repo with a good vendored copy
+    and a committed settings.json naming a path on one person's machine."""
+    vendored = tmp_path / ".claude" / "skills" / "cozyplan" / "scripts" / "hooks"
+    vendored.mkdir(parents=True)
+    src = pt.Path(pt.__file__).resolve().parent / "hooks"
+    for f in list(pt.HOOK_MATCHERS) + ["run-hook.sh"]:
+        (vendored / f).write_bytes((src / f).read_bytes())
+
+    settings = tmp_path / ".claude" / "settings.json"
+    pt.main(["hooks", "install", "--settings", str(settings), "--root", str(tmp_path)])
+    cmd = read(settings)["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    assert ".claude/skills/cozyplan" in cmd, f"did not register the vendored copy: {cmd}"
+    assert "${CLAUDE_PROJECT_DIR}" in cmd
+    assert str(src) not in cmd, "registered the running tool instead of the vendored copy"
+
+
+def test_global_registration_stays_absolute(pt, tmp_path):
+    """A user-wide settings file is shared across projects, so ${CLAUDE_PROJECT_DIR}
+    would re-point it at whichever repo happens to be open."""
+    settings = tmp_path / "global.json"
+    pt.main(["hooks", "install", "--settings", str(settings), "--global"])
+    cmd = read(settings)["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    assert "${CLAUDE_PROJECT_DIR}" not in cmd
 
 
 def test_plugin_manifest_registers_every_hook_in_HOOK_MATCHERS(pt):

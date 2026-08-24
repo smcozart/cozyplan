@@ -46,7 +46,7 @@ def test_registered_hooks_are_run_as_registered(pt, tmp_path, capsys):
     clone is misconfigured, which is the only case worth reporting."""
     settings = tmp_path / ".claude" / "settings.json"
     hook_dir = pt.Path(pt.__file__).resolve().parent / "hooks"
-    launcher = pt.PLUGIN_HOOKS_JSON.parent / "run-hook.sh"
+    launcher = pt.hook_launcher()
     _write_settings(pt, settings, lambda s: (
         f'sh "{launcher.as_posix()}" "{(hook_dir / s).as_posix()}" {pt.HOOK_DEAD_EXIT[s]}'))
     assert pt.main(["hooks", "selftest", "--root", str(tmp_path)]) == 0
@@ -82,7 +82,7 @@ def test_missing_hook_script_fails_loudly_with_the_right_exit_code(pt, tmp_path,
     and must use the per-event dead exit code — 2 where blocking is safe, 1 on
     UserPromptSubmit, where exit 2 erases the user's prompt instead of reporting."""
     settings = tmp_path / ".claude" / "settings.json"
-    launcher = pt.PLUGIN_HOOKS_JSON.parent / "run-hook.sh"
+    launcher = pt.hook_launcher()
     _write_settings(pt, settings, lambda s: (
         f'sh "{launcher.as_posix()}" "/nonexistent/{s}" {pt.HOOK_DEAD_EXIT[s]}'))
     assert pt.main(["hooks", "selftest", "--root", str(tmp_path)]) == 1
@@ -91,6 +91,33 @@ def test_missing_hook_script_fails_loudly_with_the_right_exit_code(pt, tmp_path,
     assert "hook script not found" in out
     assert "exit 2" in out   # guard_plan_edit / lint_plan
     assert "exit 1" in out   # steer_build / report_drift
+
+
+def test_project_dir_placeholder_expands_to_the_project_not_the_fixture(pt, tmp_path, capsys):
+    """A registration written against ${CLAUDE_PROJECT_DIR} must expand to the real
+    project. selftest runs the hooks against a throwaway fixture repo, and expanding
+    the placeholder to *that* points every hook at a directory with no scripts in it
+    — reporting four dead hooks on a perfectly good install. Caught in the wild by
+    the selftest itself, aimed at the wrong target."""
+    rel = "vendored/scripts/hooks"
+    dst = tmp_path / rel
+    dst.mkdir(parents=True)
+    src = pt.Path(pt.__file__).resolve().parent / "hooks"
+    for f in list(pt.HOOK_MATCHERS) + ["run-hook.sh"]:
+        (dst / f).write_bytes((src / f).read_bytes())
+    # plan_tool must sit where the hooks expect a sibling copy, or lint_plan cannot
+    # resolve the tool it validates with.
+    (tmp_path / "vendored" / "scripts" / "plan_tool.py").write_bytes(
+        pt.Path(pt.__file__).resolve().read_bytes())
+
+    settings = tmp_path / ".claude" / "settings.json"
+    _write_settings(pt, settings, lambda s: (
+        f'sh "${{CLAUDE_PROJECT_DIR}}/{rel}/run-hook.sh" '
+        f'"${{CLAUDE_PROJECT_DIR}}/{rel}/{s}" {pt.HOOK_DEAD_EXIT[s]}'))
+
+    assert pt.main(["hooks", "selftest", "--root", str(tmp_path)]) == 0
+    out = capsys.readouterr().out
+    assert "4/4 observed" in out, out
 
 
 # ── the fail-loud contract itself ────────────────────────────────────────────
@@ -133,9 +160,18 @@ def test_manifest_launches_every_hook_through_the_resolver(pt):
                 assert not cmd.startswith("uv "), f"hardcodes an interpreter: {cmd}"
 
 
-def test_resolver_script_ships_with_the_plugin(pt):
-    launcher = pt.PLUGIN_HOOKS_JSON.parent / "run-hook.sh"
-    assert launcher.exists(), "hooks/run-hook.sh must ship beside hooks.json"
+def test_resolver_script_ships_beside_the_hooks_it_launches(pt):
+    """Not in the plugin's hooks/ directory. The skill directory travels as one unit
+    through a plugin install, `npx skills add`, and a vendored copy; the plugin
+    wrapper travels through only the first. Kept at the plugin root, the launcher
+    was absent from two of the three shapes that ship the hooks needing it."""
+    launcher = pt.hook_launcher()
+    assert launcher.exists(), "run-hook.sh must ship beside the hook scripts"
+    hooks_dir = pt.Path(pt.__file__).resolve().parent / "hooks"
+    assert launcher.parent == hooks_dir, (
+        f"launcher must live with the hooks it starts; found {launcher}")
+    for script in pt.HOOK_MATCHERS:
+        assert (hooks_dir / script).exists(), f"{script} is not beside the launcher"
 
 
 # ── doctor and selftest must never disagree ──────────────────────────────────

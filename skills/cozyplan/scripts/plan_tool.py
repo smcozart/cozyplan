@@ -1452,7 +1452,7 @@ def active_plugin_hooks_json(root: Path | None = None) -> Path | None:
 
 
 def cmd_hooks(args) -> int:
-    hook_dir = Path(__file__).resolve().parent / "hooks"
+    hook_dir = resolve_hook_dir(Path(getattr(args, "root", ".")))
     if args.settings:
         settings_path = Path(args.settings)
     elif args.global_:
@@ -1460,8 +1460,11 @@ def cmd_hooks(args) -> int:
     else:
         settings_path = Path(".claude") / "settings.json"
 
+    launcher = hook_dir / "run-hook.sh"
     if args.hooks_cmd == "install":
         missing = [n for n in HOOK_MATCHERS if not (hook_dir / n).exists()]
+        if not launcher.exists():
+            missing.append(launcher.name)
         if missing:
             return fail(f"hook script(s) not found beside plan_tool: {', '.join(missing)}")
 
@@ -1473,6 +1476,17 @@ def cmd_hooks(args) -> int:
             return fail(f"cannot parse {settings_path}: {e}")
         if not isinstance(data, dict):
             return fail(f"{settings_path} is not a JSON object")
+
+    # .claude/settings.json is a COMMITTED file, so an absolute path in it is a
+    # path that is right on exactly one machine and travels to everyone else.
+    # Claude Code substitutes ${CLAUDE_PROJECT_DIR} into hook commands before the
+    # shell sees them, so when the scripts live inside the project — vendored, or
+    # a source checkout, which covers the ordinary cases — the registration can be
+    # written relative and stay correct on every clone.
+    #
+    # Not for --global: that file is one user's, shared across projects, and
+    # ${CLAUDE_PROJECT_DIR} would re-point it at whichever repo is open.
+    project = None if args.global_ else Path(getattr(args, "root", "."))
 
     hooks = data.setdefault("hooks", {})
     changed = []
@@ -1486,10 +1500,16 @@ def cmd_hooks(args) -> int:
         ]
         removed = before - len(entries)
         if args.hooks_cmd == "install":
-            exe, arg = _hook_runner_parts()
-            cmd_str = " ".join(shlex.quote(x) for x in ([exe] + ([arg] if arg else []))
-                               + [(hook_dir / script).as_posix()])
-            block = {"hooks": [{"type": "command", "command": cmd_str}]}
+            # Through run-hook.sh, exactly as the plugin manifest does. This route
+            # used to bake `uv run` and an absolute interpreter in at INSTALL time,
+            # so a host that later lost uv — or a colleague who never had it — got
+            # a registered hook that could not start, with no message. Resolving at
+            # call time and failing loud is the whole of ADR-0010, and it has to
+            # hold on both registration paths or the layer is only half fixed.
+            cmd_str = hook_command(script,
+                                   registered_path(hook_dir / script, project),
+                                   registered_path(launcher, project))
+            block = {"hooks": [{"type": "command", "shell": "bash", "command": cmd_str}]}
             if matcher:
                 block["matcher"] = matcher
             entries.append(block)
@@ -1636,18 +1656,67 @@ def registered_hook_commands(root: Path) -> tuple[dict, str, Path | None]:
     return {}, "", None
 
 
+def resolve_hook_dir(root: Path) -> Path:
+    """The hook scripts to REGISTER: a copy vendored inside the project wins over
+    the running tool's own.
+
+    Same order SKILL.md and the CI workflow already use. Without it, running
+    `init --vendor` from a source checkout copied the skill into the repo and then
+    registered the *checkout* — so the repo carried a perfectly good vendored copy
+    and a committed settings.json naming a path that exists on one machine.
+    """
+    vendored = root / ".claude" / "skills" / "cozyplan" / "scripts" / "hooks"
+    if (vendored / "run-hook.sh").exists():
+        return vendored
+    return Path(__file__).resolve().parent / "hooks"
+
+
+def hook_launcher() -> Path:
+    """run-hook.sh, which ships BESIDE the hook scripts rather than in the plugin's
+    hooks/ directory. The skill directory travels as one unit through every
+    distribution shape — plugin install, `npx skills add`, vendored into a repo —
+    and the plugin wrapper does not. Kept at the plugin root, the launcher was
+    missing from two of those three, so the hooks it launches would have shipped
+    without it."""
+    return Path(__file__).resolve().parent / "hooks" / "run-hook.sh"
+
+
+def registered_path(target: Path, project: Path | None) -> str:
+    """How a path is written into a registration: ${CLAUDE_PROJECT_DIR}-relative
+    when it lives inside the project, absolute otherwise.
+
+    Computed as a real relative path rather than by substituting the project
+    prefix into the string. The first attempt did the latter and silently never
+    matched on macOS, where /tmp resolves to /private/tmp — so it emitted absolute
+    paths while every test that checked the *logic* still passed.
+    """
+    if project is not None:
+        try:
+            rel = target.resolve().relative_to(project.resolve())
+            return "${CLAUDE_PROJECT_DIR}/" + rel.as_posix()
+        except (OSError, ValueError):
+            pass
+    return target.as_posix()
+
+
+def hook_command(script: str, target: str, launcher: str) -> str:
+    """The one command string both registration paths write, so the plugin route
+    and the settings.json route cannot drift into behaving differently."""
+    return (f'sh {shlex.quote(launcher)} '
+            f'{shlex.quote(target)} {HOOK_DEAD_EXIT[script]}')
+
+
 def _shipped_hook_commands() -> tuple[dict, str, Path | None]:
     """The hooks as they ship, launched exactly the way the manifest launches
     them — through run-hook.sh. Lets a developer (and this repo's own CI, which
     is not a plugin install) verify the scripts before any wiring exists."""
-    launcher = PLUGIN_HOOKS_JSON.parent / "run-hook.sh"
+    launcher = hook_launcher()
     hook_dir = Path(__file__).resolve().parent / "hooks"
     cmds = {}
     for script in HOOK_MATCHERS:
         target = hook_dir / script
         if launcher.exists():
-            cmds[script] = (f'sh {shlex.quote(launcher.as_posix())} '
-                            f'{shlex.quote(target.as_posix())} {HOOK_DEAD_EXIT[script]}')
+            cmds[script] = hook_command(script, target.as_posix(), launcher.as_posix())
         else:
             exe, arg = _hook_runner_parts()
             cmds[script] = " ".join(shlex.quote(x) for x in
@@ -1655,10 +1724,18 @@ def _shipped_hook_commands() -> tuple[dict, str, Path | None]:
     return cmds, "the shipped scripts (not registered anywhere)", None
 
 
-def _run_registered(cmd: str, payload: dict, cwd: Path, plugin_root: Path | None):
+def _run_registered(cmd: str, payload: dict, cwd: Path, plugin_root: Path | None,
+                    project_root: Path | None = None):
     """Run a registered hook command the way the host runs it: through a shell,
-    with the ${...} placeholders Claude Code substitutes already expanded."""
-    expanded = cmd.replace("${CLAUDE_PROJECT_DIR}", str(cwd))
+    with the ${...} placeholders Claude Code substitutes already expanded.
+
+    project_root is the REAL project, not the throwaway fixture in cwd. The
+    registered command names its scripts relative to ${CLAUDE_PROJECT_DIR}, so
+    substituting the fixture there points every hook at a directory that has no
+    scripts in it — which the selftest then reports as four dead hooks. It found
+    that in itself, which is the intended behaviour aimed at the wrong target.
+    """
+    expanded = cmd.replace("${CLAUDE_PROJECT_DIR}", str((project_root or cwd).resolve()))
     if plugin_root:
         expanded = expanded.replace("${CLAUDE_PLUGIN_ROOT}", str(plugin_root))
     elif "${CLAUDE_PLUGIN_ROOT}" in expanded:
@@ -1705,7 +1782,7 @@ def run_hooks_selftest(root: Path, shipped: bool = False):
                 failures.append((script, "no command registered for this hook"))
                 continue
             try:
-                r = _run_registered(cmd, case["payload"], tmp, plugin_root)
+                r = _run_registered(cmd, case["payload"], tmp, plugin_root, root)
             except (OSError, subprocess.SubprocessError) as e:
                 rows.append((script, event, "COULD NOT LAUNCH", False))
                 failures.append((script, f"launching it raised {type(e).__name__}: {e}"))
@@ -2454,8 +2531,12 @@ def cmd_init(args) -> int:
 
     # ── Claude Code hooks (advisory layer; bare-skill installs need this) ────
     if args.claude_hooks:
+        # root matters: it is what lets the registration be written against
+        # ${CLAUDE_PROJECT_DIR} instead of this machine's absolute paths. `init`
+        # wires a repo other people will clone, so this is the case that most
+        # needs a settings.json that is correct on a machine it has never seen.
         ns = argparse.Namespace(hooks_cmd="install", settings=str(root / ".claude" / "settings.json"),
-                                global_=False)
+                                global_=False, root=str(root))
         if cmd_hooks(ns) == 0:
             refreshed.append(".claude/settings.json (guard + lint hooks)")
         else:

@@ -101,10 +101,10 @@ jobs:
         # produces — three probes "passed" that way on an inert machine.
         #
         # --shipped because a runner registers nothing; this asserts the scripts
-        # and hooks/run-hook.sh work HERE. That matters most on windows-latest,
+        # and their run-hook.sh launcher work HERE. That matters most on windows-latest,
         # where the interpreter the manifest used to hardcode does not exist and
         # the resolver has to find python/py through Git Bash instead.
-        if: hashFiles('hooks/run-hook.sh') != ''
+        if: hashFiles('skills/cozyplan/scripts/hooks/run-hook.sh') != ''
         run: python "${{ steps.pt.outputs.path }}" hooks selftest --shipped
 
       - name: Wiring

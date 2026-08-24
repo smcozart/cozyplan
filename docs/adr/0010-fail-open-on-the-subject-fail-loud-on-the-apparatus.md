@@ -4,7 +4,7 @@ title: Fail open on the subject, fail loud on the apparatus
 status: accepted
 date: 2026-08-24
 authors: Sean Cozart <seancozart@outlook.com>
-refs: docs/adr/0004-hooks-advise-ci-enforces-derivation-tolerates-gaps.md, docs/handoff-enforcement-layer.md, hooks/hooks.json, hooks/run-hook.sh
+refs: docs/adr/0004-hooks-advise-ci-enforces-derivation-tolerates-gaps.md, docs/handoff-enforcement-layer.md, hooks/hooks.json, skills/cozyplan/scripts/hooks/run-hook.sh
 ---
 
 # ADR-0010: Fail open on the subject, fail loud on the apparatus
@@ -69,7 +69,7 @@ look is not a finding, and must never again leave the same trace behind.
   instead of reporting anything.
 - **The interpreter is resolved at call time, never named in the manifest.** `hooks/hooks.json`
   is static and cannot ask the host what it has, which is why it hardcoded `uv run`. Every hook
-  now launches through `hooks/run-hook.sh`, which probes `python3`, `python`, `py`, then falls
+  now launches through `run-hook.sh`, which probes `python3`, `python`, `py`, then falls
   back to `uv`. Candidates are probed for `>=3.9` rather than merely found on `PATH`, because
   `command -v python3` succeeds against the Windows Store alias stub, which is not an interpreter.
 - **A hook must be able to demonstrate that it ran.** `plan_tool hooks selftest` drives every hook
@@ -128,3 +128,10 @@ erased prompt, so a test asserts they match rather than trusting them to.
 
 - 2026-08-24 — proposed by Sean Cozart
 - 2026-08-24 — accepted; earned by four probes that all read as success on an inert layer
+- 2026-08-24 — extended to the second registration path. `hooks install` resolved the
+  interpreter at *install* time and wrote `uv run <absolute path>` into
+  `.claude/settings.json`, which is a committed file — the same class this ADR closes,
+  surviving on the route the ADR did not name. Both paths now share one command builder.
+  `run-hook.sh` moved from the plugin root to `skills/cozyplan/scripts/hooks/`, beside the
+  hooks it launches, because the skill directory travels through all three distribution
+  shapes and the plugin wrapper travels through one.

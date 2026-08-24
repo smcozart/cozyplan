@@ -1,5 +1,5 @@
 {
-  "description": "cozyplan plan-write hardening. PreToolUse guard steers raw Edit/Write of CLI-managed plan regions (status/metadata/amendments) to plan_tool. PostToolUse lint runs plan_tool validate after any write to specs/*.html and reports failures back to the agent. UserPromptSubmit steers build turns to the current phase; SessionStart reports wiring drift. Every hook is launched through hooks/run-hook.sh, which resolves a Python at call time (python3, python, py, then uv) instead of hardcoding one the host may not have. Hooks fail OPEN on the subject — an unreadable payload or a non-plan path is not an objection — and LOUD on the apparatus: when no interpreter resolves, the guard exits 2 and blocks rather than passing silently (ADR-0010). The trailing argument to run-hook.sh is that dead exit code, and it is 1 for UserPromptSubmit because exit 2 there erases the user's prompt. This file must stay in sync with HOOK_MATCHERS in skills/cozyplan/scripts/plan_tool.py — tests/test_hooks_install.py fails if it drifts. Verify the layer actually runs with `plan_tool hooks selftest`; `plan_tool doctor` reports the same outcome.",
+  "description": "cozyplan plan-write hardening. PreToolUse guard steers raw Edit/Write of CLI-managed plan regions (status/metadata/amendments) to plan_tool. PostToolUse lint runs plan_tool validate after any write to specs/*.html and reports failures back to the agent. UserPromptSubmit steers build turns to the current phase; SessionStart reports wiring drift. Every hook is launched through run-hook.sh, which ships beside the hook scripts and resolves a Python at call time (python3, python, py, then uv) instead of hardcoding one the host may not have. Hooks fail OPEN on the subject \u2014 an unreadable payload or a non-plan path is not an objection \u2014 and LOUD on the apparatus: when no interpreter resolves, the guard exits 2 and blocks rather than passing silently (ADR-0010). The trailing argument to run-hook.sh is that dead exit code, and it is 1 for UserPromptSubmit because exit 2 there erases the user's prompt. This file must stay in sync with HOOK_MATCHERS in skills/cozyplan/scripts/plan_tool.py \u2014 tests/test_hooks_install.py fails if it drifts. Verify the layer actually runs with `plan_tool hooks selftest`; `plan_tool doctor` reports the same outcome.",
   "hooks": {
     "PreToolUse": [
       {
@@ -8,7 +8,7 @@
           {
             "type": "command",
             "shell": "bash",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" \"${CLAUDE_PLUGIN_ROOT}/skills/cozyplan/scripts/hooks/guard_plan_edit.py\" 2"
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/skills/cozyplan/scripts/hooks/run-hook.sh\" \"${CLAUDE_PLUGIN_ROOT}/skills/cozyplan/scripts/hooks/guard_plan_edit.py\" 2"
           }
         ]
       }
@@ -20,7 +20,7 @@
           {
             "type": "command",
             "shell": "bash",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" \"${CLAUDE_PLUGIN_ROOT}/skills/cozyplan/scripts/hooks/lint_plan.py\" 2"
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/skills/cozyplan/scripts/hooks/run-hook.sh\" \"${CLAUDE_PLUGIN_ROOT}/skills/cozyplan/scripts/hooks/lint_plan.py\" 2"
           }
         ]
       }
@@ -31,7 +31,7 @@
           {
             "type": "command",
             "shell": "bash",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" \"${CLAUDE_PLUGIN_ROOT}/skills/cozyplan/scripts/hooks/steer_build.py\" 1"
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/skills/cozyplan/scripts/hooks/run-hook.sh\" \"${CLAUDE_PLUGIN_ROOT}/skills/cozyplan/scripts/hooks/steer_build.py\" 1"
           }
         ]
       }
@@ -42,7 +42,7 @@
           {
             "type": "command",
             "shell": "bash",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" \"${CLAUDE_PLUGIN_ROOT}/skills/cozyplan/scripts/hooks/report_drift.py\" 1"
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/skills/cozyplan/scripts/hooks/run-hook.sh\" \"${CLAUDE_PLUGIN_ROOT}/skills/cozyplan/scripts/hooks/report_drift.py\" 1"
           }
         ]
       }
