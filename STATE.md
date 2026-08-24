@@ -6,8 +6,8 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-24T14:24:49-05:00 |
-| Repo state | main @ 39993cd |
+| Last synced | 2026-08-24T14:46:13-05:00 |
+| Repo state | main @ e9110c0 |
 
 ## Current Working State
 
@@ -43,6 +43,10 @@
   ↳ session:s-enforce-01 adr:0010 adr:0004 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_doctor.py path:tests/test_hooks_selftest.py
 - Hooks resolve an interpreter at call time and fail loud when none does — the PreToolUse guard exits 2 rather than passing a plan write unchecked — verified by `echo '{}' | PATH=/nonexistent /bin/sh hooks/run-hook.sh skills/cozyplan/scripts/hooks/guard_plan_edit.py 2` (2026-08-24, 39993cd)
   ↳ session:s-enforce-01 adr:0010 path:hooks/run-hook.sh path:hooks/hooks.json
+- Both hook registration paths write the same run-hook.sh command, and a project-internal install is registered against ${CLAUDE_PROJECT_DIR} so a committed settings.json survives a clone — verified by `python3 -m pytest tests/test_hooks_install.py tests/test_hooks_selftest.py` (2026-08-24, e9110c0)
+  ↳ session:s-enforce-01 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:skills/cozyplan/scripts/hooks/run-hook.sh path:tests/test_hooks_install.py
+- A vendored repo registers its own copy and that registration demonstrably runs — init --vendor then hooks selftest reports 4/4 observed — verified by `plan_tool init --root <tmp> --vendor; plan_tool hooks selftest --root <tmp>` (2026-08-24, e9110c0)
+  ↳ session:s-enforce-01 adr:0010 path:skills/cozyplan/scripts/plan_tool.py
 
 ## In Development
 
@@ -74,8 +78,6 @@
   ↳ session:s-audit-03 adr:0004
 - enforce_admins is off, so a repo admin can push to main past a failing state-check; GitHub logs and announces the bypass but does not block it. Set enforce_admins true to close it, at the cost of routing every admin change through a PR
   ↳ session:s-audit-03 adr:0004
-- hooks install bakes a machine-specific absolute interpreter path into .claude/settings.json — fine for one machine, wrong to commit for a team. The plugin route resolves at call time; the settings.json route still resolves at install time
-  ↳ session:s-enforce-01 adr:0010 path:skills/cozyplan/scripts/plan_tool.py
 - No passive run ledger: selftest answers 'can a hook fire at all', nothing answers 'did it fire during real work'. Deferred deliberately — needs a per-machine vs committed storage decision
   ↳ session:s-enforce-01 adr:0010
 
