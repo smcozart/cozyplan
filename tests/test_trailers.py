@@ -177,3 +177,51 @@ def test_doctor_reports_a_broken_stored_runner(pt, git_repo, capsys):
     line = [l for l in out.splitlines() if "hook interpreter" in l][0]
     assert "gap" in line, line
     assert "fail open" in line, line
+
+
+# ── which plan_tool the git hooks run (reported by cozycode) ─────────────────
+# `git-install` used to record `Path(__file__).resolve()` — wherever the tool was
+# invoked from. A repo wired from a maintainer's checkout then ran THAT checkout's
+# plan_tool to answer "is this repo healthy", while carrying a vendored copy of its
+# own, and `doctor` counted hook files without ever saying which tool they ran.
+
+def test_git_install_records_an_in_repo_tool_relatively(pt, git_repo):
+    """Relative, so it survives the repo moving or being cloned elsewhere. Git runs
+    hooks from the worktree top level, so a relative path resolves there."""
+    vendored = git_repo / ".claude" / "skills" / "cozyplan" / "scripts"
+    vendored.mkdir(parents=True)
+    (vendored / "plan_tool.py").write_bytes(pt.Path(pt.__file__).resolve().read_bytes())
+
+    assert pt.main(["hooks", "git-install", "--root", str(git_repo)]) == 0
+    recorded = git(git_repo, "config", "cozyplan.plantool").stdout.strip()
+    assert recorded == ".claude/skills/cozyplan/scripts/plan_tool.py", recorded
+    assert not pt.Path(recorded).is_absolute(), "an absolute path pins this to one machine"
+
+
+def test_doctor_names_a_tool_outside_the_worktree(pt, git_repo, capsys):
+    """The row that was missing: `git hooks` counts files and never opens one, so it
+    passed while the hooks executed a plan_tool from another repository entirely."""
+    git(git_repo, "config", "core.hooksPath", ".githooks")
+    (git_repo / ".githooks").mkdir(exist_ok=True)
+    (git_repo / ".githooks" / "commit-msg").write_text("#!/bin/sh\n", encoding="utf-8")
+    outside = pt.Path(pt.__file__).resolve()
+    git(git_repo, "config", "cozyplan.plantool", str(outside))
+
+    pt.main(["doctor", "--root", str(git_repo)])
+    out = capsys.readouterr().out
+    assert "git hook tool" in out
+    assert "OUTSIDE this repo" in out, out
+
+
+def test_doctor_flags_an_unset_hook_tool_as_a_silent_no_op(pt, git_repo, capsys):
+    """Both hooks open with `TOOL=$(git config ...) || exit 0`. Unset means they run
+    nothing, on every machine but the one that wired them."""
+    pt.main(["doctor", "--root", str(git_repo)])
+    out = capsys.readouterr().out
+    assert "cozyplan.plantool unset" in out, out
+
+
+def test_doctor_flags_a_recorded_tool_that_does_not_exist(pt, git_repo, capsys):
+    git(git_repo, "config", "cozyplan.plantool", "does/not/exist/plan_tool.py")
+    pt.main(["doctor", "--root", str(git_repo)])
+    assert "does not exist" in capsys.readouterr().out

@@ -131,11 +131,16 @@ def test_adr_register_drift_both_directions(pt, git_repo, capsys):
     adr.mkdir(parents=True)
     (adr / "0001-first.md").write_text("# one\n", encoding="utf-8")
     (adr / "0002-second.md").write_text("# two\n", encoding="utf-8")
+    # Staged deliberately. This test is about the register drifting from the ADRs
+    # the repository actually carries; it used to leave both files untracked and
+    # still expect them to count, which is the defect cozyplan#4 fixed rather than
+    # a behaviour worth preserving. Untracked ADRs have their own test below.
+    git(git_repo, "add", str(adr / "0001-first.md"), str(adr / "0002-second.md"))
 
-    # on disk but unlisted
+    # tracked but unlisted
     write_state(git_repo, head(git_repo), branch=branch_of(git_repo), adrs=["0001"])
     assert run(pt, git_repo) == 1
-    assert "ADR-0002 exists" in capsys.readouterr().out
+    assert "ADR-0002 is tracked" in capsys.readouterr().out
 
     # listed but absent
     write_state(git_repo, head(git_repo), branch=branch_of(git_repo),
@@ -234,3 +239,56 @@ def test_rev_count_reports_failure_instead_of_fabricating_zero(pt, git_repo):
     assert pt.rev_count(git_repo, "HEAD..HEAD") == 0
     assert pt.rev_count(git_repo, "nope-not-a-ref..HEAD") is None
     assert pt.rev_count(pt.Path(git_repo) / "definitely-not-a-repo", "HEAD..HEAD") is None
+
+
+# ── the ADR register against the index, not the disk (cozyplan#4) ────────────
+# render_state builds Registers from `adr_dir.glob("*.md")`. Checking the register
+# against that same glob compares a generated list to its own generator, so after a
+# render the two agree by construction and the check cannot fail. It reported
+# `OK STATE.md: consistent with git` for an ADR git had never seen. Found by cozycode.
+
+def _adr(repo, num, *, track):
+    """Write an ADR file; stage it only when `track`."""
+    d = repo / "docs" / "adr"
+    d.mkdir(parents=True, exist_ok=True)
+    f = d / f"{num}-thing.md"
+    f.write_text(f"---\nid: ADR-{num}\ntitle: thing\n---\n", encoding="utf-8")
+    if track:
+        git(repo, "add", str(f))
+    return f
+
+
+def test_registers_citing_an_untracked_adr_fails(pt, git_repo, capsys):
+    """The canary: on disk, in Registers, never staged. Every clone renders a
+    register citing a file it does not have."""
+    _adr(git_repo, "0099", track=False)
+    write_state(git_repo, head(git_repo), branch=branch_of(git_repo), adrs=["0099"])
+    assert run(pt, git_repo) == 1
+    out = capsys.readouterr().out
+    assert "ADR-0099" in out
+    assert "not staged or committed" in out
+    assert "git add" in out, "the message must name the fix, not only the failure"
+
+
+def test_a_staged_adr_passes(pt, git_repo, capsys):
+    """Staged is not committed, but the commit will carry it — so a clone gets it.
+    This is why the check uses `--cached` and never `--cached --others`."""
+    _adr(git_repo, "0099", track=True)
+    write_state(git_repo, head(git_repo), branch=branch_of(git_repo), adrs=["0099"])
+    assert run(pt, git_repo) == 0, capsys.readouterr().out
+
+
+def test_a_tracked_adr_missing_from_registers_still_fails(pt, git_repo, capsys):
+    """The original direction of the check must survive the fix."""
+    _adr(git_repo, "0099", track=True)
+    write_state(git_repo, head(git_repo), branch=branch_of(git_repo), adrs=[])
+    assert run(pt, git_repo) == 1
+    assert "missing from the Registers index" in capsys.readouterr().out
+
+
+def test_registers_citing_an_adr_with_no_file_at_all_still_fails(pt, git_repo, capsys):
+    """Distinct message from the untracked case — the remedy is different."""
+    (git_repo / "docs" / "adr").mkdir(parents=True, exist_ok=True)
+    write_state(git_repo, head(git_repo), branch=branch_of(git_repo), adrs=["0099"])
+    assert run(pt, git_repo) == 1
+    assert "has no file in" in capsys.readouterr().out

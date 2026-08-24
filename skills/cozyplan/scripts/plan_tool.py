@@ -1656,6 +1656,31 @@ def registered_hook_commands(root: Path) -> tuple[dict, str, Path | None]:
     return {}, "", None
 
 
+def resolve_git_hook_tool(root: Path) -> str:
+    """The plan_tool the git hooks should run, as a path they should record.
+
+    Prefers a copy inside the repo, recorded RELATIVE — git runs hooks from the
+    worktree top level, so a relative path resolves there and survives the repo
+    being moved or cloned to a different absolute path.
+
+    Before this, `git-install` recorded `Path(__file__).resolve()` — wherever the
+    tool happened to be invoked from. A consuming repo wired from a maintainer's
+    checkout therefore ran *that* checkout's plan_tool to answer "is this repo
+    healthy", while carrying a perfectly good vendored copy of its own. Two
+    plan_tools answering the same question on one machine is a drift defect
+    waiting to happen, and nothing compared them. Reported by cozycode.
+    """
+    for rel in (Path(".claude") / "skills" / "cozyplan" / "scripts" / "plan_tool.py",
+                Path("skills") / "cozyplan" / "scripts" / "plan_tool.py",
+                Path("scripts") / "plan_tool.py"):
+        if (root / rel).exists():
+            return rel.as_posix()
+    # Nothing in the repo: fall back to this file, absolute. Correct here, and
+    # inert on any other machine — the hooks open with `|| exit 0`, so doctor is
+    # what has to say so.
+    return str(Path(__file__).resolve())
+
+
 def resolve_hook_dir(root: Path) -> Path:
     """The hook scripts to REGISTER: a copy vendored inside the project wins over
     the running tool's own.
@@ -2022,17 +2047,46 @@ def check_state(state_path: Path, root: Path, adr_dir: Path, journal: Path,
                         f"claim's own code changed since it was proved "
                         f"({len(touched)} file(s), e.g. {touched[0]}): {m.group('what')[:60]}")
 
-    # 5. The ADR register is a hand-maintained copy of a directory listing, so it
-    #    drifts. Comparing the two is cheap and catches it immediately.
+    # 5. The ADR register against what git will actually hand a clone.
+    #
+    #    This deliberately does NOT enumerate the directory. `render_state` builds
+    #    Registers from `adr_dir.glob("*.md")`, so checking the register against the
+    #    same glob compares a generated list to its own generator: after any render
+    #    the two agree by construction, and the check can never fail. It passed on an
+    #    ADR git had never seen — rendered into Registers from disk, cited in STATE.md,
+    #    absent from every clone (cozyplan#4, found by cozycode).
+    #
+    #    Render from disk, check against the index: that is what keeps the
+    #    disagreement representable. Switching render to the index too would silently
+    #    drop the file instead of reporting it.
+    #
+    #    `--cached` alone, never `--cached --others`. The question here is "will a
+    #    clone have this file", so an untracked file is precisely the failure being
+    #    looked for. A staged file counts as present, correctly — it is going into the
+    #    commit. cozycode's PortabilityTest asks the mirror-image question and needs
+    #    `--others` for it; the two look alike and want opposite answers.
     if adr_dir.is_dir():
+        ok_ls, ls_out = git(root, "ls-files", "--cached", "--", str(adr_dir))
+        tracked = {m.group("num") for line in ls_out.splitlines()
+                   if (m := ADR_FILE_RE.match(Path(line.strip()).name))} if ok_ls else set()
         on_disk = {m.group("num") for f in adr_dir.glob("*.md")
                    if (m := ADR_FILE_RE.match(f.name))}
         registers = section_body(text, "Registers")
         listed = set(re.findall(r"ADR-(\d{4})", registers))
-        for num in sorted(on_disk - listed):
-            problems.append(f"ADR-{num} exists in {adr_dir}/ but is missing from the Registers index")
-        for num in sorted(listed - on_disk):
-            problems.append(f"Registers index lists ADR-{num}, which has no file in {adr_dir}/")
+        if not ok_ls:
+            warns.append("cannot list tracked ADRs (`git ls-files` failed) — the register "
+                         "was checked against the working tree, which a clone will not have")
+            tracked = on_disk
+        for num in sorted(tracked - listed):
+            problems.append(f"ADR-{num} is tracked in {adr_dir}/ but missing from the Registers index")
+        for num in sorted(listed - tracked):
+            if num in on_disk:
+                problems.append(
+                    f"Registers index lists ADR-{num}, which exists in {adr_dir}/ but is not "
+                    f"staged or committed — every clone renders a register citing a file it "
+                    f"does not have. Run: git add {adr_dir}/{num}-*.md")
+            else:
+                problems.append(f"Registers index lists ADR-{num}, which has no file in {adr_dir}/")
     else:
         notes.append(f"no {adr_dir}/ directory — ADR register check skipped")
 
@@ -3097,6 +3151,35 @@ def doctor_checks(root: Path, commits: int) -> list[tuple[str, str, str, str]]:
         add("enforcement", WARN, "git hooks",
             "core.hooksPath unset — .git/hooks is not cloned, so nothing is installed here")
 
+    # WHICH plan_tool those hooks run. The row above counts files and never opens
+    # one, so it passed while the hooks executed a plan_tool from another repo
+    # entirely — a record, unlabelled, exactly what `hooks registered` was fixed
+    # for. Both hooks open with `TOOL=$(git config ...) || exit 0`, so an unset or
+    # dead path is a silent no-op on every machine but the one that wired it.
+    ok_pt, plantool = git(root, "config", "cozyplan.plantool")
+    plantool = plantool.strip() if ok_pt else ""
+    if not plantool:
+        add("enforcement", WARN, "git hook tool",
+            "cozyplan.plantool unset — the git hooks exit 0 without running anything "
+            "here; run `plan_tool hooks git-install`")
+    else:
+        target = (root / plantool) if not Path(plantool).is_absolute() else Path(plantool)
+        inside = False
+        with contextlib.suppress(OSError, ValueError):
+            target.resolve().relative_to(root.resolve())
+            inside = True
+        if not target.exists():
+            add("enforcement", GAP, "git hook tool",
+                f"cozyplan.plantool={plantool} does not exist — both git hooks exit 0 "
+                f"without running; re-run `plan_tool hooks git-install`")
+        elif inside:
+            add("enforcement", OK, "git hook tool", f"{plantool} (inside this repo)")
+        else:
+            add("enforcement", WARN, "git hook tool",
+                f"{plantool} — OUTSIDE this repo, so the hooks run another checkout's "
+                f"plan_tool and nothing compares the two; re-run `hooks git-install` to "
+                f"prefer a copy in-repo")
+
     skill_root = Path(__file__).resolve().parent.parent
     if (skill_root / "SKILL.md").exists():
         drift = ([f"{f}:{v}" for f, v in doc_command_drift(skill_root)]
@@ -3319,7 +3402,7 @@ def cmd_hooks_git(args) -> int:
     # .git/hooks is not cloned, so the hooks live in a TRACKED directory and each
     # clone opts in with one command. doctor reports when that has not happened.
     git(root, "config", "core.hooksPath", args.dir)
-    git(root, "config", "cozyplan.plantool", str(Path(__file__).resolve()))
+    git(root, "config", "cozyplan.plantool", resolve_git_hook_tool(root))
     runner_exe, runner_arg = _hook_runner_parts()
     git(root, "config", "cozyplan.runner", runner_exe)
     if runner_arg:
