@@ -59,6 +59,56 @@ One class, three instances: **a runner named as a bare word the host may not res
 and silently.** Fix the class. A layer that silently does not run on one of two machines is worse
 than none, because it will be trusted. This is the one hard ordering constraint.
 
+
+### Update 2026-08-24: uv was installed, and what that proved
+
+`uv 0.12.5` is now present on the macOS machine, so the `uv run` hooks execute there. Verified
+by observing a refusal rather than an exit code: an `Edit` carrying `data-meta=` against a
+`specs/*.html` path returns
+
+```
+decision: deny
+reason:   This edit touches a CLI-managed region of the plan (status markers,
+          metadata, or amendments). Use plan_tool instead:
+```
+
+through both routes — `uv run` and plain `python3` — with identical output.
+
+**The instructive part is how long that took.** Three earlier attempts all returned silence and
+exit 0, and every one of them reads as success:
+
+| Probe | Result | Why |
+|---|---|---|
+| `Write` to `README.md` | silent, exit 0 | not a plan path |
+| `Write` to `specs/x.html`, plain content | silent, exit 0 | touches no managed region |
+| `Write` to `specs/x.html` that does not exist | silent, exit 0 | new-file authoring, deliberately allowed |
+| `Edit` touching `data-meta=` on a plan path | **deny** | the only shape that fires |
+
+Three consecutive false positives for "the hook works". A report after any of them would have
+been wrong, and would have looked identical to a correct one.
+
+**This is the design problem stated precisely.** `guard_plan_edit` fails open on unparseable
+input, on a wrongly shaped payload, on a non-plan path, and on a new file. Each is correct
+behaviour. Each is also **indistinguishable from the hook not running at all** — which is
+exactly the state the machine was in an hour earlier, with `uv` absent.
+
+So installing uv fixed one host and changed nothing about the class. The question the design has
+to answer is not "is the runner present" but **"can a hook demonstrate that it ran?"** A hook
+that only speaks when it refuses cannot: silence carries no information, and a reader must
+already know the failure to interpret the report.
+
+Concrete implications for this work:
+
+- **A silent pass and an absent runner must not look the same.** Whatever mechanism is chosen —
+  a heartbeat the hook emits, a recorded last-run, a self-test verb — the outcome has to be
+  observable, not inferred from the absence of complaint.
+- **`doctor` reads misleadingly today.** `all 4 registered` is a record about configuration, and
+  `absent — plan_tool runs on plain python3, so this is fine` is true of plan_tool and false of
+  the hooks, printed adjacently. Both lines are individually correct. Together they read healthy
+  on a host where the hooks do not run.
+- **Test a hook by observing a refusal it should make**, never by observing that it exited zero.
+  Any test written the other way passes on a machine where the hook is absent entirely.
+
 ## What cozyplan owns, and what it does not
 
 **Owns:** the hook *mechanism* — `.githooks/`, `hooks/hooks.json`, `skills/cozyplan/scripts/hooks/`,
