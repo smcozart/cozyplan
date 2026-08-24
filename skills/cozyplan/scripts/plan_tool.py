@@ -3201,9 +3201,31 @@ def doctor_checks(root: Path, commits: int) -> list[tuple[str, str, str, str]]:
 
     wf = root / ".github" / "workflows"
     ci = [f.name for f in wf.glob("*.yml")] + [f.name for f in wf.glob("*.yaml")] if wf.is_dir() else []
-    has_state_ci = any("state check" in read(wf / f) or "state_check" in read(wf / f) for f in ci) if ci else False
+    ci_text = "\n".join(read(wf / f) for f in ci) if ci else ""
+    has_state_ci = ("state check" in ci_text or "state_check" in ci_text)
+    # Labelled a record, like `hooks registered`. This greps a YAML file for a
+    # string: a workflow that is syntactically broken, or has never once gone
+    # green, passes it identically to one that guards every push. Whether it ran
+    # is answerable only from the forge, which a clone cannot reach — so the row
+    # says what it observed instead of implying more (ADR-0010, cozycode's report).
     add("enforcement", OK if has_state_ci else GAP, "ci workflow",
-        f"{', '.join(ci)}" if has_state_ci else "no workflow runs `state check` — no enforcing layer exists")
+        f"a record only — {', '.join(ci)} names `state check`; whether it has ever "
+        f"passed is not visible from a clone" if has_state_ci
+        else "no workflow runs `state check` — no enforcing layer exists")
+
+    # The selftest is the one check that proves the hook layer runs, and `init`
+    # deliberately leaves an existing workflow alone — so a repo wired before the
+    # selftest existed never gains the step and nothing ever says so. cozycode had
+    # it in neither CI nor any hook: the best instrument in the toolkit, running
+    # only when a human typed it.
+    if ci:
+        runs_selftest = "hooks selftest" in ci_text
+        add("enforcement", OK if runs_selftest else WARN, "ci runs selftest",
+            "a workflow runs `hooks selftest`" if runs_selftest
+            else "no workflow runs `hooks selftest`, so nothing proves the hook layer "
+                 "runs on a clean machine — add a step: "
+                 "`python <plan_tool> hooks selftest --shipped`")
+
     add("enforcement", WARN, "required check",
         "not verifiable from a clone — confirm in GitHub Settings > Branches, or CI only reports")
 

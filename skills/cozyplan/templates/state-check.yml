@@ -94,6 +94,24 @@ jobs:
             exit 1
           fi
 
+      - name: Hooks actually run
+        # ADR-0010. Drives every hook with a payload it MUST react to and fails if
+        # any stays silent. Deliberately not "exit 0 means fine": the guard fails
+        # open on an unreadable payload, a non-plan path and a new file, so exit 0
+        # is also exactly what a hook that never ran produces. Three probes once
+        # "passed" that way on a machine where the layer was inert.
+        #
+        # --shipped because a runner registers nothing; this asserts the scripts and
+        # their run-hook.sh launcher work HERE. That matters most on Windows, where
+        # the interpreter a manifest might hardcode does not exist and the resolver
+        # has to find python/py through Git Bash instead.
+        #
+        # Guarded: a repo that vendored cozyplan before the selftest existed has no
+        # run-hook.sh, and this step would fail for the wrong reason. `doctor`
+        # reports when a workflow is missing this step.
+        if: hashFiles('.claude/skills/cozyplan/scripts/hooks/run-hook.sh', 'skills/cozyplan/scripts/hooks/run-hook.sh') != ''
+        run: python "${{ steps.pt.outputs.path }}" hooks selftest --shipped
+
       - name: Wiring
         # ADR-0004: the failure mode is silent misconfiguration, so the wiring is
         # asserted rather than assumed. --strict fails on gaps (absent wiring);

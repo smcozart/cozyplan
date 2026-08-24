@@ -215,3 +215,53 @@ def test_a_source_checkout_is_not_mistaken_for_a_plugin_install(pt, git_repo, ca
     monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)
     run(pt, git_repo)
     assert "not registered" in capsys.readouterr().out
+
+
+# ── the CI rows: a record labelled as one, and the selftest gap (cozycode) ────
+
+def test_ci_workflow_row_is_labelled_a_record(pt, git_repo, capsys):
+    """It greps a YAML file for a string. A syntactically broken workflow, or one
+    that has never gone green, passes it identically to one guarding every push —
+    so it must not read as proof, the way `hooks registered` no longer does."""
+    wf = git_repo / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    (wf / "state-check.yml").write_text("name: x\njobs: {}\n# state check\n", encoding="utf-8")
+    run(pt, git_repo)
+    out = capsys.readouterr().out
+    line = next(l for l in out.splitlines() if "ci workflow" in l)
+    assert "a record only" in line, line
+
+
+def test_a_workflow_without_the_selftest_is_reported(pt, git_repo, capsys):
+    """`init` leaves an existing workflow alone by design, so a repo wired before
+    the selftest existed never gains the step and nothing said so. cozycode had it
+    in neither CI nor any hook."""
+    wf = git_repo / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    (wf / "state-check.yml").write_text("name: x\njobs: {}\n# state check\n", encoding="utf-8")
+    run(pt, git_repo)
+    out = capsys.readouterr().out
+    assert "ci runs selftest" in out
+    assert "no workflow runs `hooks selftest`" in out
+    assert "--shipped" in out, "the row must name the step to add, not only the absence"
+
+
+def test_a_workflow_with_the_selftest_passes(pt, git_repo, capsys):
+    wf = git_repo / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    (wf / "state-check.yml").write_text(
+        "name: x\njobs: {}\n# state check\n# hooks selftest --shipped\n", encoding="utf-8")
+    run(pt, git_repo)
+    line = next(l for l in capsys.readouterr().out.splitlines() if "ci runs selftest" in l)
+    assert "ok" in line, line
+
+
+def test_the_installed_template_carries_the_selftest_step(pt):
+    """The template `init` writes into a consuming repo. Without this the gap was
+    worse than reported: not only did existing repos never gain the step, a brand
+    new one did not get it either."""
+    tpl = pt.resolve_template("state-check.yml")
+    assert tpl is not None, "state-check.yml template not found"
+    body = tpl.read_text(encoding="utf-8")
+    assert "hooks selftest" in body, "the shipped CI template must run the selftest"
+    assert "--shipped" in body
