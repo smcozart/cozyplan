@@ -1,5 +1,35 @@
 # Handoff: design the enforcement layer
 
+> ## ⚠️ Superseded in part — read this first
+>
+> **This brief was acted on and completed.** The outcome is ADR-0010 and
+> `docs/handoff-session-enforcement-layer.md`. It is kept as the record of what was believed at
+> the time, so its reasoning stays legible. Three of its premises did not survive being tested.
+>
+> **1. "The `uv` failure is silent" is wrong** — and it is the load-bearing claim of the
+> `Update 2026-08-24` section below. Shell-form hooks run under `sh -c`, so a missing `uv`
+> produced `sh: uv: command not found`, exit 127, which Claude Code surfaces as
+> `Failed with non-blocking status code:` on *every* matched tool call. It was loud, constant and
+> non-blocking. Fixing the runner was never going to buy observability.
+>
+> The genuinely silent failure is different, and it is what ADR-0010 addresses: **a hook that
+> exits 0 has its stderr discarded** — neither the user nor Claude sees it — and every hook
+> returns 0 on every error path. So an internal failure is invisible *and identical to a hook
+> that never ran*. The four probes described below are correct evidence for that, not for the
+> `uv` claim they were attached to.
+>
+> **2. "Which hook events gate" is settled**, not open. `PreToolUse` blocks; `UserPromptSubmit`
+> blocks by *erasing the user's prompt*, so it must never be used to; `PostToolUse` and
+> `SessionStart` cannot block at all. Only `guard_plan_edit` can refuse anything — "test a hook by
+> observing a refusal" applies to it and nothing else.
+>
+> **3. "Cost per commit" is measured**: `hooks selftest` 399ms, `state check` 604ms,
+> `doctor --strict` 983ms. Cost was never the constraint. Authority was — four of five repos in
+> that workspace had no git hooks at all.
+>
+> Still open from this brief: the deliberate bypass (`--no-verify` is accepted unmitigated, per
+> cozycode's ADR-0012), and packaging in general.
+
 Self-contained. The evidence and decisions below originate in a sibling repository this one
 cannot reach by relative path, so everything is restated rather than cited.
 

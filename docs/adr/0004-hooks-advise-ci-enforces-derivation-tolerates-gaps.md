@@ -111,3 +111,12 @@ as the check it runs; then the CI workflow; then `.githooks/` plus `core.hooksPa
 - 2026-08-19 — corrected: the human-only clause overstated the constraint. Branch
   protection is admin-gated, not tool-impossible; `scripts/adopt.sh` performs it with
   consent and falls back to the UI path.
+- 2026-08-24 — corrected: the Context claims that on a machine without `uv`, "plan
+  validation was silently off". The quotation from `hooks/hooks.json` is accurate — it
+  really did say that — but the claim it supports is not. Shell-form hooks run under
+  `sh -c`, so a missing `uv` produced `sh: uv: command not found` and exit 127, which
+  Claude Code surfaces on *every* matched tool call. It was loud, constant, and
+  non-blocking. **The decision is unaffected** — an advisory layer that dies is still
+  not a guarantee, which is what this ADR turns on. What changes is the evidence: the
+  genuinely silent failure is a hook that exits 0, because stderr is then discarded and
+  neither the user nor Claude sees it. ADR-0010 records that and does not supersede this.
