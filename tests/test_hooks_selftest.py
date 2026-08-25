@@ -246,3 +246,73 @@ def test_a_hook_that_fails_loudly_reports_its_reason(pt, tmp_path, capsys):
     assert "FAILED" in out
     assert "no interpreter" in out, "the reason it gave must reach the report"
     assert "REFUSED, NO REASON" not in out
+
+
+# ── the placeholder must survive a real shell (the 127 bug) ──────────────────
+# `shlex.quote` emits SINGLE quotes, which protect everything including a
+# ${...} the shell must expand. sh received the literal
+# "${CLAUDE_PROJECT_DIR}/..." as a filename and every hook exited 127 on every
+# matched tool call. selftest could not see it: it substituted the placeholder
+# itself before running the command, so it removed the fault before looking for
+# it and reported 4/4 on a layer that could not start.
+
+def _vendor_into(pt, repo, rel="vendored/scripts/hooks"):
+    """Copy the hook scripts and a sibling plan_tool into `repo`, return the rel dir."""
+    dst = repo / rel
+    dst.mkdir(parents=True)
+    src = pt.Path(pt.__file__).resolve().parent / "hooks"
+    for f in list(pt.HOOK_MATCHERS) + ["run-hook.sh"]:
+        (dst / f).write_bytes((src / f).read_bytes())
+    (repo / rel).parent.joinpath("plan_tool.py").write_bytes(
+        pt.Path(pt.__file__).resolve().read_bytes())
+    return rel
+
+
+def test_a_single_quoted_placeholder_is_reported_not_repaired(pt, tmp_path, capsys):
+    """The regression. selftest must run the command AS WRITTEN, so a registration
+    that cannot expand fails here exactly as it fails in a real session."""
+    rel = _vendor_into(pt, tmp_path)
+    settings = tmp_path / ".claude" / "settings.json"
+    _write_settings(pt, settings, lambda s: (
+        f"sh '${{CLAUDE_PROJECT_DIR}}/{rel}/run-hook.sh' "
+        f"'${{CLAUDE_PROJECT_DIR}}/{rel}/{s}' {pt.HOOK_DEAD_EXIT[s]}"))
+    assert pt.main(["hooks", "selftest", "--root", str(tmp_path)]) == 1
+    out = capsys.readouterr().out
+    assert "0/4 observed" in out, out
+    assert "${CLAUDE_PROJECT_DIR}" in out, "the unexpanded literal must reach the report"
+    assert "127" in out
+
+
+def test_a_double_quoted_placeholder_expands_and_passes(pt, tmp_path, capsys):
+    rel = _vendor_into(pt, tmp_path)
+    settings = tmp_path / ".claude" / "settings.json"
+    _write_settings(pt, settings, lambda s: (
+        f'sh "${{CLAUDE_PROJECT_DIR}}/{rel}/run-hook.sh" '
+        f'"${{CLAUDE_PROJECT_DIR}}/{rel}/{s}" {pt.HOOK_DEAD_EXIT[s]}'))
+    assert pt.main(["hooks", "selftest", "--root", str(tmp_path)]) == 0
+    assert "4/4 observed" in capsys.readouterr().out
+
+
+def test_shell_arg_expands_placeholders_and_holds_spaces(pt):
+    """Both properties at once. Quoting existed to protect spaces; the placeholder
+    needs expansion. A fix for either that breaks the other is not a fix."""
+    q = pt.shell_arg("${CLAUDE_PROJECT_DIR}/a b/c.py")
+    assert q.startswith('"') and q.endswith('"'), q
+    assert "${CLAUDE_PROJECT_DIR}" in q, "the placeholder must stay expandable"
+    # No placeholder -> single quotes are still correct and safest.
+    assert pt.shell_arg("/plain/a b/c.py").startswith("'")
+
+
+def test_registered_commands_never_single_quote_a_placeholder(pt, tmp_path):
+    """Whatever `hooks install` writes must be expandable by a real shell."""
+    import re
+    settings = tmp_path / ".claude" / "settings.json"
+    repo_root = pt.Path(pt.__file__).resolve().parents[3]
+    pt.main(["hooks", "install", "--settings", str(settings), "--root", str(repo_root)])
+    data = json.loads(settings.read_text(encoding="utf-8"))
+    for _ev, blocks in data["hooks"].items():
+        for b in blocks:
+            for h in b["hooks"]:
+                cmd = h["command"]
+                assert not re.search(r"'\$\{", cmd), (
+                    f"placeholder inside single quotes cannot expand: {cmd}")

@@ -1724,11 +1724,31 @@ def registered_path(target: Path, project: Path | None) -> str:
     return target.as_posix()
 
 
+def shell_arg(s: str) -> str:
+    """Quote one path for a shell command string.
+
+    `shlex.quote` emits SINGLE quotes, which protect everything — including a
+    `${...}` placeholder the shell is supposed to expand. A registration written
+    that way reached `sh` as the literal string `${CLAUDE_PROJECT_DIR}/...`, which
+    is not a filename, so every hook exited 127 on every matched tool call while
+    the paths inside were perfectly correct.
+
+    Double quotes are what a placeholder needs: they expand `$` and still hold a
+    path together across spaces, which this project's own path has. Everything a
+    double quote does NOT cover is escaped — a literal backslash, a double quote,
+    a backtick. `$` is deliberately left alone; expanding it is the point.
+    """
+    if "${" not in s:
+        return shlex.quote(s)
+    esc = s.replace("\\", "\\\\").replace('"', '\\"').replace("`", "\\`")
+    return f'"{esc}"'
+
+
 def hook_command(script: str, target: str, launcher: str) -> str:
     """The one command string both registration paths write, so the plugin route
     and the settings.json route cannot drift into behaving differently."""
-    return (f'sh {shlex.quote(launcher)} '
-            f'{shlex.quote(target)} {HOOK_DEAD_EXIT[script]}')
+    return (f'sh {shell_arg(launcher)} '
+            f'{shell_arg(target)} {HOOK_DEAD_EXIT[script]}')
 
 
 def _shipped_hook_commands() -> tuple[dict, str, Path | None]:
@@ -1751,33 +1771,37 @@ def _shipped_hook_commands() -> tuple[dict, str, Path | None]:
 
 def _run_registered(cmd: str, payload: dict, cwd: Path, plugin_root: Path | None,
                     project_root: Path | None = None):
-    """Run a registered hook command the way the host runs it: through a shell,
-    with the ${...} placeholders Claude Code substitutes already expanded.
+    """Run a registered hook command the way the host runs it: verbatim, through a
+    shell, with the ${...} variables supplied in the ENVIRONMENT.
 
-    project_root is the REAL project, not the throwaway fixture in cwd. The
-    registered command names its scripts relative to ${CLAUDE_PROJECT_DIR}, so
-    substituting the fixture there points every hook at a directory that has no
-    scripts in it — which the selftest then reports as four dead hooks. It found
-    that in itself, which is the intended behaviour aimed at the wrong target.
+    The command is NOT rewritten. An earlier version substituted the placeholders
+    itself and then ran the result, which removed the fault before looking for it:
+    a registration whose paths were single-quoted could never expand under a real
+    shell, and selftest reported `4/4 observed` while all four hooks were exiting
+    127 on every tool call. A check that edits its subject cannot observe it.
+
+    project_root is the REAL project, not the throwaway fixture in cwd — the
+    registered command names its scripts relative to ${CLAUDE_PROJECT_DIR}, and
+    pointing that at the fixture aims every hook at a directory with no scripts.
     """
-    expanded = cmd.replace("${CLAUDE_PROJECT_DIR}", str((project_root or cwd).resolve()))
-    if plugin_root:
-        expanded = expanded.replace("${CLAUDE_PLUGIN_ROOT}", str(plugin_root))
-    elif "${CLAUDE_PLUGIN_ROOT}" in expanded:
-        expanded = expanded.replace("${CLAUDE_PLUGIN_ROOT}",
-                                    str(PLUGIN_HOOKS_JSON.parent.parent))
     if shutil.which("sh"):
-        argv = ["sh", "-c", expanded]
+        argv = ["sh", "-c", cmd]
     else:
         # No POSIX shell. hooks.json pins "shell": "bash", so this host cannot run
-        # the plugin hooks at all — say so by failing, never by skipping.
-        argv = shlex.split(expanded)
+        # the plugin hooks at all — say so by failing, never by skipping. Nothing
+        # expands here, which is itself the honest result on such a host.
+        argv = shlex.split(cmd)
     # report_drift runs `doctor`, and doctor runs this selftest. Without a marker
     # the two call each other forever: doctor -> selftest -> report_drift ->
     # doctor -> ... Each level is a real subprocess, so it exhausts the machine
     # rather than raising RecursionError. doctor skips its selftest row when set.
     env = os.environ.copy()
     env["COZYPLAN_SELFTEST"] = "1"
+    # The host sets these; the shell expands them. Supplying them the same way is
+    # what lets a mis-quoted registration fail here exactly as it fails in a real
+    # session, instead of being quietly repaired by the check.
+    env["CLAUDE_PROJECT_DIR"] = str((project_root or cwd).resolve())
+    env["CLAUDE_PLUGIN_ROOT"] = str(plugin_root or PLUGIN_HOOKS_JSON.parent.parent)
     return subprocess.run(argv, input=json.dumps(payload), capture_output=True,
                           text=True, cwd=str(cwd), timeout=90, env=env)
 
