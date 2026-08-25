@@ -6,8 +6,8 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-24T18:59:56-05:00 |
-| Repo state | main @ df0acd5 |
+| Last synced | 2026-08-24T19:10:40-05:00 |
+| Repo state | main @ 50fde96 |
 
 ## Current Working State
 
@@ -53,6 +53,8 @@
   ↳ session:s-enforce-01 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_trailers.py
 - The shipped CI template runs hooks selftest, and doctor names the missing step for repos wired before it existed; the ci workflow row is labelled a record — verified by `python3 -m pytest tests/test_doctor.py` (2026-08-24, df0acd5)
   ↳ session:s-enforce-01 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:skills/cozyplan/templates/state-check.yml path:tests/test_doctor.py
+- doctor reports how many commits a vendored copy is behind upstream, and says plainly when upstream is unreachable rather than implying freshness — verified by `python3 -m pytest tests/test_doctor.py` (2026-08-24, 50fde96)
+  ↳ session:s-enforce-01 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_doctor.py
 
 ## In Development
 
