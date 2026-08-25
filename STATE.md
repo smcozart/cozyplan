@@ -6,8 +6,8 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-24T18:36:32-05:00 |
-| Repo state | main @ a03f28e |
+| Last synced | 2026-08-24T18:59:56-05:00 |
+| Repo state | main @ df0acd5 |
 
 ## Current Working State
 
@@ -51,6 +51,8 @@
   ↳ session:s-enforce-01 adr:0010 issue:#4 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_state_check.py
 - git-install records an in-repo plan_tool relatively, and doctor names which plan_tool the git hooks would actually run — flagging one outside the worktree — verified by `python3 -m pytest tests/test_trailers.py; staged ADR in a vendored repo produced 'ADR: 0001' on the commit` (2026-08-24, a03f28e)
   ↳ session:s-enforce-01 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_trailers.py
+- The shipped CI template runs hooks selftest, and doctor names the missing step for repos wired before it existed; the ci workflow row is labelled a record — verified by `python3 -m pytest tests/test_doctor.py` (2026-08-24, df0acd5)
+  ↳ session:s-enforce-01 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:skills/cozyplan/templates/state-check.yml path:tests/test_doctor.py
 
 ## In Development
 
@@ -87,10 +89,6 @@
 - Version skew is undetectable: hooks selftest proves the layer RUNS but not WHICH VERSION runs, so a stale vendored or plugin-cached copy passes 4/4. VENDORED.md records 'source commit: unknown', so there is no provenance to compare against
   ↳ session:s-enforce-01 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:skills/cozyplan/templates
 - state check --root <other-repo> reads the event log relative to cwd, not to --root, so it checks this repo's claims against that repo's git and reports every commit as unknown. Found while rehearsing the cozycode upgrade; harmless from inside a repo, wrong from outside
-  ↳ session:s-enforce-01 path:skills/cozyplan/scripts/plan_tool.py
-- hooks selftest is wired into nothing in consuming repos: init leaves an existing .github/workflows alone, so a repo wired before the selftest existed never gains the step. cozycode has it in neither CI nor any hook (reported by cozycode)
-  ↳ session:s-enforce-01 path:skills/cozyplan/templates/state-check.yml
-- doctor's 'ci workflow' row is a grep for the string 'state check' — a syntactically broken or never-green workflow passes it. Same record-vs-outcome shape as 'hooks registered', not yet labelled as one (reported by cozycode)
   ↳ session:s-enforce-01 path:skills/cozyplan/scripts/plan_tool.py
 
 ## Registers
