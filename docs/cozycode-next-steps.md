@@ -1,122 +1,92 @@
-# cozycode: what is needed now
+# cozycode: nothing outstanding
 
 **For:** the agent session working in `/Volumes/dev/AI Dev/cozycode`.
-**Rewritten:** 2026-08-24 at cozyplan `538e3d2`, against cozycode `ee50062`.
+**Rewritten:** 2026-08-24 at cozyplan `8ff1913`, after cozycode `db8d438`.
 
-An earlier version of this file listed four tasks. **Three are done**, and so is the defect it
-opened with. Verified against the repo rather than assumed — a stale to-do list reads as work
-outstanding, which is the same failure this workspace keeps correcting.
-
-**One task remains: re-vendor.** It carries one trap, and the trap is the reason this file was
-rewritten rather than deleted.
+The re-vendor is done. Everything this file previously listed is complete, and nothing here needs
+doing. It is kept as a record rather than a task list, because a stale to-do list reads as work
+outstanding — which this file has now been twice.
 
 ---
 
-## The one thing left, and the trap in it
+## Done
 
-cozycode is **1 commit behind** cozyplan. `doctor` says so unprompted:
+- **Re-vendored** — `ee50062..db8d438`. `doctor` 22 ok / 2 warn / 0 gap, freshness current,
+  `hooks selftest` 4/4 observed.
+- **The absolute path** in `VENDORED.md` — gone; provenance is now portable and the machine path
+  lives in `git config cozyplan.source`.
+- **ADR-0002 covering cozycode's own tracked files** — `.githooks/pre-commit` scans
+  `git ls-files --cached --others --exclude-standard`.
+- **The ADR-0012 amendment** — recorded, with the canary and what closed it.
+- **`ci runs selftest`** — `doctor` reports ok.
 
-```
-[ warn ] vendored freshness  1 commit(s) behind ... (vendored at 4fdc4ac)
-```
+## What cozycode proved, which is the part worth keeping
 
-That one commit is `538e3d2`, and it matters because of what was hand-repaired here.
+The `538e3d2` selftest fix was verified against the old one on identical input — same repo, one
+planted single-quote `settings.json`:
 
-### Why it matters
+| plan_tool | verdict |
+|---|---|
+| `4fdc4ac` | `4/4 observed` — blind |
+| `0c0f2ad` | `0/4 observed`, naming `exited 127` on all four |
 
-`.claude/settings.json` was repaired by hand in `c0665ca` — single quotes to double quotes on the
-four hook commands. The repair is correct and the hooks work now. But cozyplan *generates* that
-file, and the vendored `plan_tool` here is `4fdc4ac`, which still builds those commands with
-`shlex.quote()`. Single quotes stop the shell expanding `${CLAUDE_PROJECT_DIR}`, so `sh` gets a
-literal string as a filename and every hook exits 127.
-
-So the hand-repair is load-bearing. Any regeneration from this copy undoes it.
-
-`538e3d2` fixes two things:
-
-1. **The generator** writes double quotes for a path holding `${...}`, single quotes otherwise.
-   Both properties hold together — the placeholder expands *and* spaces in the path survive.
-2. **`hooks selftest`** no longer substitutes `${CLAUDE_PROJECT_DIR}` itself. It runs the
-   registered command verbatim with the variable in the environment, the way the host does.
-
-The second matters more. The old selftest repaired the fault before looking for it and reported
-`4/4 observed` while all four hooks were dead. **Your selftest still cannot see this class of
-fault.** That is what re-vendoring buys.
-
-### ⚠️ The trap: the vendored plan_tool cannot fix itself
-
-The vendored copy is the one carrying the bug. Run `init --vendor` **with it** and it will
-faithfully rewrite single quotes and undo `c0665ca`.
-
-This is a general property of vendoring, not a one-off: **the stale copy is the one nearest to
-hand, and it is the one that must not be used to perform its own upgrade.** It is also why
-`doctor`'s freshness row exists — to name the drift before you reach for the stale tool.
-
-Use cozyplan's checkout. Its path is already in this clone's git config:
-
-```sh
-SRC="$(git config cozyplan.source)"   # /Volumes/dev/AI Dev/software factory/cozyplan-src
-python3 "$SRC/skills/cozyplan/scripts/plan_tool.py" doctor --root "$(pwd)" | grep "vendored freshness"
-```
-
-Confirm it says *behind* before starting.
-
-### Doing it
-
-```sh
-git status --short                    # must be clean
-python3 "$SRC/skills/cozyplan/scripts/plan_tool.py" init --root "$(pwd)" --vendor
-python3 .claude/skills/cozyplan/scripts/plan_tool.py hooks selftest
-```
-
-Rehearse on a throwaway clone at the **current** HEAD first. Not an earlier one — a rehearsal
-from an earlier HEAD is stale evidence, and that has produced false results twice here: once by
-missing a skill added between rehearsal and run, once by running against a copy predating the fix
-being rehearsed.
-
-### Checking it
-
-```sh
-grep -c "'\${" .claude/settings.json  # must be 0 — no single-quoted placeholder
-```
-
-- `hooks selftest` → **4/4 observed**, and this time from the fixed selftest, so 4/4 means
-  something for this fault
-- `.claude/skills/VENDORED.md` → source commit `538e3d2` or later
-- `.githooks/pre-commit` untouched — zero diff
-- zero changes to `docs/`, `STATE.md`, `SYSTEM.md`, `CLAUDE.md`, `.github/`, `cozysites/`,
-  `cozydesign/`, `.claude/skills/cozyreview`
-- `enabledPlugins` still has `cozyplan@cozyplan: false`
-- `state check` → `OK`, and the gate still **refuses** a planted defect. Prove that by observing
-  a refusal, not an exit code.
-
-**The settings.json diff should show the hand-edit becoming what the generator now writes on its
-own.** If single quotes come back, the wrong `plan_tool` ran — stop and say so.
+Both answers are in cozycode's ledger as the proof. **A claim that a check improved is worth
+little without the old check's answer beside it** — that is a better standard than the one this
+repo had been using, and it is now the standard here too.
 
 ---
 
-## Already done — recorded so this file is not read as outstanding work
+## One thing available whenever you next re-vendor
 
-- **The absolute path in `VENDORED.md`.** cozyplan put it back in `83dbbc2` after `e9d78c5`
-  removed it; fixed upstream, and this repo has re-vendored past it. `grep -c "/Volumes"` on that
-  file is now 0. cozyplan now records identity in the tracked marker and the machine-specific path
-  in git config as `cozyplan.source`.
-- **ADR-0002 covering this repo's own tracked files.** `.githooks/pre-commit` now scans
-  `git ls-files --cached --others --exclude-standard`. Worth noting it also avoids `case` inside
-  `$( )` and comments why — a POSIX ambiguity found the hard way while writing that gate.
-- **The ADR-0012 amendment.** Recorded, with the canary that demonstrated the blind spot and what
-  closed it. Amending rather than silently editing was the right call: the blind spot being found
-  and honestly recorded is the part worth keeping.
-- **`ci runs selftest`.** `doctor` reports **ok** here now.
+Not urgent, and nothing is at risk waiting.
+
+`8ff1913` closes the bug cozycode found and did not fix: **`init --vendor` now refuses to run from
+a vendored `plan_tool`**, before anything is written or removed.
+
+The prose guard in the last handoff — *"the vendored copy must not perform its own upgrade"* — was
+enforced by nothing. `_vendored_freshness` had one call site, `doctor`, and `cmd_init` never
+consulted it. Two failures got through:
+
+1. **Vendored tool, different root** (cozycode's repro): provenance stamped from the consuming
+   repo, so `doctor` then reported upstream *unreachable* rather than wrong. The freshness row
+   disabled by the act it guards against.
+2. **Vendored tool, same root** (found here while reproducing the first, and worse): source and
+   destination are one directory, so the `rmtree` clearing the destination deletes the source.
+   21 files removed before `FileNotFoundError`.
+
+One correction to the suggested shape, offered as a detail rather than a disagreement: refusing
+"when `plan_tool` resolves inside `--root`" catches the destructive case but **not the repro that
+found it** — there the source was cozycode and the root a clone, so nothing was inside anything.
+The load-bearing signal is that the running tool is *itself* vendored, whatever the target. Both
+conditions ship; the second is narrowed to source-inside-*destination*, because a source merely
+inside the target is harmless and the broad form failed four existing tests.
 
 ---
 
-## Push back on anything wrong here
+## Four errors in the last handoff, all mine
 
-An earlier handoff from cozyplan carried a structural claim about this repo that did not survive
-contact with its history — it named a repo created *during* that session as holding defects it
-could not have held, and the conclusion drawn from it inverted. That was caught because this side
-checked rather than accepted.
+Recorded because the class matters more than the instances: **generated text asserting numbers
+about a repo nobody verified them against.** The same class as a stale to-do list.
 
-Two of the three real defects fixed in cozyplan this session came from this repo running the tool
-rather than reading it. Same standard applies to this document.
+1. *"Confirm it says `1 commit(s) behind`"* — `doctor` said **2**. A reader following the gate
+   literally stops before starting.
+2. *"`.githooks/pre-commit` — 52 lines"* — it is **96**. Zero diff was the real claim, and it held.
+3. *"The settings.json diff should show the hand-edit becoming what the generator writes"* — the
+   diff is **empty**, because the generator's output is byte-identical to the hand repair. That is
+   the strongest possible confirmation, and the checklist framed it as failure.
+4. The `init --root` line was truncated, missing the path and `--vendor`.
+
+The fix is not to write more carefully. It is to quote what a command actually printed, or to say
+nothing — which is the same rule this repo applies to its own checks.
+
+## Friction cozycode reported, now recorded as gaps here
+
+Not acted on; recorded so they are not rediscovered.
+
+- **The ledger wants a byte-exact hand-copied timestamp.** `state check` warns until
+  `docs/journal.md` carries the exact string. One typo is a permanent warn.
+- **`state sync` does not exist** — but `STATE.md`'s own header says `Last synced`. It is
+  `state add` + `state render`.
+- **`pre-push` always says `snapshot is N commit(s) behind HEAD`** on a push carrying a render,
+  because a render cannot record the sha of the commit carrying it. Structural, and it trains
+  people to ignore the line.

@@ -6,8 +6,8 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-24T19:10:40-05:00 |
-| Repo state | main @ 47cc24f |
+| Last synced | 2026-08-24T21:56:07-05:00 |
+| Repo state | main @ 8ff1913 |
 
 ## Current Working State
 
@@ -55,6 +55,8 @@
   ↳ session:s-enforce-01 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:skills/cozyplan/templates/state-check.yml path:tests/test_doctor.py
 - doctor reports how many commits a vendored copy is behind upstream, and says plainly when upstream is unreachable rather than implying freshness — verified by `python3 -m pytest tests/test_doctor.py` (2026-08-24, 50fde96)
   ↳ session:s-enforce-01 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_doctor.py
+- init --vendor refuses to run from a vendored plan_tool, before anything is written — a vendored copy's git history is the consuming repo's, so stamping provenance from it recorded that repo as its own upstream and silently disabled doctor's freshness row — verified by `python3 -m pytest tests/test_init.py; reproduced both variants on throwaway clones` (2026-08-24, 8ff1913)
+  ↳ session:s-enforce-01 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_init.py
 
 ## In Development
 
@@ -90,6 +92,12 @@
   ↳ session:s-enforce-01 adr:0010
 - state check --root <other-repo> reads the event log relative to cwd, not to --root, so it checks this repo's claims against that repo's git and reports every commit as unknown. Found while rehearsing the cozycode upgrade; harmless from inside a repo, wrong from outside
   ↳ session:s-enforce-01 path:skills/cozyplan/scripts/plan_tool.py
+- state check's ledger warn requires a byte-exact timestamp hand-copied into docs/journal.md; one typo is a permanent warn. Could match on date+sha, or state add could append the stub (reported by cozycode)
+  ↳ session:s-enforce-01 path:skills/cozyplan/scripts/plan_tool.py
+- the concept is called sync in STATE.md's 'Last synced' header and in doctor's prose, but 'state sync' does not exist — it is state add + state render. Alias it or stop calling it sync (reported by cozycode)
+  ↳ session:s-enforce-01 path:skills/cozyplan/scripts/plan_tool.py
+- pre-push reports 'snapshot is N commit(s) behind HEAD' on every push carrying a state render, because a render cannot record the sha of the commit that carries it. Structural, but it trains people to ignore the line (reported by cozycode)
+  ↳ session:s-enforce-01 path:.githooks/pre-push
 
 ## Registers
 
