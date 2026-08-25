@@ -1816,12 +1816,28 @@ def run_hooks_selftest(root: Path, shipped: bool = False):
             if observed:
                 rows.append((script, event, observed, True))
             else:
-                rows.append((script, event, "SILENT", False))
-                detail = f"expected it to {case['want']}"
-                err = (r.stderr or "").strip().splitlines()
-                if err:
-                    detail += f"; stderr: {err[0][:90]}"
-                detail += f"; exit {r.returncode}"
+                # Three different diagnoses, and calling them all "silent" hides the
+                # worst one. Reported by cozycode, whose own gate hit it: `set -e`
+                # plus a loop ending in a false test exited 1 with no output — "a
+                # gate that looks like it ran and refused, with nothing to read".
+                err = (r.stderr or "").strip()
+                if r.returncode != 0 and not err:
+                    # Blocked the action and gave nobody a reason. On PreToolUse the
+                    # docs are explicit that the blocking message falls back to
+                    # stderr, so an empty stderr is a refusal with an empty reason.
+                    label = "REFUSED, NO REASON"
+                    detail = (f"exited {r.returncode} and wrote nothing — it blocks the "
+                              f"action and leaves nothing to read. Expected it to "
+                              f"{case['want']}")
+                elif r.returncode != 0:
+                    label = "FAILED"
+                    detail = (f"exited {r.returncode}: {err.splitlines()[0][:90]} "
+                              f"(expected it to {case['want']})")
+                else:
+                    label = "SILENT"
+                    detail = (f"exit 0 and no output, which is what a hook that never ran "
+                              f"also produces. Expected it to {case['want']}")
+                rows.append((script, event, label, False))
                 failures.append((script, detail))
 
     return rows, failures, source
@@ -1863,7 +1879,8 @@ def cmd_hooks_selftest(args) -> int:
 
     print(f"\n{len(rows) - len(failures)}/{len(rows)} observed")
     if failures:
-        print("\nsilent hooks are indistinguishable from absent ones — both are broken:")
+        print("\na hook that says nothing cannot be told from one that never ran, and one "
+              "that\nrefuses without a reason is worse — both are broken:")
         for script, detail in failures:
             print(f"  - {script}: {detail}")
         return 1

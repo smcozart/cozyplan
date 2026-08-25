@@ -89,8 +89,13 @@ def test_missing_hook_script_fails_loudly_with_the_right_exit_code(pt, tmp_path,
     out = capsys.readouterr().out
     assert "0/4 observed" in out
     assert "hook script not found" in out
-    assert "exit 2" in out   # guard_plan_edit / lint_plan
-    assert "exit 1" in out   # steer_build / report_drift
+    # These are FAILED, not "REFUSED, NO REASON": run-hook.sh writes a reason before
+    # exiting, which is the fail-loud contract holding. The per-event dead code must
+    # still reach the report — it is the difference between a blocked edit and an
+    # erased prompt.
+    assert "exited 2" in out   # guard_plan_edit / lint_plan
+    assert "exited 1" in out   # steer_build / report_drift
+    assert "REFUSED, NO REASON" not in out, "a loud failure must not read as a mute one"
 
 
 def test_project_dir_placeholder_expands_to_the_project_not_the_fixture(pt, tmp_path, capsys):
@@ -198,3 +203,46 @@ def test_selftest_never_touches_the_callers_repo(pt, tmp_path, shipped, capsys):
     argv = ["hooks", "selftest", "--root", str(tmp_path)] + (["--shipped"] if shipped else [])
     pt.main(argv)
     assert sorted(p.name for p in tmp_path.iterdir()) == before
+
+
+# ── three failures, three diagnoses (reported by cozycode) ───────────────────
+# cozycode's own pre-commit gate hit this while being written: `set -e` plus a
+# loop whose last command is a false test exited 1 with no output — "a gate that
+# looks like it ran and refused, with nothing to read". Calling that "silent",
+# the same word used for an exit-0 no-op, hides the worse of the two.
+
+def test_a_hook_that_refuses_without_a_reason_is_named_as_such(pt, tmp_path, capsys):
+    """Non-zero exit, empty stderr. It blocked the action and explained nothing —
+    and on PreToolUse the blocking message falls back to stderr, so the user is
+    shown a refusal with an empty reason."""
+    settings = tmp_path / ".claude" / "settings.json"
+    _write_settings(pt, settings, lambda s: f"exit 1 # {s}")
+    assert pt.main(["hooks", "selftest", "--root", str(tmp_path)]) == 1
+    out = capsys.readouterr().out
+    assert "REFUSED, NO REASON" in out
+    assert "leaves nothing to read" in out
+    assert "SILENT" not in out, "an exit-1 refusal must not be filed as a silent pass"
+
+
+def test_a_hook_that_exits_zero_silently_is_named_differently(pt, tmp_path, capsys):
+    """The other diagnosis: exit 0 and nothing said is what a hook that never ran
+    also produces. Different cause, different remedy."""
+    settings = tmp_path / ".claude" / "settings.json"
+    _write_settings(pt, settings, lambda s: f"true # {s}")
+    assert pt.main(["hooks", "selftest", "--root", str(tmp_path)]) == 1
+    out = capsys.readouterr().out
+    assert "SILENT" in out
+    assert "what a hook that never ran also produces" in out
+    assert "REFUSED, NO REASON" not in out
+
+
+def test_a_hook_that_fails_loudly_reports_its_reason(pt, tmp_path, capsys):
+    """Non-zero WITH stderr is the fail-loud contract working. It must be reported
+    as a failure carrying its message, not lumped in with the mute ones."""
+    settings = tmp_path / ".claude" / "settings.json"
+    _write_settings(pt, settings, lambda s: f"echo 'no interpreter' >&2; exit 2 # {s}")
+    assert pt.main(["hooks", "selftest", "--root", str(tmp_path)]) == 1
+    out = capsys.readouterr().out
+    assert "FAILED" in out
+    assert "no interpreter" in out, "the reason it gave must reach the report"
+    assert "REFUSED, NO REASON" not in out
