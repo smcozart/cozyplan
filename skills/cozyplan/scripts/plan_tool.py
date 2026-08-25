@@ -2521,11 +2521,19 @@ def cmd_init(args) -> int:
                   f"| Field | Value |\n| --- | --- |\n"
                   f"| version | {ver or 'unknown'} |\n"
                   f"| source commit | {sha if ok_sha else 'unknown'} |\n"
-                  f"| source remote | {src_remote.strip() if ok_rem and src_remote.strip() else 'unknown'} |\n"
-                  f"| vendored from | {src_dir.parent} |\n\n"
+                  f"| source remote | {src_remote.strip() if ok_rem and src_remote.strip() else 'unknown'} |\n\n"
                   "`plan_tool doctor` compares the source commit above against upstream when it\n"
                   "can reach a checkout of the remote, and says so plainly when it cannot —\n"
-                  "a copy that is merely old looks identical to a current one otherwise.\n")
+                  "a copy that is merely old looks identical to a current one otherwise.\n\n"
+                  "Every field here is the same on every machine. The path to a local cozyplan\n"
+                  "checkout is not, so it lives in this clone's git config as `cozyplan.source`\n"
+                  "rather than in a tracked file.\n")
+            # The local checkout path goes in git config: per-clone, untracked, and
+            # correct on exactly the machine it describes. It used to be written into
+            # VENDORED.md, where it was wrong for everyone else — a consuming repo
+            # deleted it by hand as an absolute path in a tracked file, and the next
+            # re-vendor put it straight back, which is what generated files do.
+            git(root, "config", "cozyplan.source", str(src_dir.parent))
             made.append(".claude/skills/VENDORED.md")
 
     # ── records and the event log ────────────────────────────────────────────
@@ -3085,16 +3093,19 @@ def _vendored_freshness(root: Path, vend_text: str) -> tuple[str, str, str, str]
     """
     recorded = _vendored_field(vend_text, "source commit")
     remote = _vendored_field(vend_text, "source remote")
-    local = _vendored_field(vend_text, "vendored from")
 
     if not recorded or recorded == "unknown":
         return ("adapter", WARN, "vendored freshness",
                 "VENDORED.md records no source commit, so there is nothing to compare "
                 "against — re-vendor from a git checkout to stamp one")
 
-    # Prefer the recorded local path; it is the machine that vendored. A checkout of
-    # the same remote elsewhere would also do, but guessing where is worse than
-    # saying we did not look.
+    # Where a local cozyplan checkout lives is machine-specific, so it is read from
+    # this clone's git config, not from the tracked marker. `vendored from` is the
+    # legacy field: still read so a repo vendored before this change keeps working,
+    # never written. Guessing at likely locations would be worse than reporting
+    # honestly that we did not look.
+    ok_src, cfg_src = git(root, "config", "cozyplan.source")
+    local = cfg_src.strip() if ok_src and cfg_src.strip() else _vendored_field(vend_text, "vendored from")
     src = Path(local) if local and local != "unknown" else None
     if src is None or not (src / ".git").exists():
         where = f" (recorded remote: {remote})" if remote and remote != "unknown" else ""

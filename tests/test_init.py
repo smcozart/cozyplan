@@ -159,7 +159,12 @@ def test_vendor_records_what_it_vendored(pt, git_repo, tmp_path, monkeypatch):
     monkeypatch.setattr(pt, "__file__", str(src / "cozyplan" / "scripts" / "plan_tool.py"))
     run(pt, git_repo, "--vendor")
     text = read(git_repo / ".claude" / "skills" / "VENDORED.md")
-    assert "source commit" in text and "vendored from" in text
+    # Provenance, in fields that mean the same thing on every machine. This used to
+    # assert `vendored from`, the vendoring machine's absolute path — provenance that
+    # was true in one place and misleading everywhere else, in a tracked file. The
+    # local path now lives in git config; see test_the_local_checkout_path_goes_to_git_config.
+    assert "source commit" in text and "source remote" in text
+    assert "vendored from" not in text, "the machine-specific path must not be tracked"
 
 
 def test_doctor_flags_a_hand_edited_vendored_skill(pt, git_repo, tmp_path, monkeypatch, capsys):
@@ -229,3 +234,51 @@ def test_strip_example_rows_keeps_headers_and_prose(pt):
     assert "| A | B |" in out and "prose stays" in out
     assert "| x | y |" not in out
     assert "_none recorded yet_" in out
+
+
+# ── generated artifacts must be portable (cozycode ADR-0002) ─────────────────
+# `init --vendor` wrote the absolute path of the vendoring machine into
+# VENDORED.md, a TRACKED file. A consuming repo deleted it by hand as a violation
+# of its own absolute-paths ban; the next re-vendor put it straight back, because
+# that is what generated files do. Nothing caught either the first write or the
+# reinstatement.
+
+def test_vendored_marker_contains_no_absolute_path(pt, git_repo, tmp_path):
+    """The marker is committed, so every field in it must be true on every machine."""
+    assert pt.main(["init", "--root", str(git_repo), "--vendor"]) == 0
+    marker = git_repo / ".claude" / "skills" / "VENDORED.md"
+    body = marker.read_text(encoding="utf-8")
+    for line in body.splitlines():
+        assert not __import__("re").search(r"\|\s*(/|[A-Za-z]:\\)", line), (
+            f"absolute path in a tracked, generated file: {line!r}")
+    # The identity fields must survive — dropping the path must not drop provenance.
+    assert "source commit" in body
+    assert "source remote" in body
+
+
+def test_the_local_checkout_path_goes_to_git_config(pt, git_repo):
+    """Machine-specific location belongs in per-clone config, not a tracked file.
+    doctor still needs it to compare against upstream, so it must land somewhere."""
+    assert pt.main(["init", "--root", str(git_repo), "--vendor"]) == 0
+    src = git(git_repo, "config", "cozyplan.source").stdout.strip()
+    assert src, "cozyplan.source not recorded, so freshness can never be checked"
+    assert pt.Path(src).exists()
+
+
+def test_no_generated_artifact_carries_the_vendoring_machines_path(pt, git_repo):
+    """Wider than VENDORED.md: nothing `init` writes may name the machine it ran on."""
+    import re as _re
+    assert pt.main(["init", "--root", str(git_repo), "--vendor"]) == 0
+    here = str(pt.Path(pt.__file__).resolve().parents[3])
+    ok, tracked = pt.git(git_repo, "ls-files")
+    offenders = []
+    for rel in (tracked.splitlines() if ok else []):
+        f = git_repo / rel
+        if not f.is_file() or f.suffix in (".png", ".jpg", ".webp"):
+            continue
+        try:
+            if here in f.read_text(encoding="utf-8", errors="ignore"):
+                offenders.append(rel)
+        except OSError:
+            continue
+    assert not offenders, f"tracked files naming the vendoring machine: {offenders}"
