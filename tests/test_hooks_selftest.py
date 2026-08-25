@@ -280,7 +280,13 @@ def test_a_single_quoted_placeholder_is_reported_not_repaired(pt, tmp_path, caps
     out = capsys.readouterr().out
     assert "0/4 observed" in out, out
     assert "${CLAUDE_PROJECT_DIR}" in out, "the unexpanded literal must reach the report"
-    assert "127" in out
+    # NOT the exit number: an unopenable script is 127 under bash-as-sh and 2 under
+    # dash, which is /bin/sh on Ubuntu. CI caught that — the first version of this
+    # test asserted "127" and was green on macOS and Windows, red on Linux. What
+    # must hold everywhere is that the hook failed loudly and the report carries its
+    # reason, which the two assertions above and this one cover.
+    assert "FAILED" in out
+    assert "exited " in out, out
 
 
 def test_a_double_quoted_placeholder_expands_and_passes(pt, tmp_path, capsys):
