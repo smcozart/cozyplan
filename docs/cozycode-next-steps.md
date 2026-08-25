@@ -1,135 +1,122 @@
 # cozycode: what is needed now
 
 **For:** the agent session working in `/Volumes/dev/AI Dev/cozycode`.
-**Written:** 2026-08-24 from the cozyplan session, at cozyplan `84ab997`.
+**Rewritten:** 2026-08-24 at cozyplan `538e3d2`, against cozycode `ee50062`.
 
-cozyplan's two items are **done and pushed**. Everything below is cozycode's.
-Background, if useful: `../software factory/cozyplan-src/docs/recommendedchanges.md`.
+An earlier version of this file listed four tasks. **Three are done**, and so is the defect it
+opened with. Verified against the repo rather than assumed — a stale to-do list reads as work
+outstanding, which is the same failure this workspace keeps correcting.
 
----
-
-## Read this first: a defect cozyplan put in this repo
-
-`83dbbc2` (a re-vendor run from the cozyplan session) regenerated
-`.claude/skills/VENDORED.md` and **restored an absolute path** that `e9d78c5` had deliberately
-removed — *"take an absolute path out of a tracked file"*. It violates this repo's ADR-0002 and
-it is on `main` now.
-
-It has been fixed upstream, so re-vendoring removes it rather than repeating it. Two things
-changed in cozyplan:
-
-- `VENDORED.md` now carries only fields that mean the same thing on every machine: `version`,
-  `source commit`, `source remote`. No path.
-- The local checkout path moved to this clone's **git config** as `cozyplan.source` — per-clone,
-  untracked, correct exactly where it applies.
-
-**The part worth keeping:** nothing in this repo caught either the original write or the
-reinstatement. `PortabilityTest` scans only its own site (`git -C base_path() ls-files`), and this
-repo's `pre-commit` runs only `state check`. **cozycode's own tracked files are checked by
-nothing** — the ban is declared here and enforced only in the site repos. That is task 2.
+**One task remains: re-vendor.** It carries one trap, and the trap is the reason this file was
+rewritten rather than deleted.
 
 ---
 
-## Task 1 — re-vendor
+## The one thing left, and the trap in it
 
-Currently **4 commits behind**. Picks up: the absolute-path fix, `plugin.json` 3.1.0 → **3.2.0**,
-the `state check` index fix, `git hook tool` resolution, and the `vendored freshness` row.
-
-```
-cd "/Volumes/dev/AI Dev/cozycode"
-git status --short                                    # must be clean
-plan_tool doctor | grep -E "vendored freshness|ci runs selftest"
-```
-
-**Rehearse on a throwaway clone at the CURRENT HEAD first.** A rehearsal from an earlier HEAD is
-stale evidence, not evidence — that has produced false results twice, once by missing a skill
-added between rehearsal and run, once by running against a copy predating its own fix.
+cozycode is **1 commit behind** cozyplan. `doctor` says so unprompted:
 
 ```
-plan_tool init --root "/Volumes/dev/AI Dev/cozycode" --vendor
-plan_tool hooks selftest                              # expect 4/4 observed
+[ warn ] vendored freshness  1 commit(s) behind ... (vendored at 4fdc4ac)
 ```
 
-Then check, and treat any surprise as a stop:
+That one commit is `538e3d2`, and it matters because of what was hand-repaired here.
 
-- `grep -c "/Volumes" .claude/skills/VENDORED.md` → **0**
-- `git config cozyplan.source` → set (this is where the path went; it is untracked, by design)
-- `.claude/skills/VENDORED.md` shows `version | 3.2.0`
-- `.githooks/pre-commit` untouched — 52 lines, zero diff
-- zero changes to: `docs/`, `STATE.md`, `SYSTEM.md`, `CLAUDE.md`, `.github/`, `cozysites/`,
+### Why it matters
+
+`.claude/settings.json` was repaired by hand in `c0665ca` — single quotes to double quotes on the
+four hook commands. The repair is correct and the hooks work now. But cozyplan *generates* that
+file, and the vendored `plan_tool` here is `4fdc4ac`, which still builds those commands with
+`shlex.quote()`. Single quotes stop the shell expanding `${CLAUDE_PROJECT_DIR}`, so `sh` gets a
+literal string as a filename and every hook exits 127.
+
+So the hand-repair is load-bearing. Any regeneration from this copy undoes it.
+
+`538e3d2` fixes two things:
+
+1. **The generator** writes double quotes for a path holding `${...}`, single quotes otherwise.
+   Both properties hold together — the placeholder expands *and* spaces in the path survive.
+2. **`hooks selftest`** no longer substitutes `${CLAUDE_PROJECT_DIR}` itself. It runs the
+   registered command verbatim with the variable in the environment, the way the host does.
+
+The second matters more. The old selftest repaired the fault before looking for it and reported
+`4/4 observed` while all four hooks were dead. **Your selftest still cannot see this class of
+fault.** That is what re-vendoring buys.
+
+### ⚠️ The trap: the vendored plan_tool cannot fix itself
+
+The vendored copy is the one carrying the bug. Run `init --vendor` **with it** and it will
+faithfully rewrite single quotes and undo `c0665ca`.
+
+This is a general property of vendoring, not a one-off: **the stale copy is the one nearest to
+hand, and it is the one that must not be used to perform its own upgrade.** It is also why
+`doctor`'s freshness row exists — to name the drift before you reach for the stale tool.
+
+Use cozyplan's checkout. Its path is already in this clone's git config:
+
+```sh
+SRC="$(git config cozyplan.source)"   # /Volumes/dev/AI Dev/software factory/cozyplan-src
+python3 "$SRC/skills/cozyplan/scripts/plan_tool.py" doctor --root "$(pwd)" | grep "vendored freshness"
+```
+
+Confirm it says *behind* before starting.
+
+### Doing it
+
+```sh
+git status --short                    # must be clean
+python3 "$SRC/skills/cozyplan/scripts/plan_tool.py" init --root "$(pwd)" --vendor
+python3 .claude/skills/cozyplan/scripts/plan_tool.py hooks selftest
+```
+
+Rehearse on a throwaway clone at the **current** HEAD first. Not an earlier one — a rehearsal
+from an earlier HEAD is stale evidence, and that has produced false results twice here: once by
+missing a skill added between rehearsal and run, once by running against a copy predating the fix
+being rehearsed.
+
+### Checking it
+
+```sh
+grep -c "'\${" .claude/settings.json  # must be 0 — no single-quoted placeholder
+```
+
+- `hooks selftest` → **4/4 observed**, and this time from the fixed selftest, so 4/4 means
+  something for this fault
+- `.claude/skills/VENDORED.md` → source commit `538e3d2` or later
+- `.githooks/pre-commit` untouched — zero diff
+- zero changes to `docs/`, `STATE.md`, `SYSTEM.md`, `CLAUDE.md`, `.github/`, `cozysites/`,
   `cozydesign/`, `.claude/skills/cozyreview`
-- `settings.json` hooks semantically identical (parse and compare, do not eyeball — the CLI
-  reorders keys and the raw diff looks alarming); `enabledPlugins` still has
-  `cozyplan@cozyplan: false`
+- `enabledPlugins` still has `cozyplan@cozyplan: false`
 - `state check` → `OK`, and the gate still **refuses** a planted defect. Prove that by observing
   a refusal, not an exit code.
 
-## Task 2 — decide whether ADR-0002 covers this repo
+**The settings.json diff should show the hand-edit becoming what the generator now writes on its
+own.** If single quotes come back, the wrong `plan_tool` ran — stop and say so.
 
-Your ADR-0002 bans absolute paths in tracked files. Three site repos enforce it. This one does
-not check itself, which is how the defect above survived a review that was otherwise careful.
+---
 
-Your call, and this session should make it. Two shapes, both cheap and both consistent with
-ADR-0012's rule that a check belongs where its question can be answered — this one is answerable
-from the working tree, so it is the local tier:
+## Already done — recorded so this file is not read as outstanding work
 
-- Add a scan of `git ls-files` for machine-specific absolute paths to this repo's `pre-commit`.
-- Or accept the gap deliberately and record why. A recorded decision is a fine outcome; an
-  unexamined gap is not.
-
-Generated files are the awkward case either way: correct on the machine that generated them and
-wrong everywhere else, which is exactly the class ADR-0002 exists for.
-
-## Task 3 — amend ADR-0012
-
-It records that a pre-commit `state check` is structurally blind to defect B — an ADR rendered
-into Registers but never staged — because the file *is* on disk locally.
-
-**That is no longer true.** `state check` now compares the register against the git index instead
-of the directory that generates it (cozyplan#4). Verified in a sandbox at your HEAD: an ADR
-rendered into Registers and never staged now stops the commit —
-
-```
-FAIL STATE.md: 1 problem(s)
-  - Registers index lists ADR-0099, which exists in docs/adr/ but is not staged or
-    committed — every clone renders a register citing a file it does not have.
-    Run: git add docs/adr/0099-*.md
-pre-commit: STATE.md does not agree with git.
-```
-
-The ADR's reasoning was correct when written and the gate was built for other reasons anyway.
-The premise changed upstream, so it now reads as still-true when it is not. An amendment recording
-what closed it is better than a silent edit — the blind spot being *found and honestly recorded*
-is the part worth keeping.
-
-## Task 4 — one line of CI
-
-`doctor` reports:
-
-```
-[ warn ] ci runs selftest   no workflow runs `hooks selftest` ...
-```
-
-This repo's `state-check.yml` predates the selftest, and `init` leaves an existing workflow alone
-by design, so it never gained the step. `hooks selftest` is the only check that proves the hook
-layer actually runs; without it, nothing verifies that on a clean machine. Add:
-
-```yaml
-      - name: Hooks actually run
-        run: python "${{ steps.pt.outputs.path }}" hooks selftest --shipped
-```
-
-Not exit-code theatre: it drives every hook with a payload it must react to and fails on silence.
-The guard legitimately exits 0 on a non-plan path, a new file and a prose edit, so exit 0 is also
-exactly what a hook that never ran produces.
+- **The absolute path in `VENDORED.md`.** cozyplan put it back in `83dbbc2` after `e9d78c5`
+  removed it; fixed upstream, and this repo has re-vendored past it. `grep -c "/Volumes"` on that
+  file is now 0. cozyplan now records identity in the tracked marker and the machine-specific path
+  in git config as `cozyplan.source`.
+- **ADR-0002 covering this repo's own tracked files.** `.githooks/pre-commit` now scans
+  `git ls-files --cached --others --exclude-standard`. Worth noting it also avoids `case` inside
+  `$( )` and comments why — a POSIX ambiguity found the hard way while writing that gate.
+- **The ADR-0012 amendment.** Recorded, with the canary that demonstrated the blind spot and what
+  closed it. Amending rather than silently editing was the right call: the blind spot being found
+  and honestly recorded is the part worth keeping.
+- **`ci runs selftest`.** `doctor` reports **ok** here now.
 
 ---
 
 ## Push back on anything wrong here
 
-A previous handoff from cozyplan carried a structural claim about this repo that did not survive
-contact with your history — it named a repo created *during* that session as holding defects it
+An earlier handoff from cozyplan carried a structural claim about this repo that did not survive
+contact with its history — it named a repo created *during* that session as holding defects it
 could not have held, and the conclusion drawn from it inverted. That was caught because this side
 checked rather than accepted.
 
-Same standard applies to this document.
+Two of the three real defects fixed in cozyplan this session came from this repo running the tool
+rather than reading it. Same standard applies to this document.
