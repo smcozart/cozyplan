@@ -148,3 +148,57 @@ def test_rendered_state_passes_state_check(pt, git_repo, capsys):
     assert code == 0, capsys.readouterr().out
 
 
+
+
+# ── `state add --clear` must observe that it cleared something ───────────────
+# Keys are derived by truncating --what, so they are easy to get subtly wrong.
+# A clear for a key nothing matches is a no-op that printed "(cleared)" and read
+# exactly like a successful one — a command reporting an outcome it never
+# observed, which is ADR-0010's whole subject. It happened three times in one
+# session, and each time the gap silently stayed open in STATE.md.
+
+def _add(pt, repo, **kw):
+    argv = ["state", "add", "--root", str(repo), "--log", str(repo / "docs" / "state.ndjson")]
+    for k, v in kw.items():
+        argv += [f"--{k.replace('_', '-')}"] + ([] if v is True else [str(v)])
+    return pt.main(argv)
+
+
+def test_clearing_an_unknown_key_fails(pt, git_repo, capsys):
+    assert _add(pt, git_repo, kind="gap", what="a real gap") == 0
+    capsys.readouterr()
+    assert _add(pt, git_repo, kind="gap", clear=True, key="no-such-key", what="x") == 1
+    assert "nothing to clear" in capsys.readouterr().err
+
+
+def test_a_near_miss_key_suggests_the_real_one(pt, git_repo, capsys):
+    """The actual failure mode: a key off by a character or two at the truncation."""
+    long_what = "Version skew is undetectable because a snapshot cannot know it is old"
+    assert _add(pt, git_repo, kind="gap", what=long_what) == 0
+    real = [e for e in pt.read_state_log(git_repo, git_repo / "docs" / "state.ndjson")
+            if e.get("key")][0]["key"]
+    capsys.readouterr()
+    assert _add(pt, git_repo, kind="gap", clear=True, key=real[:-1], what="x") == 1
+    err = capsys.readouterr().err
+    assert "did you mean" in err
+    assert real in err, err
+
+
+def test_clearing_a_known_key_still_works(pt, git_repo, capsys):
+    assert _add(pt, git_repo, kind="gap", what="a real gap") == 0
+    key = [e for e in pt.read_state_log(git_repo, git_repo / "docs" / "state.ndjson")
+           if e.get("key")][0]["key"]
+    capsys.readouterr()
+    assert _add(pt, git_repo, kind="gap", clear=True, key=key, what="closed") == 0
+    assert "(cleared)" in capsys.readouterr().out
+
+
+def test_one_bad_clear_cannot_validate_the_next(pt, git_repo, capsys):
+    """A previous mistyped clear is itself in the log. Counting clears as keys would
+    let one typo authorise the next, which is how the first version still passed."""
+    assert _add(pt, git_repo, kind="gap", what="a real gap") == 0
+    capsys.readouterr()
+    assert _add(pt, git_repo, kind="gap", clear=True, key="typo-key", what="x") == 1
+    capsys.readouterr()
+    assert _add(pt, git_repo, kind="gap", clear=True, key="typo-key", what="x") == 1, (
+        "the failed clear must not have made its own key legitimate")

@@ -2856,6 +2856,24 @@ def cmd_state(args) -> int:
             ev["refs"] = refs
         if args.clear:
             ev["cleared"] = True
+            # A clear only does anything if some earlier event carries the same key,
+            # and keys are derived by truncating `--what`, so they are easy to get
+            # subtly wrong. Appending a clear for a key nothing matches is a no-op
+            # that printed "(cleared)" and looked exactly like a successful one —
+            # a command reporting an outcome it never observed, which is the whole
+            # of ADR-0010. It happened three times in one session before this.
+            # Only keys an event actually SET. A previous mistyped clear is itself in
+            # the log, so counting clears would let one typo validate the next.
+            known = {e.get("key") for e in read_state_log(root, log_path)
+                     if e.get("key") and not e.get("cleared")}
+            if ev["key"] not in known:
+                near = [k for k in sorted(known)
+                        if k and (k.startswith(ev["key"][:20]) or ev["key"].startswith(k[:20]))]
+                msg = (f"nothing to clear: no earlier event has key {ev['key']!r}. "
+                       f"Keys are derived from --what and truncated, so pass --key exactly.")
+                if near:
+                    msg += "\n  did you mean:\n" + "\n".join(f"    {k!r}" for k in near[:3])
+                return fail(msg)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with open(log_path, "a", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps(ev, ensure_ascii=False, sort_keys=True) + "\n")
