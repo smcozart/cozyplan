@@ -2507,6 +2507,12 @@ def cmd_init(args) -> int:
                     with contextlib.suppress(Exception):
                         ver = json.loads(read(cand)).get("version", "")
             ok_sha, sha = git(src_dir.parent, "rev-parse", "--short", "HEAD")
+            # The remote, not only the local path. `vendored from` is one machine's
+            # absolute path, which tells a teammate nothing and cannot be compared
+            # against anything from their clone. The remote is the same string
+            # everywhere, so `doctor` can find a local checkout of it and report how
+            # far behind this copy has drifted.
+            ok_rem, src_remote = git(src_dir.parent, "remote", "get-url", "origin")
             write(dest_dir / "VENDORED.md",
                   "# Vendored cozyplan\n\n"
                   "These skills are committed into this repo so a clone needs no install.\n"
@@ -2515,9 +2521,11 @@ def cmd_init(args) -> int:
                   f"| Field | Value |\n| --- | --- |\n"
                   f"| version | {ver or 'unknown'} |\n"
                   f"| source commit | {sha if ok_sha else 'unknown'} |\n"
+                  f"| source remote | {src_remote.strip() if ok_rem and src_remote.strip() else 'unknown'} |\n"
                   f"| vendored from | {src_dir.parent} |\n\n"
-                  "`state check` reports a stale claim when anything under `.claude/skills/`\n"
-                  "changes, which is how a drifted copy surfaces.\n")
+                  "`plan_tool doctor` compares the source commit above against upstream when it\n"
+                  "can reach a checkout of the remote, and says so plainly when it cannot —\n"
+                  "a copy that is merely old looks identical to a current one otherwise.\n")
             made.append(".claude/skills/VENDORED.md")
 
     # ── records and the event log ────────────────────────────────────────────
@@ -3038,6 +3046,61 @@ def _stored_hook_runner(root: Path) -> "list[str] | None":
     return [exe.strip(), arg.strip()] if ok_arg and arg.strip() else [exe.strip()]
 
 
+def _vendored_field(text: str, name: str) -> str:
+    m = re.search(rf"\|\s*{re.escape(name)}\s*\|\s*([^|]+?)\s*\|", text)
+    return m.group(1).strip() if m else ""
+
+
+def _vendored_freshness(root: Path, vend_text: str) -> tuple[str, str, str, str]:
+    """(section, status, name, detail) — how far behind upstream this copy is.
+
+    A vendored copy is a snapshot pinned at a commit, and nothing about it changes
+    when upstream moves, so a stale copy and a current one are byte-indistinguishable
+    from inside the repo. That cost three separate incidents in one session: a
+    rehearsal run against a copy that predated the fix being rehearsed, and a
+    consuming repo twice carrying a plan_tool without the fixes it had itself asked
+    for.
+
+    Upstream is reachable from some machines and not others, so this reports what it
+    could observe and names what it could not, rather than implying freshness it did
+    not check (ADR-0010).
+    """
+    recorded = _vendored_field(vend_text, "source commit")
+    remote = _vendored_field(vend_text, "source remote")
+    local = _vendored_field(vend_text, "vendored from")
+
+    if not recorded or recorded == "unknown":
+        return ("adapter", WARN, "vendored freshness",
+                "VENDORED.md records no source commit, so there is nothing to compare "
+                "against — re-vendor from a git checkout to stamp one")
+
+    # Prefer the recorded local path; it is the machine that vendored. A checkout of
+    # the same remote elsewhere would also do, but guessing where is worse than
+    # saying we did not look.
+    src = Path(local) if local and local != "unknown" else None
+    if src is None or not (src / ".git").exists():
+        where = f" (recorded remote: {remote})" if remote and remote != "unknown" else ""
+        return ("adapter", WARN, "vendored freshness",
+                f"vendored at {recorded}; upstream is not reachable from this machine, "
+                f"so staleness could not be checked{where}")
+
+    ok_has, _ = git(src, "cat-file", "-e", f"{recorded}^{{commit}}")
+    if not ok_has:
+        return ("adapter", WARN, "vendored freshness",
+                f"vendored at {recorded}, which the checkout at {src} does not contain "
+                f"— it may be behind, or the copy came from elsewhere")
+    ok_n, n = git(src, "rev-list", "--count", f"{recorded}..HEAD")
+    if not ok_n or not n.strip().isdigit():
+        return ("adapter", WARN, "vendored freshness",
+                f"vendored at {recorded}; could not count commits since it")
+    behind = int(n.strip())
+    if behind == 0:
+        return ("adapter", OK, "vendored freshness", f"current with {src} at {recorded}")
+    return ("adapter", WARN, "vendored freshness",
+            f"{behind} commit(s) behind {src} (vendored at {recorded}) — "
+            f"re-vendor with `plan_tool init --root {root} --vendor`")
+
+
 def doctor_checks(root: Path, commits: int) -> list[tuple[str, str, str, str]]:
     """(section, status, name, detail) for every wiring fact worth knowing."""
     out: list[tuple[str, str, str, str]] = []
@@ -3190,6 +3253,7 @@ def doctor_checks(root: Path, commits: int) -> list[tuple[str, str, str, str]]:
 
     vend = root / ".claude" / "skills" / "VENDORED.md"
     if vend.exists():
+        add(*_vendored_freshness(root, read(vend)))
         m = re.search(r"\| version \| ([^|]+) \|", read(vend))
         ver = (m.group(1).strip() if m else "unknown")
         ok_d, dirty = git(root, "status", "--porcelain", "--", ".claude/skills")

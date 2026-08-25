@@ -265,3 +265,94 @@ def test_the_installed_template_carries_the_selftest_step(pt):
     body = tpl.read_text(encoding="utf-8")
     assert "hooks selftest" in body, "the shipped CI template must run the selftest"
     assert "--shipped" in body
+
+
+# ── vendored freshness: a snapshot cannot tell you it is old ──────────────────
+# A vendored copy is pinned at a commit and nothing about it changes when upstream
+# moves, so stale and current are byte-indistinguishable from inside the repo. That
+# cost three separate incidents: a rehearsal run against a copy predating the fix
+# being rehearsed, and a consuming repo twice carrying a plan_tool without the
+# fixes it had itself reported.
+
+VEND = """# Vendored cozyplan
+
+| Field | Value |
+| --- | --- |
+| version | 3.1.0 |
+| source commit | {sha} |
+| source remote | {remote} |
+| vendored from | {src} |
+"""
+
+
+def _vendor_marker(repo, *, sha, src, remote="https://example.com/cozyplan.git"):
+    d = repo / ".claude" / "skills"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "VENDORED.md").write_text(VEND.format(sha=sha, src=src, remote=remote),
+                                   encoding="utf-8")
+
+
+def _upstream(tmp_path, commits=4):
+    """A throwaway 'cozyplan' with history to be behind."""
+    up = tmp_path / "upstream"
+    up.mkdir()
+    git(up, "init")
+    git(up, "config", "user.email", "t@e.com")
+    git(up, "config", "user.name", "T")
+    shas = []
+    for i in range(commits):
+        (up / f"f{i}").write_text("x", encoding="utf-8")
+        git(up, "add", "-A")
+        git(up, "commit", "-m", f"c{i}")
+        shas.append(git(up, "rev-parse", "--short", "HEAD").stdout.strip())
+    return up, shas
+
+
+def _freshness(pt, repo, capsys):
+    run(pt, repo)
+    return next(l for l in capsys.readouterr().out.splitlines() if "vendored freshness" in l)
+
+
+def test_a_current_vendored_copy_reads_ok(pt, git_repo, tmp_path, capsys):
+    up, shas = _upstream(tmp_path)
+    _vendor_marker(git_repo, sha=shas[-1], src=str(up))
+    line = _freshness(pt, git_repo, capsys)
+    assert "ok" in line and "current with" in line, line
+
+
+def test_a_stale_vendored_copy_reports_how_far_behind(pt, git_repo, tmp_path, capsys):
+    """The incident, three times over. It must name the count and the remedy."""
+    up, shas = _upstream(tmp_path)
+    _vendor_marker(git_repo, sha=shas[0], src=str(up))
+    line = _freshness(pt, git_repo, capsys)
+    assert "warn" in line, line
+    assert "3 commit(s) behind" in line, line
+    assert "--vendor" in line, "the row must name the remedy, not only the drift"
+
+
+def test_unreachable_upstream_says_it_did_not_check(pt, git_repo, tmp_path, capsys):
+    """Honest absence, not implied freshness: on a teammate's machine the source
+    checkout is simply not there, and saying 'ok' would be the ADR-0010 error."""
+    _vendor_marker(git_repo, sha="deadbee", src=str(tmp_path / "nope"))
+    line = _freshness(pt, git_repo, capsys)
+    assert "warn" in line
+    assert "not reachable from this machine" in line, line
+    assert "example.com/cozyplan.git" in line, "it must name the remote to look for"
+
+
+def test_no_recorded_source_commit_is_reported(pt, git_repo, tmp_path, capsys):
+    """cozycode's original state: vendored from a plugin cache, which is not a git
+    checkout, so provenance read `unknown` and skew was undetectable."""
+    _vendor_marker(git_repo, sha="unknown", src=str(tmp_path / "nope"))
+    line = _freshness(pt, git_repo, capsys)
+    assert "warn" in line
+    assert "records no source commit" in line, line
+
+
+def test_a_commit_upstream_does_not_have_is_not_called_current(pt, git_repo, tmp_path, capsys):
+    """A copy from a different repo, or from a rewritten history, must not read ok."""
+    up, _ = _upstream(tmp_path)
+    _vendor_marker(git_repo, sha="deadbee", src=str(up))
+    line = _freshness(pt, git_repo, capsys)
+    assert "warn" in line
+    assert "does not contain" in line, line
