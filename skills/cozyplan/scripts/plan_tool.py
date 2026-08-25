@@ -1656,6 +1656,56 @@ def registered_hook_commands(root: Path) -> tuple[dict, str, Path | None]:
     return {}, "", None
 
 
+def vendor_source_problem(root: Path) -> str | None:
+    """Why this plan_tool may not act as a `--vendor` SOURCE, or None if it may.
+
+    Two failures, one missing guard. The only check that existed compared the
+    source against `root/skills`, which catches cozyplan's own source layout and
+    nothing else — a vendored copy lives at `.claude/skills/`, so both of these
+    proceeded silently:
+
+    1. **A vendored copy is not an upstream.** Its git repository is the
+       CONSUMING repo, so provenance is stamped from the wrong history: version
+       `unknown`, source commit the consumer's own sha, source remote the
+       consumer's own remote. `doctor` then reports that upstream is *not
+       reachable* rather than that anything is wrong — so the freshness row, the
+       one check that names this drift, is silently disabled by the exact act it
+       exists to guard against. Reported by cozycode, which reproduced it twice.
+
+    2. **Vendoring into the tree being read from destroys it.** When source and
+       destination are the same directory, the `rmtree` that clears the
+       destination deletes the source, and the copy then fails part-way. Observed
+       here: 21 files removed before `FileNotFoundError`. Recoverable from git
+       only because they were committed.
+
+    Refused, not warned. A warning here is a prompt in different clothes, and the
+    damage is done by the time anyone reads it.
+    """
+    me = Path(__file__).resolve()
+    src_dir = me.parent.parent.parent  # <skills>/cozyplan/scripts/plan_tool.py -> <skills>
+
+    if ".claude" in me.parts:
+        return ("this plan_tool is itself a vendored copy, so it cannot be a vendor source: "
+                "its git history belongs to the consuming repo, and provenance stamped from "
+                "it would record that repo as its own upstream. Run cozyplan's own checkout "
+                "instead:\n"
+                "  SRC=\"$(git config cozyplan.source)\"\n"
+                "  python3 \"$SRC/skills/cozyplan/scripts/plan_tool.py\" init --root "
+                f"\"{root}\" --vendor")
+
+    # Narrow on purpose: the danger is not "source inside root" — a source may sit
+    # inside the target harmlessly. It is the copy clearing a directory that
+    # CONTAINS its own source, which is only true when the two are the same tree.
+    dest_dir = (root / ".claude" / "skills")
+    try:
+        src_dir.relative_to(dest_dir.resolve())
+    except (ValueError, OSError):
+        return None
+    return (f"the skills being vendored ({src_dir}) are inside the destination "
+            f"({dest_dir}), so clearing it would delete the source mid-copy. Run "
+            "cozyplan's own checkout from outside this repo.")
+
+
 def resolve_git_hook_tool(root: Path) -> str:
     """The plan_tool the git hooks should run, as a path they should record.
 
@@ -2470,6 +2520,13 @@ def cmd_init(args) -> int:
     or append-if-missing, never a truncation, so brownfield is the normal case
     rather than a special one."""
     root = Path(args.root)
+    # Before anything is written or removed. The two failures this prevents both
+    # damage the repo on the way to reporting, so a check placed after the copy
+    # would be describing wreckage rather than preventing it.
+    if args.vendor:
+        problem = vendor_source_problem(root)
+        if problem:
+            return fail("refusing --vendor: " + problem)
     in_git, _ = git(root, "rev-parse", "--is-inside-work-tree")
     if not in_git:
         if not args.git_init:

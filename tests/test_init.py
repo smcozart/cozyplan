@@ -282,3 +282,80 @@ def test_no_generated_artifact_carries_the_vendoring_machines_path(pt, git_repo)
         except OSError:
             continue
     assert not offenders, f"tracked files naming the vendoring machine: {offenders}"
+
+
+# ── a vendored copy may not be a vendor source (reported by cozycode) ────────
+# The only guard compared the source against `root/skills`, which catches
+# cozyplan's own layout and nothing else. A vendored copy lives at
+# `.claude/skills/`, so two failures proceeded silently:
+#   1. Vendored tool -> different root: provenance stamped from the CONSUMING
+#      repo. version "unknown", source commit the consumer's own sha, source
+#      remote the consumer's own remote. doctor then says upstream is "not
+#      reachable" rather than that anything is wrong — the freshness row
+#      disabled by the exact act it exists to guard against.
+#   2. Vendored tool -> same root: rmtree clears the destination, which IS the
+#      source, and the copy dies part-way. 21 files deleted before the crash.
+
+def _fake_vendored_tool(pt, repo):
+    """A plan_tool living at .claude/skills/cozyplan/scripts/, as a vendored one does."""
+    dst = repo / ".claude" / "skills" / "cozyplan" / "scripts"
+    (dst / "hooks").mkdir(parents=True)
+    src = pt.Path(pt.__file__).resolve()
+    (dst / "plan_tool.py").write_bytes(src.read_bytes())
+    for f in list(pt.HOOK_MATCHERS) + ["run-hook.sh"]:
+        (dst / "hooks" / f).write_bytes((src.parent / "hooks" / f).read_bytes())
+    marker = repo / ".claude" / "skills" / "VENDORED.md"
+    marker.write_text("| version | 3.2.0 |\n| source commit | abc1234 |\n"
+                      "| source remote | https://example.com/cozyplan.git |\n", encoding="utf-8")
+    return dst / "plan_tool.py", marker
+
+
+def test_a_vendored_plan_tool_is_refused_as_a_vendor_source(pt, git_repo, tmp_path, monkeypatch):
+    """Its git history is the consuming repo's, so provenance would name that repo
+    as its own upstream — and doctor would then report only that it cannot look."""
+    tool, marker = _fake_vendored_tool(pt, git_repo)
+    before = marker.read_text(encoding="utf-8")
+    monkeypatch.setattr(pt, "__file__", str(tool))
+
+    target = tmp_path / "consumer"
+    target.mkdir()
+    git(target, "init")
+    assert pt.main(["init", "--root", str(target), "--vendor"]) == 1
+    # And nothing was written on the way to refusing.
+    assert marker.read_text(encoding="utf-8") == before
+    assert not (target / ".claude" / "skills").exists()
+
+
+def test_the_refusal_names_the_remedy(pt, git_repo, tmp_path, monkeypatch, capsys):
+    tool, _ = _fake_vendored_tool(pt, git_repo)
+    monkeypatch.setattr(pt, "__file__", str(tool))
+    target = tmp_path / "consumer"
+    target.mkdir()
+    git(target, "init")
+    pt.main(["init", "--root", str(target), "--vendor"])
+    err = capsys.readouterr().err
+    assert "cozyplan.source" in err, "the refusal must name how to do it correctly"
+    assert "--vendor" in err
+
+
+def test_vendoring_into_the_tree_being_read_from_is_refused(pt, git_repo, monkeypatch):
+    """Source and destination the same directory: the rmtree that clears the
+    destination deletes the source. This must not reach the copy at all."""
+    tool, marker = _fake_vendored_tool(pt, git_repo)
+    before = marker.read_text(encoding="utf-8")
+    monkeypatch.setattr(pt, "__file__", str(tool))
+    assert pt.main(["init", "--root", str(git_repo), "--vendor"]) == 1
+    # The scripts the copy would have destroyed are still there.
+    assert (tool.parent / "hooks" / "run-hook.sh").exists()
+    assert marker.read_text(encoding="utf-8") == before
+
+
+def test_a_source_checkout_still_vendors_normally(pt, git_repo, tmp_path):
+    """The guard must not block the only correct route."""
+    target = tmp_path / "consumer"
+    target.mkdir()
+    git(target, "init")
+    assert pt.main(["init", "--root", str(target), "--vendor"]) == 0
+    assert (target / ".claude" / "skills" / "cozyplan" / "scripts" / "plan_tool.py").exists()
+    body = (target / ".claude" / "skills" / "VENDORED.md").read_text(encoding="utf-8")
+    assert "cozyplan" in body
