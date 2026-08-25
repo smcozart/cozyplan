@@ -6,25 +6,11 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-24T21:56:07-05:00 |
-| Repo state | main @ 8ff1913 |
+| Last synced | 2026-08-24T23:02:19-05:00 |
+| Repo state | main @ 9befe48 |
 
 ## Current Working State
 
-- plan_tool CLI and both hooks pass their suite — verified by `python3 -m pytest tests` (2026-08-19, a036519)
-  ↳ session:s-audit-03 path:tests path:skills/cozyplan/scripts
-- plan_tool init takes a greenfield repo from five doctor gaps to zero, and adopts a brownfield one without overwriting anything — verified by `python3 -m pytest tests/test_init.py` (2026-08-19, a036519)
-  ↳ session:s-audit-03 adr:0004 adr:0007 path:skills/cozyplan/scripts/plan_tool.py path:skills/cozyplan/templates path:tests/test_init.py
-- state render cannot silently destroy a hand-authored STATE.md, and state migrate carries one into the log while naming what it could not carry — verified by `python3 -m pytest tests/test_state_migrate.py` (2026-08-19, a036519)
-  ↳ session:s-audit-03 adr:0005 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_state_migrate.py
-- commit-msg trailer injection survives an interpreter path containing spaces, and doctor tests the runner the clone actually recorded — verified by `python3 -m pytest tests/test_trailers.py` (2026-08-19, a036519)
-  ↳ session:s-audit-03 adr:0004 adr:0007 path:skills/cozyplan/scripts/plan_tool.py path:.githooks
-- doctor catches a dead hook runner and prose naming commands that do not exist; state check reports a claim whose own paths moved — verified by `python3 -m pytest tests/test_doctor.py tests/test_state_check.py` (2026-08-19, a036519)
-  ↳ session:s-audit-03 adr:0004 adr:0006 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_doctor.py path:tests/test_state_check.py
-- issue file queues a replayable gh command when gh is absent, one command per line, and replay never files without --run — verified by `python3 -m pytest tests/test_issue.py` (2026-08-19, a036519)
-  ↳ session:s-audit-03 adr:0001 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_issue.py
-- Plan validation runs without uv installed — verified by `python3 skills/cozyplan/scripts/plan_tool.py validate` (2026-08-19, a036519)
-  ↳ session:s-audit-03 path:skills/cozyplan/scripts
 - state-check.yml runs green on a real runner: tests, plan validity, generated-file currency, doctor --strict, and state check --max-claim-age 50 — verified by `gh run view 32317371478` (2026-08-19, aeed33a)
   ↳ session:s-audit-03 adr:0004 path:.github/workflows path:skills/cozyplan/scripts path:tests
 - the two-axis review's 12 findings are fixed: replay cannot duplicate into the tracker, roles removal is recorded as ADR-0009, and doctor now checks its own header against the parser — verified by `python3 -m pytest tests` (2026-08-19, bae0893)
@@ -57,6 +43,20 @@
   ↳ session:s-enforce-01 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_doctor.py
 - init --vendor refuses to run from a vendored plan_tool, before anything is written — a vendored copy's git history is the consuming repo's, so stamping provenance from it recorded that repo as its own upstream and silently disabled doctor's freshness row — verified by `python3 -m pytest tests/test_init.py; reproduced both variants on throwaway clones` (2026-08-24, 8ff1913)
   ↳ session:s-enforce-01 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_init.py
+- plan_tool CLI and all four hooks pass their suite — verified by `python3 -m pytest tests (300 passed)` (2026-08-24, 9befe48)
+  ↳ session:s-enforce-01 path:tests path:skills/cozyplan/scripts
+- plan_tool init takes a greenfield repo from five doctor gaps to zero, and adopts a brownfield one without overwriting anything — verified by `python3 -m pytest tests/test_init.py (31 passed)` (2026-08-24, 9befe48)
+  ↳ session:s-enforce-01 path:skills/cozyplan/scripts/plan_tool.py path:skills/cozyplan/templates path:tests/test_init.py
+- state render cannot silently destroy a hand-authored STATE.md, and state migrate carries one into the log while naming what it could not carry — verified by `python3 -m pytest tests/test_state_migrate.py (12 passed)` (2026-08-24, 9befe48)
+  ↳ session:s-enforce-01 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_state_migrate.py
+- commit-msg trailer injection survives an interpreter path containing spaces, and doctor tests the runner the clone actually recorded — verified by `python3 -m pytest tests/test_trailers.py (20 passed)` (2026-08-24, 9befe48)
+  ↳ session:s-enforce-01 path:skills/cozyplan/scripts/plan_tool.py path:.githooks
+- doctor catches a dead hook runner and prose naming commands that do not exist; state check reports a claim whose own paths moved — verified by `python3 -m pytest tests/test_doctor.py tests/test_state_check.py (49 passed)` (2026-08-24, 9befe48)
+  ↳ session:s-enforce-01 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_doctor.py path:tests/test_state_check.py
+- issue file queues a replayable gh command when gh is absent, one command per line, and replay never files without --run — verified by `python3 -m pytest tests/test_issue.py (12 passed)` (2026-08-24, 9befe48)
+  ↳ session:s-enforce-01 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_issue.py
+- Plan validation runs with uv absent from PATH entirely — verified by `PATH=/usr/bin:/bin plan_tool validate on each specs/*.html - 3 validated, 0 failed, uv not resolvable` (2026-08-24, 9befe48)
+  ↳ session:s-enforce-01 path:skills/cozyplan/scripts
 
 ## In Development
 
