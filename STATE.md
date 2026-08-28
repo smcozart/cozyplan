@@ -6,8 +6,8 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-28T09:05:58-05:00 |
-| Repo state | main @ 167f00a |
+| Last synced | 2026-08-28T09:10:58-05:00 |
+| Repo state | main @ b7d05d8 |
 
 ## Current Working State
 
@@ -57,7 +57,7 @@
   ↳ session:s-enforce-01 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_issue.py
 - Plan validation runs with uv absent from PATH entirely — verified by `PATH=/usr/bin:/bin plan_tool validate on each specs/*.html - 3 validated, 0 failed, uv not resolvable` (2026-08-24, 9befe48)
   ↳ session:s-enforce-01 path:skills/cozyplan/scripts
-- The git hooks report their own absence instead of exiting 0 in silence — verified by `Four tests in tests/test_trailers.py, all four confirmed red against the old templates by stashing plan_tool.py and re-running: a recorded runner that left the host is named on stderr and the trailer still lands via the probe; a cozyplan.plantool pointing at nothing reports a half-wired clone; a host whose PATH holds only a git stub reports 'no Python 3.9+ resolved' and leaves the message file untouched; pre-push reports a crash that produced no findings, which the exit code alone cannot distinguish from a real state check FAIL. Every case exits 0, so neither hook can reject a commit or a push. Full suite 304 passed.` (2026-08-28, 167f00a)
+- The git hooks report their own absence instead of exiting 0 in silence — verified by `Four tests in tests/test_trailers.py, all four confirmed red against the old templates by stashing plan_tool.py and re-running: a recorded runner that left the host is named on stderr and the trailer still lands via the probe; a cozyplan.plantool pointing at nothing reports a half-wired clone; a host whose PATH holds only a git stub reports 'no Python 3.9+ resolved' and leaves the message file untouched; pre-push reports a crash that produced no findings, which the exit code alone cannot distinguish from a real state check FAIL. Every case exits 0, so neither hook can reject a commit or a push. Re-proved at b7d05d8 after the templates became raw literals: full suite 304 passed, and the emitted hooks carry a real line continuation and a real printf newline.` (2026-08-28, b7d05d8)
   ↳ adr:0004 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_trailers.py
 
 ## In Development
