@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import os
 import stat
+import subprocess
 
-from conftest import EXEC_BIT_IS_MEANINGFUL, git, read
+from conftest import EXEC_BIT_IS_MEANINGFUL, PLAN_TOOL_PY, git, read
 
 
 def infer(pt, repo, capsys):
@@ -225,3 +226,90 @@ def test_doctor_flags_a_recorded_tool_that_does_not_exist(pt, git_repo, capsys):
     git(git_repo, "config", "cozyplan.plantool", "does/not/exist/plan_tool.py")
     pt.main(["doctor", "--root", str(git_repo)])
     assert "does not exist" in capsys.readouterr().out
+
+
+# ── the hook's own absence (ADR-0010, third registration path) ───────────────
+# Both hooks used to end in `|| true`. A recorded runner that had left the host
+# produced no trailer, no output and exit 0 — the same trace a healthy commit with
+# nothing to add leaves. These pin the two halves that must never merge again:
+# the commit still succeeds, and the failure is on stderr where a terminal shows it.
+
+def test_a_recorded_runner_that_left_the_host_is_reported_and_recovered(pt, git_repo):
+    """uv gets uninstalled. The record outlives it, so the hook re-resolves rather
+    than going quiet, and says the record is stale."""
+    pt.main(["hooks", "git-install", "--root", str(git_repo)])
+    git(git_repo, "config", "cozyplan.runner", "uv-is-not-installed-here")
+    git(git_repo, "config", "cozyplan.runnerarg", "run")
+    stage_adr(git_repo, "0007")
+
+    r = git(git_repo, "commit", "-m", "feat: add a decision")
+    assert r.returncode == 0, "an advisory hook must never reject a commit (ADR-0004)"
+    assert "uv-is-not-installed-here" in r.stderr, r.stderr
+    assert "not on PATH" in r.stderr, r.stderr
+    # Recovered, not merely reported: the trailer still lands via the probe.
+    assert "ADR: 0007" in git(git_repo, "log", "-1", "--format=%B").stdout
+
+
+def test_a_missing_plan_tool_is_reported_not_swallowed(pt, git_repo):
+    """The half-wired clone: hooks installed, cozyplan.plantool pointing at nothing."""
+    pt.main(["hooks", "git-install", "--root", str(git_repo)])
+    git(git_repo, "config", "cozyplan.plantool", "does/not/exist/plan_tool.py")
+    stage_adr(git_repo, "0007")
+
+    r = git(git_repo, "commit", "-m", "feat: add a decision")
+    assert r.returncode == 0, "an advisory hook must never reject a commit (ADR-0004)"
+    assert "half-wired" in r.stderr, r.stderr
+    assert "ADR: 0007" not in git(git_repo, "log", "-1", "--format=%B").stdout
+
+
+def test_no_interpreter_on_the_host_is_reported(pt, git_repo, tmp_path):
+    """The bare host. PATH holds a `git config` stand-in and nothing else — no
+    python3, python, py or uv — so every probe fails and the hook must say so.
+
+    A stub rather than the real git: on macOS python3 and git share /usr/bin, so
+    a PATH that keeps git keeps an interpreter too and the branch never runs.
+    """
+    pt.main(["hooks", "git-install", "--root", str(git_repo)])
+    bindir = tmp_path / "bare-bin"
+    bindir.mkdir()
+    stub = bindir / "git"
+    stub.write_text(
+        '#!/bin/sh\n'
+        '[ "$1" = config ] || exit 1\n'
+        'case "$2" in\n'
+        '  cozyplan.plantool) echo "%s" ;;\n'
+        '  *) exit 1 ;;\n'
+        'esac\n' % PLAN_TOOL_PY,
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+
+    msg = tmp_path / "COMMIT_EDITMSG"
+    msg.write_text("feat: something\n", encoding="utf-8")
+    r = subprocess.run(
+        ["/bin/sh", str(git_repo / ".githooks" / "commit-msg"), str(msg)],
+        capture_output=True, text=True, env={"PATH": str(bindir)},
+    )
+    assert r.returncode == 0, "advisory: a bare host must not block the commit"
+    assert "no Python 3.9+ resolved" in r.stderr, r.stderr
+    assert msg.read_text(encoding="utf-8") == "feat: something\n", "message untouched"
+
+
+def test_pre_push_reports_a_crash_that_produces_no_findings(pt, git_repo, tmp_path):
+    """`state check` exits non-zero on a real finding too, so the exit code alone
+    cannot separate a finding from a crash. A crash prints no report; that pairing
+    is what gets reported."""
+    pt.main(["hooks", "git-install", "--root", str(git_repo)])
+    broken = git_repo / "broken_tool.py"
+    broken.write_text("raise SystemExit('boom: not a plan_tool')\n", encoding="utf-8")
+    git(git_repo, "config", "cozyplan.plantool", "broken_tool.py")
+    git(git_repo, "config", "--unset", "cozyplan.runner")
+    git(git_repo, "config", "--unset", "cozyplan.runnerarg")
+
+    r = subprocess.run(
+        ["/bin/sh", str(git_repo / ".githooks" / "pre-push")],
+        capture_output=True, text=True, cwd=str(git_repo), stdin=subprocess.DEVNULL,
+    )
+    assert r.returncode == 0, "pre-push never blocks (ADR-0004)"
+    assert "with no report" in r.stderr, r.stderr
+    assert "boom" in r.stderr, r.stderr

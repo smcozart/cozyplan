@@ -3507,38 +3507,117 @@ def cmd_doctor(args) -> int:
 # A commit-msg hook that REJECTS teaches people to type --no-verify, and then you
 # have neither the trailer nor the habit. So this only ever adds what it can
 # demonstrate: ADRs from the staged files, and a plan whose id matches the branch.
-# Anything it cannot prove, it leaves alone. It fails open on every error — a
-# hook that blocks a commit because it could not read a file is worse than a
-# missing trailer.
+# Anything it cannot prove, it leaves alone.
+#
+# It fails open on the SUBJECT and loud on the APPARATUS (ADR-0010). Both hooks
+# used to end in `|| true`, which collapsed the two: on a host whose recorded
+# runner had left PATH, the hook wrote nothing, said nothing and exited 0 —
+# byte-identical to a healthy run of a commit with no trailer to add. That is the
+# third registration path, and it kept the defect the other two lost.
+#
+# Loud here means stderr, never a non-zero exit: a git hook that exits non-zero
+# rejects the commit or the push, which ADR-0004 forbids for exactly the reason
+# above. Git hook stderr reaches the terminal, which is why ADR-0010 rejected
+# self-reporting for PostToolUse and it is right here — that stream is read.
 
 GIT_HOOK_NAMES = ("commit-msg", "pre-push")
 
-COMMIT_MSG_HOOK = """#!/bin/sh
-# cozyplan: add the trailers that can be demonstrated from this commit.
-# Advisory by design — never blocks, never rejects (ADR-0004).
-TOOL=$(git config cozyplan.plantool 2>/dev/null) || exit 0
-[ -n "$TOOL" ] || exit 0
+# Resolution happens at CALL time, the rule ADR-0010 already set for the two
+# Claude Code registration paths. `git-install` records a runner, but a recorded
+# runner is a fact about the machine on the day it was wired: uv gets uninstalled,
+# interpreters move. So the record is preferred, verified, and re-resolved when it
+# no longer answers — and the re-resolution is reported, because a stale record is
+# a half-wired clone that still looks configured.
+#
+# Candidates are PROBED, not merely found on PATH: `command -v python3` succeeds
+# against the Windows Store alias stub, which is not an interpreter.
+#
+# Every branch here exits 0. The hook is advisory (ADR-0004); what changes is that
+# it no longer stays quiet about its own absence.
+_GIT_HOOK_PREAMBLE = """
+say() { echo "cozyplan $HOOK: $*" >&2; }
+
+TOOL=$(git config cozyplan.plantool 2>/dev/null)
+if [ -z "$TOOL" ] || [ ! -f "$TOOL" ]; then
+    say "plan_tool not resolved (cozyplan.plantool=${TOOL:-unset}) — $WHAT did not run."
+    say "This clone is half-wired. Fix with: plan_tool hooks git-install"
+    exit 0
+fi
+
 RUN=$(git config cozyplan.runner 2>/dev/null)
-[ -n "$RUN" ] || RUN=python3
 ARG=$(git config cozyplan.runnerarg 2>/dev/null)
-# Quoted: an interpreter path or a repo path may contain spaces. Unquoted, $RUN
-# word-splits, the command is not found, and the trailer vanishes with no error.
-"$RUN" ${ARG:+"$ARG"} "$TOOL" trailers --message-file "$1" >/dev/null 2>&1 || true
-exit 0
+if [ -n "$RUN" ] && ! command -v "$RUN" >/dev/null 2>&1; then
+    say "recorded runner '$RUN' is not on PATH — re-resolving. Re-record with: plan_tool hooks git-install"
+    RUN=""
+    ARG=""
+fi
+if [ -z "$RUN" ]; then
+    for c in python3 python py; do
+        command -v "$c" >/dev/null 2>&1 || continue
+        if "$c" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)' \
+            >/dev/null 2>&1; then
+            RUN="$c"
+            ARG=""
+            break
+        fi
+    done
+fi
+if [ -z "$RUN" ] && command -v uv >/dev/null 2>&1; then
+    RUN=uv
+    ARG=run
+fi
+if [ -z "$RUN" ]; then
+    say "no Python 3.9+ resolved (tried python3, python, py, uv) — $WHAT did not run."
+    say "Fix by installing Python 3.9+ or uv, then: plan_tool hooks git-install"
+    exit 0
+fi
 """
 
-PRE_PUSH_HOOK = """#!/bin/sh
-# cozyplan: report snapshot drift before a push. Never blocks (ADR-0004).
-TOOL=$(git config cozyplan.plantool 2>/dev/null) || exit 0
-[ -n "$TOOL" ] || exit 0
-RUN=$(git config cozyplan.runner 2>/dev/null)
-[ -n "$RUN" ] || RUN=python3
-ARG=$(git config cozyplan.runnerarg 2>/dev/null)
-# Quoted: an interpreter path may contain spaces. Unquoted, $RUN word-splits and the
-# drift report silently never runs.
-"$RUN" ${ARG:+"$ARG"} "$TOOL" state check 2>/dev/null | grep -E "behind HEAD|FAIL" || true
+# Quoted throughout: an interpreter path or a repo path may contain spaces.
+# Unquoted, $RUN word-splits, the command is not found, and the trailer vanishes.
+COMMIT_MSG_HOOK = (
+    """#!/bin/sh
+# cozyplan: add the trailers that can be demonstrated from this commit.
+# Advisory by design — never blocks, never rejects (ADR-0004). Loud about its own
+# absence, which is a different thing (ADR-0010).
+HOOK=commit-msg
+WHAT="trailer injection"
+"""
+    + _GIT_HOOK_PREAMBLE
+    + """
+if ! OUT=$("$RUN" ${ARG:+"$ARG"} "$TOOL" trailers --message-file "$1" 2>&1); then
+    say "plan_tool trailers failed — this commit gets no trailer."
+    printf '%s\n' "$OUT" >&2
+fi
 exit 0
 """
+)
+
+PRE_PUSH_HOOK = (
+    """#!/bin/sh
+# cozyplan: report snapshot drift before a push. Never blocks (ADR-0004). Loud
+# about its own absence, which is a different thing (ADR-0010).
+HOOK=pre-push
+WHAT="the drift report"
+"""
+    + _GIT_HOOK_PREAMBLE
+    + """
+# `state check` exits non-zero on a real FAIL, which is a finding about the
+# subject, not an apparatus failure — so the exit code alone cannot tell the two
+# apart. A finding prints the lines grepped below; a crash prints neither, and
+# that is the combination worth reporting.
+OUT=$("$RUN" ${ARG:+"$ARG"} "$TOOL" state check 2>&1)
+ST=$?
+REPORT=$(printf '%s\n' "$OUT" | grep -E "behind HEAD|FAIL") || true
+if [ -n "$REPORT" ]; then
+    printf '%s\n' "$REPORT"
+elif [ "$ST" -ne 0 ]; then
+    say "state check exited $ST with no report — the drift check did not run."
+    printf '%s\n' "$OUT" >&2
+fi
+exit 0
+"""
+)
 
 
 def infer_trailers(root: Path) -> list[str]:

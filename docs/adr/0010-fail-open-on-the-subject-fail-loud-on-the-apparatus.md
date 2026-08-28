@@ -135,3 +135,24 @@ erased prompt, so a test asserts they match rather than trusting them to.
   `run-hook.sh` moved from the plugin root to `skills/cozyplan/scripts/hooks/`, beside the
   hooks it launches, because the skill directory travels through all three distribution
   shapes and the plugin wrapper travels through one.
+- 2026-08-28 — extended to the **third** registration path, the git hooks. `commit-msg` and
+  `pre-push` both ended in `|| true`, so a recorded runner that had left the host produced no
+  trailer, no output and exit 0 — byte-identical to a healthy commit with nothing to prove. The
+  decision needed no change; the path had simply never been audited against it. Two clauses are
+  worth writing down because this path differs from the other two.
+
+  **Loud here cannot mean non-zero.** A git hook that exits non-zero rejects the commit or the
+  push, which is exactly what ADR-0004 forbids and what teaches `--no-verify`. So the apparatus
+  reports on **stderr and still exits 0**. That is not a weaker reading of this ADR: the
+  requirement is that the two failures leave different traces, and on this path stderr is the
+  trace, because git hook stderr reaches the terminal. It is the same reasoning that *rejected*
+  self-reporting for `PostToolUse`, where stderr on exit 0 is discarded — the test was always
+  whether anyone reads the stream, not which stream it is.
+
+  **A recorded runner is a fact with a shelf life.** `git-install` writes what resolved on the
+  day it was wired; uv gets uninstalled and interpreters move. The record is now preferred,
+  verified with `command -v`, and re-resolved by the same probe `run-hook.sh` uses when it no
+  longer answers — and the re-resolution is itself reported, because a stale record is a
+  half-wired clone that still reads as configured. Four tests pin it, each confirmed red against
+  the old templates first; the pre-push one exists because `state check` exits non-zero on a real
+  finding too, so the exit code alone cannot separate a finding from a crash.
