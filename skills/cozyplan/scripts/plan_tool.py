@@ -3534,7 +3534,7 @@ GIT_HOOK_NAMES = ("commit-msg", "pre-push")
 #
 # Every branch here exits 0. The hook is advisory (ADR-0004); what changes is that
 # it no longer stays quiet about its own absence.
-_GIT_HOOK_PREAMBLE = """
+_GIT_HOOK_PREAMBLE = r"""
 say() { echo "cozyplan $HOOK: $*" >&2; }
 
 TOOL=$(git config cozyplan.plantool 2>/dev/null)
@@ -3576,7 +3576,7 @@ fi
 # Quoted throughout: an interpreter path or a repo path may contain spaces.
 # Unquoted, $RUN word-splits, the command is not found, and the trailer vanishes.
 COMMIT_MSG_HOOK = (
-    """#!/bin/sh
+    r"""#!/bin/sh
 # cozyplan: add the trailers that can be demonstrated from this commit.
 # Advisory by design — never blocks, never rejects (ADR-0004). Loud about its own
 # absence, which is a different thing (ADR-0010).
@@ -3584,7 +3584,7 @@ HOOK=commit-msg
 WHAT="trailer injection"
 """
     + _GIT_HOOK_PREAMBLE
-    + """
+    + r"""
 if ! OUT=$("$RUN" ${ARG:+"$ARG"} "$TOOL" trailers --message-file "$1" 2>&1); then
     say "plan_tool trailers failed — this commit gets no trailer."
     printf '%s\n' "$OUT" >&2
@@ -3594,14 +3594,14 @@ exit 0
 )
 
 PRE_PUSH_HOOK = (
-    """#!/bin/sh
+    r"""#!/bin/sh
 # cozyplan: report snapshot drift before a push. Never blocks (ADR-0004). Loud
 # about its own absence, which is a different thing (ADR-0010).
 HOOK=pre-push
 WHAT="the drift report"
 """
     + _GIT_HOOK_PREAMBLE
-    + """
+    + r"""
 # `state check` exits non-zero on a real FAIL, which is a finding about the
 # subject, not an apparatus failure — so the exit code alone cannot tell the two
 # apart. A finding prints the lines grepped below; a crash prints neither, and
