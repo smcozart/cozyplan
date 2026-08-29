@@ -7,10 +7,18 @@ both halves: that a provable trailer appears, and that an unprovable one does no
 from __future__ import annotations
 
 import os
+import shutil
 import stat
 import subprocess
 
+import pytest
+
 from conftest import EXEC_BIT_IS_MEANINGFUL, PLAN_TOOL_PY, git, read
+
+# Git for Windows runs hooks through its own bundled sh, so the two tests that
+# drive a real `git commit` cover this contract on every platform. These two
+# invoke a hook DIRECTLY, which needs an sh this process can spawn.
+SH = shutil.which("sh") or shutil.which("bash")
 
 
 def infer(pt, repo, capsys):
@@ -262,6 +270,10 @@ def test_a_missing_plan_tool_is_reported_not_swallowed(pt, git_repo):
     assert "ADR: 0007" not in git(git_repo, "log", "-1", "--format=%B").stdout
 
 
+@pytest.mark.skipif(os.name == "nt", reason=(
+    "the test replaces PATH wholesale and drives a #!/bin/sh stub; on Windows the "
+    "shell itself needs %SystemRoot% and %ComSpec% back, and re-adding those re-adds "
+    "the directories this test exists to empty. Covered on POSIX only, deliberately."))
 def test_no_interpreter_on_the_host_is_reported(pt, git_repo, tmp_path):
     """The bare host. PATH holds a `git config` stand-in and nothing else — no
     python3, python, py or uv — so every probe fails and the hook must say so.
@@ -295,6 +307,7 @@ def test_no_interpreter_on_the_host_is_reported(pt, git_repo, tmp_path):
     assert msg.read_text(encoding="utf-8") == "feat: something\n", "message untouched"
 
 
+@pytest.mark.skipif(SH is None, reason="no sh/bash this process can spawn")
 def test_pre_push_reports_a_crash_that_produces_no_findings(pt, git_repo, tmp_path):
     """`state check` exits non-zero on a real finding too, so the exit code alone
     cannot separate a finding from a crash. A crash prints no report; that pairing
@@ -307,7 +320,7 @@ def test_pre_push_reports_a_crash_that_produces_no_findings(pt, git_repo, tmp_pa
     git(git_repo, "config", "--unset", "cozyplan.runnerarg")
 
     r = subprocess.run(
-        ["/bin/sh", str(git_repo / ".githooks" / "pre-push")],
+        [SH, str(git_repo / ".githooks" / "pre-push")],
         capture_output=True, text=True, cwd=str(git_repo), stdin=subprocess.DEVNULL,
     )
     assert r.returncode == 0, "pre-push never blocks (ADR-0004)"
