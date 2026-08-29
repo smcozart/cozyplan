@@ -6,15 +6,11 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-28T19:29:56-05:00 |
-| Repo state | main @ 932be52 |
+| Last synced | 2026-08-28T19:35:16-05:00 |
+| Repo state | main @ 757a13a |
 
 ## Current Working State
 
-- the two-axis review's 12 findings are fixed: replay cannot duplicate into the tracker, roles removal is recorded as ADR-0009, and doctor now checks its own header against the parser — verified by `python3 -m pytest tests` (2026-08-19, bae0893)
-  ↳ session:s-audit-03 adr:0001 adr:0009 path:skills/cozyplan/scripts/plan_tool.py path:tests path:docs/adr
-- The provides/consumes graph flags unprovided contracts, on stdout and in the generated catalog — verified by `python3 -m pytest tests/test_index.py` (2026-08-19, d22801c)
-  ↳ session:s-audit-03 adr:0003 path:skills/cozyplan/scripts/plan_tool.py path:specs path:tests/test_index.py
 - plan_tool init installs a CI workflow that resolves plan_tool instead of hardcoding a path, so an adopting repo is not red on day one — verified by `gh run list --branch baseline-audit` (2026-08-19, 5c307c7)
   ↳ session:s-audit-03 adr:0004 path:skills/cozyplan/templates/state-check.yml path:.github/workflows
 - SYSTEM.md exists and every Contract string in its edge table is greppable in the source of both sides, which is ADR-0003's falsifiability test — verified by `grep -rl <each Contract> skills/ .githooks/ .github/` (2026-08-19, ba0dd16)
@@ -59,6 +55,9 @@
   ↳ adr:0004 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_trailers.py
 - state-check.yml runs green on a real runner: tests, plan validity, generated-file currency, doctor --strict, and state check --max-claim-age 50 — verified by `Re-anchored from aeed33a. gh run view 33223450682: on ubuntu-latest, macos-latest and windows-latest alike, Locate plan_tool, Test suite, Plans validate, Generated files are current, Hooks actually run and Wiring all passed. The single red step was State check, and its single problem was this claim having reached 54 commits against a limit of 50 — no defect, and nothing else in the ledger. Worth naming: this claim asserts the gate that measures it, so its own age is the only condition that can falsify it, and re-anchoring is what clears it.` (2026-08-28, 932be52)
   ↳ adr:0004
+- the two-axis review's 12 findings are fixed: replay cannot duplicate into the tracker, roles removal is recorded as ADR-0009, and doctor now checks its own header against the parser — verified by `python -m pytest tests => 304 passed, re-run at 757a13a. Re-anchored from bae0893 after the claim reached 51 commits; the proof is the command the claim already named, re-run rather than re-stamped.` (2026-08-28, 757a13a)
+  ↳ adr:0009
+- The provides/consumes graph flags unprovided contracts, on stdout and in the generated catalog — verified by `python -m pytest tests/test_index.py => 10 passed, re-run at 757a13a. Re-anchored from d22801c at 50 commits, before the next commit would have tipped it over and turned main red a second time.` (2026-08-28, 757a13a)
 
 ## In Development
 
