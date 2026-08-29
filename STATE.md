@@ -6,13 +6,11 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-28T19:24:45-05:00 |
-| Repo state | main @ 584e7f9 |
+| Last synced | 2026-08-28T19:29:56-05:00 |
+| Repo state | main @ 932be52 |
 
 ## Current Working State
 
-- state-check.yml runs green on a real runner: tests, plan validity, generated-file currency, doctor --strict, and state check --max-claim-age 50 — verified by `gh run view 32317371478` (2026-08-19, aeed33a)
-  ↳ session:s-audit-03 adr:0004 path:.github/workflows path:skills/cozyplan/scripts path:tests
 - the two-axis review's 12 findings are fixed: replay cannot duplicate into the tracker, roles removal is recorded as ADR-0009, and doctor now checks its own header against the parser — verified by `python3 -m pytest tests` (2026-08-19, bae0893)
   ↳ session:s-audit-03 adr:0001 adr:0009 path:skills/cozyplan/scripts/plan_tool.py path:tests path:docs/adr
 - The provides/consumes graph flags unprovided contracts, on stdout and in the generated catalog — verified by `python3 -m pytest tests/test_index.py` (2026-08-19, d22801c)
@@ -59,6 +57,8 @@
   ↳ session:s-enforce-01 path:skills/cozyplan/scripts
 - The git hooks report their own absence instead of exiting 0 in silence — verified by `Four tests in tests/test_trailers.py, all four first confirmed red against the old templates by stashing plan_tool.py: a recorded runner that left the host is named on stderr and the trailer still lands via the probe; a cozyplan.plantool pointing at nothing reports a half-wired clone; a host whose PATH holds only a git stub reports 'no Python 3.9+ resolved'; pre-push reports a crash that produced no findings, which the exit code alone cannot separate from a real state check FAIL. Every case exits 0, so neither hook can reject a commit or a push. The two that drive a real git commit run on every platform; the two that invoke a hook directly are POSIX-only and say why -- CI proved that by failing on windows-latest, where /bin/sh does not exist.` (2026-08-28, 584e7f9)
   ↳ adr:0004 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_trailers.py
+- state-check.yml runs green on a real runner: tests, plan validity, generated-file currency, doctor --strict, and state check --max-claim-age 50 — verified by `Re-anchored from aeed33a. gh run view 33223450682: on ubuntu-latest, macos-latest and windows-latest alike, Locate plan_tool, Test suite, Plans validate, Generated files are current, Hooks actually run and Wiring all passed. The single red step was State check, and its single problem was this claim having reached 54 commits against a limit of 50 — no defect, and nothing else in the ledger. Worth naming: this claim asserts the gate that measures it, so its own age is the only condition that can falsify it, and re-anchoring is what clears it.` (2026-08-28, 932be52)
+  ↳ adr:0004
 
 ## In Development
 
