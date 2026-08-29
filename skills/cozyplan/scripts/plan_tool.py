@@ -131,6 +131,23 @@ def fail(msg: str) -> int:
     return 1
 
 
+def under(root: Path, value) -> Path:
+    """A path flag is relative to --root, never to the working directory.
+
+    `--root` is how another repository reaches this tool from somewhere else: a
+    site records a claim into a workspace ledger that way. When a sibling flag
+    kept its own cwd-relative default, `--root` was accepted and not honoured,
+    and neither half failed. The read half reported an empty ledger -- 0 claims
+    against a log holding 65 -- and the write half wrote into the wrong one.
+
+    An absolute value is left alone, so every caller that already passes a full
+    path is unaffected. `cmd_hooks_git` and `cmd_init` computed `root / rel`
+    inline and were always correct; this is the same rule, named once.
+    """
+    p = Path(value)
+    return p if p.is_absolute() else root / p
+
+
 # ── plan write lock (exclusive, sibling <plan>.lock; Windows-safe) ────────────
 LOCK_STALE_SECONDS = 60
 LOCK_ACQUIRE_SECONDS = 15.0
@@ -1035,7 +1052,7 @@ def render_index_html(plans: list[dict], dangling: list, as_of: str = "",
 
 
 def cmd_index(args) -> int:
-    specs = Path(args.specs)
+    specs = under(Path(args.root), args.specs)
     if not specs.exists():
         return fail(f"specs dir not found: {specs}")
     plans = []
@@ -2936,7 +2953,7 @@ def cmd_issue(args) -> int:
 
 def cmd_state(args) -> int:
     root = Path(args.root)
-    log_path = Path(args.log)
+    log_path = under(root, args.log)
 
     if args.state_cmd == "add":
         if not args.what:
@@ -2980,6 +2997,16 @@ def cmd_state(args) -> int:
                 if near:
                     msg += "\n  did you mean:\n" + "\n".join(f"    {k!r}" for k in near[:3])
                 return fail(msg)
+        # A missing root is refused rather than created. mkdir(parents=True)
+        # used to fabricate a whole ledger at a stale path and report success, so
+        # the claim landed where nobody reads and the real ledger got nothing --
+        # a false positive, which is worse than a failure. The log's own parent is
+        # still created, because docs/ legitimately does not exist yet on the
+        # first claim in a repository.
+        if not root.is_dir():
+            return fail(f"--root {root} does not exist, so nothing was recorded. "
+                        f"A recorded path is a fact about the machine on the day "
+                        f"it was recorded; re-point it rather than create it.")
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with open(log_path, "a", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps(ev, ensure_ascii=False, sort_keys=True) + "\n")
@@ -2988,7 +3015,7 @@ def cmd_state(args) -> int:
         return 0
 
     if args.state_cmd == "migrate":
-        src = Path(args.file)
+        src = under(root, args.file)
         if not src.exists():
             return fail(f"state file not found: {src}")
         text = read(src)
@@ -3039,7 +3066,7 @@ def cmd_state(args) -> int:
                 for ev in items:
                     print(f"  {ev.get('what', '')}")
             return 0
-        out = Path(args.file)
+        out = under(root, args.file)
         # render TRUNCATES. A STATE.md without the marker was written by hand (or by
         # a pre-3.0 cozyplan), and rendering over it destroys every claim, gap, and
         # the How to Run block with no error and exit 0 — and `state check` then
@@ -3052,8 +3079,9 @@ def cmd_state(args) -> int:
                 f"so rendering would overwrite hand-authored content.\n"
                 f"       Migrate it first:  plan_tool state migrate --file {out}\n"
                 f"       Or discard it:     plan_tool state render --force")
-        rendered = render_state(root, projected, Path(args.adr_dir),
-                                args.specs, Path(args.journal), args.origin, args.project)
+        rendered = render_state(root, projected, under(root, args.adr_dir),
+                                str(under(root, args.specs)), under(root, args.journal),
+                                args.origin, args.project)
         if args.dry_run:
             print(rendered, end="")
             return 0
@@ -3062,11 +3090,11 @@ def cmd_state(args) -> int:
         print(f"state: rendered {out} from {n} projected entr(ies)")
         return 0
 
-    state_path = Path(args.file)
+    state_path = under(root, args.file)
     if not state_path.exists():
         return fail(f"state file not found: {state_path} - run the Init State workflow first")
     problems, warns, notes = check_state(
-        state_path, root, Path(args.adr_dir), Path(args.journal), args.max_drift,
+        state_path, root, under(root, args.adr_dir), under(root, args.journal), args.max_drift,
         args.max_claim_age)
     for note in notes:
         print(f"  note: {note}")
