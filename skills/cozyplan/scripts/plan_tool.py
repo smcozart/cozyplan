@@ -2349,6 +2349,27 @@ def refs_line(ev: dict) -> str:
     return "  ↳ " + " ".join(bits) if bits else ""
 
 
+def state_link(p, root: Path) -> str:
+    """Render a path for a link inside STATE.md: relative to the root, POSIX.
+
+    STATE.md is generated AND tracked, so a machine path in it is committed.
+    Making every path flag resolve against `--root` was right for reading and
+    wrong for writing: `state render --root <absolute>` then produced
+    `[/Users/somebody/dev/repo/specs/...]` and cozycode's ADR-0002 guard refused
+    the commit. The flag's whole purpose is to be called from elsewhere, so
+    "pass a relative root" is not a fix.
+
+    POSIX separators for the same reason: the render must be byte-identical on
+    Windows and macOS or the file conflicts every time it crosses machines.
+    """
+    q = Path(p)
+    try:
+        return q.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        # Genuinely outside the root. Leave it alone rather than emit `../..`.
+        return q.as_posix()
+
+
 def render_state(root: Path, projected: dict, adr_dir: Path,
                  specs: str, journal: Path, origin, project: str | None = None) -> str:
     ok_b, branch = git(root, "rev-parse", "--abbrev-ref", "HEAD")
@@ -2391,9 +2412,10 @@ def render_state(root: Path, projected: dict, adr_dir: Path,
         + (f" · {e['owner']}" if e.get("owner") else "")))
     section("Known Gaps / Risks", "gap", lambda e: f"- {e.get('what', '')}")
 
+    specs_l, adr_l = state_link(specs, root), state_link(adr_dir, root)
     lines.extend(["## Registers", "",
-                  f"- **Plans** — [{specs}/_index.html]({specs}/_index.html)",
-                  f"- **Decisions (ADRs)** — [{adr_dir}/]({adr_dir}/)"])
+                  f"- **Plans** — [{specs_l}/_index.html]({specs_l}/_index.html)",
+                  f"- **Decisions (ADRs)** — [{adr_l}/]({adr_l}/)"])
     # Derived, so the register cannot drift from the directory — the drift
     # `state check` caught by hand is now impossible by construction.
     if adr_dir.is_dir():
@@ -2404,8 +2426,9 @@ def render_state(root: Path, projected: dict, adr_dir: Path,
             title = next((ln[7:].strip() for ln in read(f).split("\n")
                           if ln.startswith("title: ")), "")
             lines.append(f"  - ADR-{m.group('num')} — {title or f.stem}")
+    journal_l = state_link(journal, root)
     lines.extend(["- **Components** — [SYSTEM.md](SYSTEM.md)",
-                  f"- **Ledger** — [{journal}]({journal})", ""])
+                  f"- **Ledger** — [{journal_l}]({journal_l})", ""])
     return "\n".join(lines).rstrip() + "\n"
 
 

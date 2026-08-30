@@ -61,3 +61,35 @@ def test_index_resolves_specs_under_root(pt, git_repo, monkeypatch):
     _cwd_elsewhere(git_repo, monkeypatch)
     assert pt.main(["index", "--root", str(git_repo)]) == 0, "looked for specs/ beside cwd"
     assert (git_repo / "specs" / "_index.json").exists()
+
+
+def test_render_writes_repo_relative_links_from_an_absolute_root(pt, git_repo, monkeypatch):
+    """STATE.md is generated AND tracked, so a machine path in it gets committed.
+
+    Making the path flags honour --root was right for reading and wrong for
+    writing. cozycode caught this: `state render --root <absolute>` produced
+    `[/Users/.../specs/_index.html]` and its ADR-0002 guard refused the commit.
+    Rendering from a cwd that is not the root is the case --root exists for, so
+    "pass a relative root" is not available as a fix.
+    """
+    _cwd_elsewhere(git_repo, monkeypatch)
+    assert pt.main(["state", "add", "--root", str(git_repo),
+                    "--kind", "claim", "--what", "a claim", "--proof", "a proof"]) == 0
+    assert pt.main(["state", "render", "--root", str(git_repo)]) == 0
+    body = (git_repo / "STATE.md").read_text(encoding="utf-8")
+    assert str(git_repo) not in body, "rendered an absolute path into a tracked file"
+    assert "[specs/_index.html](specs/_index.html)" in body
+    assert "[docs/adr/](docs/adr/)" in body
+    assert "[docs/journal.md](docs/journal.md)" in body
+
+
+def test_render_is_byte_identical_from_the_root_and_from_elsewhere(pt, git_repo, monkeypatch):
+    """A render that differs by where it ran conflicts every time it crosses machines."""
+    assert pt.main(["state", "add", "--root", str(git_repo),
+                    "--kind", "claim", "--what", "a claim", "--proof", "a proof"]) == 0
+    monkeypatch.chdir(git_repo)
+    assert pt.main(["state", "render", "--root", "."]) == 0
+    from_root = (git_repo / "STATE.md").read_text(encoding="utf-8")
+    _cwd_elsewhere(git_repo, monkeypatch)
+    assert pt.main(["state", "render", "--root", str(git_repo)]) == 0
+    assert (git_repo / "STATE.md").read_text(encoding="utf-8") == from_root

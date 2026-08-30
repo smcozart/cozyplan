@@ -6,8 +6,8 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-29T19:42:07-05:00 |
-| Repo state | main @ 518d601 |
+| Last synced | 2026-08-29T19:57:35-05:00 |
+| Repo state | main @ e55ad7b |
 
 ## Current Working State
 
@@ -62,6 +62,8 @@
   ↳ adr:0005 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_root_scoping.py
 - state check separates an unreachable subject from an unchanged one — verified by `canary: fix stashed => the 2 new tests fail; restored => 312 passed. Against cozycode's real ledger the same 33 fatal claims now split into 18 unreachable, 5 path-less, 21 changed` (2026-08-29)
   ↳ adr:0008 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_state_check.py
+- state render writes repo-relative POSIX links, whatever root it is given — verified by `canary: fix stashed => both new tests in test_root_scoping.py fail; restored => 314 passed. From outside cozycode, state render --root <absolute cozycode> => 0 absolute paths in STATE.md and byte-identical to the render from inside` (2026-08-29)
+  ↳ adr:0005 adr:0008 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_root_scoping.py
 
 ## In Development
 
@@ -104,8 +106,8 @@
 
 ## Registers
 
-- **Plans** — [/Users/seancozart/dev/cozyplan/specs/_index.html](/Users/seancozart/dev/cozyplan/specs/_index.html)
-- **Decisions (ADRs)** — [/Users/seancozart/dev/cozyplan/docs/adr/](/Users/seancozart/dev/cozyplan/docs/adr/)
+- **Plans** — [specs/_index.html](specs/_index.html)
+- **Decisions (ADRs)** — [docs/adr/](docs/adr/)
   - ADR-0001 — GitHub is the source of truth for work items; ADRs stay as files
   - ADR-0002 — The interview works the design tree in rounds, not one question at a time
   - ADR-0003 — The system map records cross-boundary contracts only
@@ -117,4 +119,4 @@
   - ADR-0009 — Role ownership maps are git's job, not cozyplan's
   - ADR-0010 — Fail open on the subject, fail loud on the apparatus
 - **Components** — [SYSTEM.md](SYSTEM.md)
-- **Ledger** — [/Users/seancozart/dev/cozyplan/docs/journal.md](/Users/seancozart/dev/cozyplan/docs/journal.md)
+- **Ledger** — [docs/journal.md](docs/journal.md)
