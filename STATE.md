@@ -6,13 +6,11 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-29T19:57:35-05:00 |
-| Repo state | main @ e55ad7b |
+| Last synced | 2026-08-29T20:05:07-05:00 |
+| Repo state | main @ 526bcd0 |
 
 ## Current Working State
 
-- plan_tool init installs a CI workflow that resolves plan_tool instead of hardcoding a path, so an adopting repo is not red on day one — verified by `gh run list --branch baseline-audit` (2026-08-19, 5c307c7)
-  ↳ session:s-audit-03 adr:0004 path:skills/cozyplan/templates/state-check.yml path:.github/workflows
 - SYSTEM.md exists and every Contract string in its edge table is greppable in the source of both sides, which is ADR-0003's falsifiability test — verified by `grep -rl <each Contract> skills/ .githooks/ .github/` (2026-08-19, ba0dd16)
   ↳ session:s-audit-03 adr:0003 path:SYSTEM.md path:skills/cozyplan/scripts/plan_tool.py
 - state-check is required on main: it gates merges and pushes for everyone except repo admins, whose pushes GitHub allows and announces as a logged bypass (enforce_admins is off) — verified by `gh api repos/smcozart/cozyplan/branches/main/protection; observed a real admin push report 'Bypassed rule violations'` (2026-08-19, 6f06ff9)
@@ -60,10 +58,12 @@
 - The provides/consumes graph flags unprovided contracts, on stdout and in the generated catalog — verified by `python -m pytest tests/test_index.py => 10 passed, re-run at 757a13a. Re-anchored from d22801c at 50 commits, before the next commit would have tipped it over and turned main red a second time.` (2026-08-28, 757a13a)
 - --root is honoured by the path flags beside it, and a root that does not exist is refused — verified by `tests/test_root_scoping.py, four tests, all four watched failing against the unpatched tool first. Real cases, run from /tmp against the cozycode workspace: 'state show --root <ws>' now prints 65 claims where it printed 0; 'state check --root <ws>' now prints OK where it printed 'state file not found: STATE.md'; 'state add --root <path that does not exist>' now refuses and creates nothing, where it fabricated the whole tree, wrote the claim and printed success at exit 0. Full suite 308 passed, 304 of them pre-existing. The gap this clears was filed 2026-08-24 and was still true; it named only 'state check', and the survey found the same shape in every state subcommand and in index.` (2026-08-29, ce00656)
   ↳ adr:0005 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_root_scoping.py
-- state check separates an unreachable subject from an unchanged one — verified by `canary: fix stashed => the 2 new tests fail; restored => 312 passed. Against cozycode's real ledger the same 33 fatal claims now split into 18 unreachable, 5 path-less, 21 changed` (2026-08-29)
+- state check separates an unreachable subject from an unchanged one — verified by `canary: fix stashed => the 2 new tests in test_state_check.py fail; restored => 312 passed. Against cozycode's ledger: 18 'subject is not tracked', 5 'unverified here', 21 'own code changed' (was 0/0/21)` (2026-08-29, e55ad7b)
   ↳ adr:0008 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_state_check.py
-- state render writes repo-relative POSIX links, whatever root it is given — verified by `canary: fix stashed => both new tests in test_root_scoping.py fail; restored => 314 passed. From outside cozycode, state render --root <absolute cozycode> => 0 absolute paths in STATE.md and byte-identical to the render from inside` (2026-08-29)
+- state render writes repo-relative POSIX links, whatever root it is given — verified by `canary: fix stashed => both new tests in test_root_scoping.py fail; restored => 314 passed. From outside cozycode, state render --root <absolute> => 0 absolute paths and byte-identical to the render from inside` (2026-08-29, 526bcd0)
   ↳ adr:0005 adr:0008 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_root_scoping.py
+- plan_tool init installs a CI workflow that resolves plan_tool instead of hardcoding a path, so an adopting repo is not red on day one — verified by `re-proved at 526bcd0: init --vendor into an empty git repo => .github/workflows/state-check.yml installed; it resolves via 'for c in .claude/skills/.../plan_tool.py ...' printing 'resolved plan_tool -> $c'; 0 absolute paths; state check in that repo => OK STATE.md: consistent with git` (2026-08-29, 526bcd0)
+  ↳ path:skills/cozyplan/templates/state-check.yml path:.github/workflows
 
 ## In Development
 
