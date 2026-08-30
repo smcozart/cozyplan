@@ -348,3 +348,32 @@ def test_a_tracked_subject_still_reports_a_real_change(pt, git_repo, capsys):
     out = capsys.readouterr().out
     assert "claim's own code changed since it was proved" in out
     assert "subject is not tracked" not in out
+
+
+def test_state_add_refuses_a_proof_that_cannot_be_rendered(pt, git_repo, capsys):
+    """render writes the proof inside backticks and STATE_CLAIM_RE reads it back
+    with [^`]+, so a backtick produces a line `state check` rejects as "claim does
+    not name its proof" -- true of the line, false of the claim.
+
+    Refused rather than stripped: the log is append-only, so a silently altered
+    proof is wrong forever.
+    """
+    assert pt.main(["state", "add", "--root", str(git_repo), "--kind", "claim",
+                    "--what", "a claim",
+                    "--proof", "ran `pytest tests` => 12 passed"]) != 0
+    assert "backtick" in capsys.readouterr().err
+    assert not (git_repo / "docs" / "state.ndjson").exists(), "wrote an unparseable entry"
+
+
+def test_state_add_refuses_a_newline_in_a_field(pt, git_repo, capsys):
+    assert pt.main(["state", "add", "--root", str(git_repo), "--kind", "claim",
+                    "--what", "a claim", "--proof", "line one\nline two"]) != 0
+    assert "newline" in capsys.readouterr().err
+
+
+def test_state_add_still_accepts_an_ordinary_proof(pt, git_repo):
+    """The guard must not narrow what a real proof may say."""
+    assert pt.main(["state", "add", "--root", str(git_repo), "--kind", "claim",
+                    "--what", "a claim",
+                    "--proof", "pytest tests => 12 passed; curl -o /dev/null => 200"]) == 0
+    assert (git_repo / "docs" / "state.ndjson").exists()

@@ -3015,6 +3015,22 @@ def cmd_state(args) -> int:
     if args.state_cmd == "add":
         if not args.what:
             return fail("--what is required")
+        # `render_state` writes the proof inside backticks and STATE_CLAIM_RE reads
+        # it back with [^`]+, so a backtick in the proof produces a line that cannot
+        # be parsed. `state check` then reports "claim does not name its proof",
+        # which is true of the LINE and false of the claim -- the work was done and
+        # the recording is unreadable. Refused here rather than stripped: the log is
+        # append-only, so a silently altered proof is wrong forever, and quietly
+        # recording something the operator did not write is the failure this whole
+        # layer exists to prevent. A newline does the same thing to a one-line entry.
+        for field in ("what", "proof"):
+            val = getattr(args, field, None) or ""
+            bad = next((c for c in ("`", "\n", "\r") if c in val), None)
+            if bad:
+                shown = {"`": "a backtick", "\n": "a newline", "\r": "a carriage return"}[bad]
+                return fail(f"--{field} contains {shown}, which STATE.md cannot render "
+                            f"as one parseable line. Rewrite it without that character "
+                            f"-- name the command in plain text.")
         _, who = git(root, "config", "user.name")
         ev = {"kind": args.kind, "key": args.key or args.what[:60], "what": args.what,
               "by": who or "",

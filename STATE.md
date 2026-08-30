@@ -6,8 +6,8 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-29T20:51:10-05:00 |
-| Repo state | main @ 66ac71c |
+| Last synced | 2026-08-29T21:02:53-05:00 |
+| Repo state | main @ f6b471c |
 
 ## Current Working State
 
@@ -66,6 +66,8 @@
   ↳ path:SYSTEM.md path:skills/cozyplan/scripts/plan_tool.py
 - the shipped skills tree carries no absolute path, so a repository that vendors it does not go red on its own guard — verified by `canary: appended a /Users-shaped comment to skills/cozyplan/SKILL.md => test_shipped_skills_carry_no_absolute_path failed naming the file and line; reverted => passed. Full suite 315 passed. The defect it guards was real: cozycode refused the re-vendoring commit on a docstring in plan_tool.py that only illustrated a bad path` (2026-08-29, 66ac71c)
   ↳ adr:0004 path:skills path:tests/test_init.py
+- state add refuses a proof or capability text that STATE.md cannot render as one parseable line — verified by `canary: guard stashed => the two refusal tests fail and an unparseable entry reaches the log; restored => refused with exit non-zero, nothing written, and the ordinary-proof control still passes. Full suite 318 passed. The defect was live: a proof containing a backtick rendered a line state check rejected as not naming its proof` (2026-08-29, f6b471c)
+  ↳ adr:0005 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_state_check.py
 
 ## In Development
 
