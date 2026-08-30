@@ -2354,10 +2354,14 @@ def state_link(p, root: Path) -> str:
 
     STATE.md is generated AND tracked, so a machine path in it is committed.
     Making every path flag resolve against `--root` was right for reading and
-    wrong for writing: `state render --root <absolute>` then produced
-    `[/Users/somebody/dev/repo/specs/...]` and cozycode's ADR-0002 guard refused
-    the commit. The flag's whole purpose is to be called from elsewhere, so
-    "pass a relative root" is not a fix.
+    wrong for writing: `state render --root <absolute>` then wrote that absolute
+    root back out inside the Registers links, and cozycode's ADR-0002 guard
+    refused the commit. The flag's whole purpose is to be called from elsewhere,
+    so "pass a relative root" is not a fix.
+
+    This docstring carries no example of the bad output on purpose. A file that
+    is vendored into other repositories must itself pass their absolute-path
+    guards, and the first draft of this comment did not.
 
     POSIX separators for the same reason: the render must be byte-identical on
     Windows and macOS or the file conflicts every time it crosses machines.

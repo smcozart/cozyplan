@@ -359,3 +359,31 @@ def test_a_source_checkout_still_vendors_normally(pt, git_repo, tmp_path):
     assert (target / ".claude" / "skills" / "cozyplan" / "scripts" / "plan_tool.py").exists()
     body = (target / ".claude" / "skills" / "VENDORED.md").read_text(encoding="utf-8")
     assert "cozyplan" in body
+
+
+def test_shipped_skills_carry_no_absolute_path():
+    """`init --vendor` copies skills/ into another repository, so anything in this
+    tree has to pass THAT repository's guards, not just this one's.
+
+    cozycode bans absolute paths in tracked files (its ADR-0002) and enforces it at
+    pre-commit. A docstring here that merely illustrated a bad path was enough to
+    refuse the re-vendoring commit there. This repository has no such guard of its
+    own, which is why the failure surfaced downstream instead of here.
+    """
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    bad = re.compile(r"(/Users/|/home/|/Volumes/|[A-Za-z]:\\\\)")
+    offenders = []
+    for f in sorted((root / "skills").rglob("*")):
+        if not f.is_file() or f.suffix in {".png", ".jpg", ".gif", ".ico"}:
+            continue
+        try:
+            text = f.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        for n, line in enumerate(text.splitlines(), 1):
+            if bad.search(line):
+                offenders.append(f"{f.relative_to(root)}:{n}: {line.strip()[:90]}")
+    assert not offenders, "absolute paths in the vendored tree:\n" + "\n".join(offenders)

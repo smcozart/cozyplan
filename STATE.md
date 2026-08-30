@@ -6,8 +6,8 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-29T20:11:17-05:00 |
-| Repo state | main @ 38ef9c7 |
+| Last synced | 2026-08-29T20:51:10-05:00 |
+| Repo state | main @ 66ac71c |
 
 ## Current Working State
 
@@ -64,6 +64,8 @@
   ↳ path:.github/workflows
 - SYSTEM.md exists and every Contract string in its edge table is greppable in the source of both sides, which is ADR-0003's falsifiability test — verified by `re-proved at 38ef9c7: extracted all 8 Contract cells from the edge table and grepped each across skills/ .githooks/ .github/ => 8/8 resolve. Three first read as missing; that was a parser artefact on cells holding nested backticks, not absent strings, and each resolves when matched literally` (2026-08-29, 38ef9c7)
   ↳ path:SYSTEM.md path:skills/cozyplan/scripts/plan_tool.py
+- the shipped skills tree carries no absolute path, so a repository that vendors it does not go red on its own guard — verified by `canary: appended a /Users-shaped comment to skills/cozyplan/SKILL.md => test_shipped_skills_carry_no_absolute_path failed naming the file and line; reverted => passed. Full suite 315 passed. The defect it guards was real: cozycode refused the re-vendoring commit on a docstring in plan_tool.py that only illustrated a bad path` (2026-08-29, 66ac71c)
+  ↳ adr:0004 path:skills path:tests/test_init.py
 
 ## In Development
 
