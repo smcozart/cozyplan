@@ -6,15 +6,11 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-29T20:05:07-05:00 |
-| Repo state | main @ 526bcd0 |
+| Last synced | 2026-08-29T20:11:17-05:00 |
+| Repo state | main @ 38ef9c7 |
 
 ## Current Working State
 
-- SYSTEM.md exists and every Contract string in its edge table is greppable in the source of both sides, which is ADR-0003's falsifiability test — verified by `grep -rl <each Contract> skills/ .githooks/ .github/` (2026-08-19, ba0dd16)
-  ↳ session:s-audit-03 adr:0003 path:SYSTEM.md path:skills/cozyplan/scripts/plan_tool.py
-- state-check is required on main: it gates merges and pushes for everyone except repo admins, whose pushes GitHub allows and announces as a logged bypass (enforce_admins is off) — verified by `gh api repos/smcozart/cozyplan/branches/main/protection; observed a real admin push report 'Bypassed rule violations'` (2026-08-19, 6f06ff9)
-  ↳ session:s-audit-03 adr:0004 path:.github/workflows
 - Every hook can demonstrate it ran: selftest drives all four with a payload they must react to and fails on silence — verified by `python3 skills/cozyplan/scripts/plan_tool.py hooks selftest --shipped` (2026-08-24, 39993cd)
   ↳ session:s-enforce-01 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:hooks/run-hook.sh path:tests/test_hooks_selftest.py
 - doctor keeps the record and the outcome apart: a registered-but-inert hook layer reads ok on 'hooks registered' and gap on 'hooks observed' — verified by `python3 -m pytest tests/test_doctor.py tests/test_hooks_selftest.py` (2026-08-24, 39993cd)
@@ -64,6 +60,10 @@
   ↳ adr:0005 adr:0008 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_root_scoping.py
 - plan_tool init installs a CI workflow that resolves plan_tool instead of hardcoding a path, so an adopting repo is not red on day one — verified by `re-proved at 526bcd0: init --vendor into an empty git repo => .github/workflows/state-check.yml installed; it resolves via 'for c in .claude/skills/.../plan_tool.py ...' printing 'resolved plan_tool -> $c'; 0 absolute paths; state check in that repo => OK STATE.md: consistent with git` (2026-08-29, 526bcd0)
   ↳ path:skills/cozyplan/templates/state-check.yml path:.github/workflows
+- state-check is required on main: it gates merges and pushes for everyone except repo admins, whose pushes GitHub allows and announces as a logged bypass (enforce_admins is off) — verified by `re-proved at 38ef9c7: gh api repos/smcozart/cozyplan/branches/main/protection => required_status_checks.contexts ['state-check'], strict false, enforce_admins false. The bypass half was observed live today: pushing 526bcd0 as admin printed 'Required status check "state-check" is expected.' and was allowed` (2026-08-29, 38ef9c7)
+  ↳ path:.github/workflows
+- SYSTEM.md exists and every Contract string in its edge table is greppable in the source of both sides, which is ADR-0003's falsifiability test — verified by `re-proved at 38ef9c7: extracted all 8 Contract cells from the edge table and grepped each across skills/ .githooks/ .github/ => 8/8 resolve. Three first read as missing; that was a parser artefact on cells holding nested backticks, not absent strings, and each resolves when matched literally` (2026-08-29, 38ef9c7)
+  ↳ path:SYSTEM.md path:skills/cozyplan/scripts/plan_tool.py
 
 ## In Development
 
