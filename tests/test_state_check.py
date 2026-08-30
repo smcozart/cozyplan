@@ -377,3 +377,66 @@ def test_state_add_still_accepts_an_ordinary_proof(pt, git_repo):
                     "--what", "a claim",
                     "--proof", "pytest tests => 12 passed; curl -o /dev/null => 200"]) == 0
     assert (git_repo / "docs" / "state.ndjson").exists()
+
+
+def _many_claims(repo, n, sha):
+    return [f"- claim {i} — verified by `pytest tests` (2026-08-18, {sha})"
+            for i in range(n)]
+
+
+def test_history_is_read_once_not_once_per_claim(pt, git_repo):
+    """The check cost 18 ms per claim, all of it git subprocess spawn, so a growing
+    ledger eventually made a pre-commit hook unusable: 400 claims took 7 s and
+    10,000 would have taken three minutes.
+
+    This asserts the shape rather than a wall-clock number, which would be flaky on
+    a loaded runner: git is invoked a bounded number of times no matter how many
+    claims there are. 60 claims against 20 is a 3x difference in work and must not
+    be a 3x difference in git calls.
+    """
+    calls = []
+    real = pt.git
+
+    def counting(root, *argv):
+        calls.append(argv[0])
+        return real(root, *argv)
+
+    sha = head(git_repo)
+    counts = {}
+    for n in (20, 60):
+        write_state(git_repo, sha, claims=_many_claims(git_repo, n, sha))
+        calls.clear()
+        pt.git = counting
+        try:
+            run(pt, git_repo)
+        finally:
+            pt.git = real
+        counts[n] = len(calls)
+    assert counts[60] <= counts[20] + 2, (
+        f"git calls grew with claim count: {counts} — the history is being read "
+        f"per claim again")
+
+
+def test_a_sha_that_is_not_an_ancestor_is_named_as_such(pt, git_repo, capsys):
+    """Resolving age from one rev-list makes "unknown object" and "real commit on
+    another branch" the same lookup miss. They are different reports and stayed so.
+    """
+    sha = head(git_repo)
+    git(git_repo, "checkout", "-q", "-b", "sidebranch")
+    (git_repo / "side.txt").write_text("x\n", encoding="utf-8")
+    git(git_repo, "add", "-A")
+    git(git_repo, "commit", "-m", "on the side")
+    side = head(git_repo)
+    git(git_repo, "checkout", "-q", "main")
+    write_state(git_repo, sha, claims=[
+        f"- a claim — verified by `pytest tests` (2026-08-18, {side})"])
+    assert run(pt, git_repo) != 0
+    assert "not an ancestor of HEAD" in capsys.readouterr().out
+
+
+def test_an_unknown_sha_is_still_reported_as_unknown(pt, git_repo, capsys):
+    sha = head(git_repo)
+    write_state(git_repo, sha, claims=[
+        "- a claim — verified by `pytest tests` (2026-08-18, deadbee)"])
+    assert run(pt, git_repo) != 0
+    assert "not a commit in this repo" in capsys.readouterr().out

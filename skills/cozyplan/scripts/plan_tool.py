@@ -2029,6 +2029,93 @@ def rev_count(root: Path, rng: str) -> int | None:
     return int(out) if ok and out.isdigit() else None
 
 
+class HistoryIndex:
+    """Three git calls that answer, for every claim, what the checker used to ask
+    git about each claim separately.
+
+    `state check` cost 18 ms per claim, all of it subprocess spawn: one
+    `rev-list --count` and one `diff`/`ls-files` per claim. That is linear in the
+    ledger, so 400 claims took 7 s and 10,000 would take three minutes -- in a
+    pre-commit hook and a CI gate. Measured, not guessed: the ndjson itself renders
+    5,000 entries in 0.09 s, so the file was never the limit and a different store
+    would not have moved this number.
+
+    Built once per run:
+
+      depth        full sha -> commits between it and HEAD. One `rev-list HEAD`.
+      last_change  path -> the smallest depth at which it changed. One `log`.
+      tracked      every path git carries here. One `ls-files`.
+
+    `last_change` is CONSERVATIVE by construction. A path whose most recent change
+    is older than the claim is identical in both trees, so "unchanged" is exact and
+    there are no false negatives. A path changed and then reverted reports as
+    changed, which over-warns; `-m` is passed so a merge's files are attributed
+    rather than skipped, for the same reason. Over-warning is a nuisance. Under-
+    warning is the defect this whole check exists to prevent (ADR-0010).
+    """
+
+    def __init__(self, root: Path):
+        self.ok = False
+        self.depth: dict[str, int] = {}
+        self.last_change: dict[str, int] = {}
+        self.tracked: set[str] = set()
+        self._short: dict[str, str] = {}
+
+        ok_r, revs = git(root, "rev-list", "HEAD")
+        if not ok_r:
+            return
+        order = [s for s in revs.split() if s]
+        self.depth = {s: i for i, s in enumerate(order)}
+        # Claims record short shas. Resolve by prefix rather than shelling out per
+        # claim, which is the cost this class exists to remove.
+        for s in order:
+            for n in (7, 8, 9, 10, 12):
+                self._short.setdefault(s[:n], s)
+
+        ok_l, log = git(root, "log", "--format=%x00%H", "--name-only", "-m", "HEAD")
+        if not ok_l:
+            return
+        cur = None
+        for line in log.splitlines():
+            if line.startswith("\x00"):
+                cur = self.depth.get(line[1:].strip())
+            elif line.strip() and cur is not None:
+                p = line.strip()
+                if p not in self.last_change or cur < self.last_change[p]:
+                    self.last_change[p] = cur
+
+        ok_t, files = git(root, "ls-files")
+        if not ok_t:
+            return
+        self.tracked = {p for p in files.splitlines() if p.strip()}
+        self.ok = True
+
+    def age(self, sha: str) -> int | None:
+        """Commits since `sha`, or None when this history cannot answer -- which is
+        not zero, and must never be read as one."""
+        full = self._short.get(sha) or (sha if sha in self.depth else None)
+        return self.depth.get(full) if full else None
+
+    def is_tracked(self, path: str) -> bool:
+        p = path.rstrip("/")
+        return p in self.tracked or any(t.startswith(p + "/") for t in self.tracked)
+
+    def changed_since(self, paths: list[str], age: int) -> list[str]:
+        """Every file under `paths` that changed in the `age` commits since the claim.
+
+        Every file, not the first one found: the warning reports a COUNT, and a count
+        that means "how many of the claim's paths matched" while reading "how many
+        files changed" is a number that lies quietly. Sorted so two runs of the same
+        check name the same example.
+        """
+        hits = set()
+        stems = [p.rstrip("/") for p in paths]
+        for f, d in self.last_change.items():
+            if d < age and any(f == q or f.startswith(q + "/") for q in stems):
+                hits.add(f)
+        return sorted(hits)
+
+
 def section_body(text: str, heading: str) -> str:
     """The lines under a `## heading`, up to the next heading of the same level."""
     m = re.search(rf"^##\s+{re.escape(heading)}\s*$(?P<body>.*?)(?=^##\s|\Z)",
@@ -2105,6 +2192,8 @@ def check_state(state_path: Path, root: Path, adr_dir: Path, journal: Path,
             claims.append((ln, trail if trail.strip().startswith("\u21b3") else ""))
     if not claims:
         notes.append("Current Working State is empty")
+    # One index for every claim, instead of two git calls per claim. See HistoryIndex.
+    hist = HistoryIndex(root) if in_git else None
     for ln, trail in claims:
         m = STATE_CLAIM_RE.match(ln.strip())
         if not m:
@@ -2122,15 +2211,22 @@ def check_state(state_path: Path, root: Path, adr_dir: Path, journal: Path,
                          f"cannot be computed: {m.group('what')[:60]}")
             continue
         if in_git:
-            ok_obj, _ = git(root, "cat-file", "-e", f"{sha}^{{commit}}")
-            if not ok_obj:
-                problems.append(f"claim cites {sha}, which is not a commit in this repo: "
-                                f"{m.group('what')[:60]}")
+            if hist is None or not hist.ok:
+                warns.append(f"cannot read this repository's history, so staleness "
+                             f"cannot be computed: {m.group('what')[:60]}")
                 continue
-            age = rev_count(root, f"{sha}..HEAD")
+            age = hist.age(sha)
             if age is None:
-                problems.append(f"cannot compute claim age: `git rev-list --count "
-                                f"{sha}..HEAD` failed: {m.group('what')[:60]}")
+                # Not in the ancestry of HEAD. Either the object is unknown, or it is
+                # real and sits on another branch, and those are different reports.
+                ok_obj, _ = git(root, "cat-file", "-e", f"{sha}^{{commit}}")
+                if ok_obj:
+                    problems.append(f"claim cites {sha}, which is a commit here but not "
+                                    f"an ancestor of HEAD: {m.group('what')[:60]}")
+                else:
+                    problems.append(f"claim cites {sha}, which is not a commit in this "
+                                    f"repo: {m.group('what')[:60]}")
+                continue
             aged_out = False
             if age:
                 # A claim nobody re-proves is the thing this layer exists to prevent,
@@ -2163,27 +2259,19 @@ def check_state(state_path: Path, root: Path, adr_dir: Path, journal: Path,
                     warns.append(
                         f"claim names no path, so whether its subject changed cannot be "
                         f"checked — it is unverified here, not clean: {m.group('what')[:60]}")
+            elif not any(hist.is_tracked(p) for p in paths):
+                if aged_out:
+                    warns.append(
+                        f"claim's subject is not tracked in this repo, so whether it "
+                        f"changed cannot be checked (e.g. {paths[0]}): "
+                        f"{m.group('what')[:60]}")
             else:
-                ok_t, tracked = git(root, "ls-files", "--", *paths)
-                seen = [c for c in tracked.splitlines() if c.strip()] if ok_t else []
-                if not seen:
-                    if aged_out:
-                        warns.append(
-                            f"claim's subject is not tracked in this repo, so whether it "
-                            f"changed cannot be checked (e.g. {paths[0]}): "
-                            f"{m.group('what')[:60]}")
-                else:
-                    ok_d, changed = git(root, "diff", "--name-only", f"{sha}..HEAD",
-                                        "--", *paths)
-                    if not ok_d:
-                        warns.append(f"cannot check whether the claim's own code changed: "
-                                     f"`git diff` failed: {m.group('what')[:60]}")
-                    touched = [c for c in changed.splitlines() if c.strip()] if ok_d else []
-                    if touched:
-                        warns.append(
-                            f"claim's own code changed since it was proved "
-                            f"({len(touched)} file(s), e.g. {touched[0]}): "
-                            f"{m.group('what')[:60]}")
+                touched = hist.changed_since(paths, age or 0)
+                if touched:
+                    warns.append(
+                        f"claim's own code changed since it was proved "
+                        f"({len(touched)} file(s), e.g. {touched[0]}): "
+                        f"{m.group('what')[:60]}")
 
     # 5. The ADR register against what git will actually hand a clone.
     #
