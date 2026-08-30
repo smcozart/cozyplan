@@ -292,3 +292,59 @@ def test_registers_citing_an_adr_with_no_file_at_all_still_fails(pt, git_repo, c
     write_state(git_repo, head(git_repo), branch=branch_of(git_repo), adrs=["0099"])
     assert run(pt, git_repo) == 1
     assert "has no file in" in capsys.readouterr().out
+
+
+def _age_out(repo, n=3):
+    """Push HEAD n commits past the claim so --max-claim-age 1 fires."""
+    for i in range(n):
+        (repo / f"unrelated{i}.md").write_text("x\n", encoding="utf-8")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-m", f"unrelated {i}")
+
+
+def test_an_aged_claim_whose_subject_this_repo_cannot_see_says_so(pt, git_repo, capsys):
+    """ADR-0018 rule 5. `git diff` returns nothing for an untracked path, and nothing
+    is what an untouched path returns too. Found live in cozycode: 18 of 35 aged
+    claims pointed into a gitignored sibling repo and every one read clean."""
+    sha = head(git_repo)
+    write_state(git_repo, sha, claims=_claim_with_paths(sha, "cozysites/sites/reference"))
+    _age_out(git_repo)
+    assert run(pt, git_repo, "--max-claim-age", "1") != 0
+    out = capsys.readouterr().out
+    assert "subject is not tracked in this repo" in out
+    assert "own code changed" not in out
+
+
+def test_an_aged_claim_with_no_path_is_called_unverified_not_clean(pt, git_repo, capsys):
+    sha = head(git_repo)
+    write_state(git_repo, sha)
+    _age_out(git_repo)
+    assert run(pt, git_repo, "--max-claim-age", "1") != 0
+    assert "unverified here, not clean" in capsys.readouterr().out
+
+
+def test_a_healthy_ledger_gains_no_new_noise(pt, git_repo, capsys):
+    """Both notices are gated on the age limit already firing, because a path-less
+    claim producing noise on a healthy ledger is a decision this suite already made."""
+    sha = head(git_repo)
+    write_state(git_repo, sha)
+    _age_out(git_repo)
+    assert run(pt, git_repo) == 0
+    out = capsys.readouterr().out
+    assert "unverified here, not clean" not in out
+    assert "subject is not tracked" not in out
+
+
+def test_a_tracked_subject_still_reports_a_real_change(pt, git_repo, capsys):
+    """The unreachable branch must not swallow the signal it sits in front of."""
+    sha = head(git_repo)
+    write_state(git_repo, sha, claims=_claim_with_paths(sha, "src/ingest"))
+    (git_repo / "src").mkdir()
+    (git_repo / "src" / "ingest").write_text("changed\n", encoding="utf-8")
+    git(git_repo, "add", "-A")
+    git(git_repo, "commit", "-m", "touch ingest")
+    _age_out(git_repo)
+    assert run(pt, git_repo, "--max-claim-age", "1") != 0
+    out = capsys.readouterr().out
+    assert "claim's own code changed since it was proved" in out
+    assert "subject is not tracked" not in out

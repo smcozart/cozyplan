@@ -2131,29 +2131,59 @@ def check_state(state_path: Path, root: Path, adr_dir: Path, journal: Path,
             if age is None:
                 problems.append(f"cannot compute claim age: `git rev-list --count "
                                 f"{sha}..HEAD` failed: {m.group('what')[:60]}")
-            elif age:
+            aged_out = False
+            if age:
                 # A claim nobody re-proves is the thing this layer exists to prevent,
                 # so it can be made fatal rather than only mentioned.
                 msg = f"claim proved {age} commit(s) ago: {m.group('what')[:60]}"
                 if max_claim_age is not None and age > max_claim_age:
                     problems.append(f"{msg} (limit {max_claim_age}) — re-run its proof "
                                     f"and re-anchor it, or record it as a gap")
+                    aged_out = True
                 else:
                     notes.append(msg)
             # Commit distance says a claim is old. Path intersection says it is
             # probably wrong, which is the difference between a count and a signal:
             # a test run or a spike touches nothing a claim depends on and stays quiet.
+            #
+            # But `git diff` returns nothing for a path this repo does not track, and
+            # nothing is exactly what an untouched path returns. Silence therefore
+            # means two different things, and the caller cannot tell which — the
+            # shape ADR-0018 rule 5 names: never answer "empty" when you mean
+            # "unreachable". Found live in cozycode, where 18 of 35 aged claims point
+            # into a gitignored sibling repository and every one of them read clean.
+            #
+            # Both notices are gated on the claim already being past the age limit.
+            # A path-less claim producing noise on a healthy ledger is a decision this
+            # suite already made deliberately; this only adds detail where a human is
+            # being asked to re-prove something and needs to know what the tool saw.
             paths = re.findall(r"path:(\S+)", trail)
-            if paths:
-                ok_d, changed = git(root, "diff", "--name-only", f"{sha}..HEAD", "--", *paths)
-                if not ok_d:
-                    warns.append(f"cannot check whether the claim's own code changed: "
-                                 f"`git diff` failed: {m.group('what')[:60]}")
-                touched = [c for c in changed.splitlines() if c.strip()] if ok_d else []
-                if touched:
+            if not paths:
+                if aged_out:
                     warns.append(
-                        f"claim's own code changed since it was proved "
-                        f"({len(touched)} file(s), e.g. {touched[0]}): {m.group('what')[:60]}")
+                        f"claim names no path, so whether its subject changed cannot be "
+                        f"checked — it is unverified here, not clean: {m.group('what')[:60]}")
+            else:
+                ok_t, tracked = git(root, "ls-files", "--", *paths)
+                seen = [c for c in tracked.splitlines() if c.strip()] if ok_t else []
+                if not seen:
+                    if aged_out:
+                        warns.append(
+                            f"claim's subject is not tracked in this repo, so whether it "
+                            f"changed cannot be checked (e.g. {paths[0]}): "
+                            f"{m.group('what')[:60]}")
+                else:
+                    ok_d, changed = git(root, "diff", "--name-only", f"{sha}..HEAD",
+                                        "--", *paths)
+                    if not ok_d:
+                        warns.append(f"cannot check whether the claim's own code changed: "
+                                     f"`git diff` failed: {m.group('what')[:60]}")
+                    touched = [c for c in changed.splitlines() if c.strip()] if ok_d else []
+                    if touched:
+                        warns.append(
+                            f"claim's own code changed since it was proved "
+                            f"({len(touched)} file(s), e.g. {touched[0]}): "
+                            f"{m.group('what')[:60]}")
 
     # 5. The ADR register against what git will actually hand a clone.
     #

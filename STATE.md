@@ -6,8 +6,8 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-29T18:31:10-05:00 |
-| Repo state | main @ ce00656 |
+| Last synced | 2026-08-29T19:42:07-05:00 |
+| Repo state | main @ 518d601 |
 
 ## Current Working State
 
@@ -60,6 +60,8 @@
 - The provides/consumes graph flags unprovided contracts, on stdout and in the generated catalog — verified by `python -m pytest tests/test_index.py => 10 passed, re-run at 757a13a. Re-anchored from d22801c at 50 commits, before the next commit would have tipped it over and turned main red a second time.` (2026-08-28, 757a13a)
 - --root is honoured by the path flags beside it, and a root that does not exist is refused — verified by `tests/test_root_scoping.py, four tests, all four watched failing against the unpatched tool first. Real cases, run from /tmp against the cozycode workspace: 'state show --root <ws>' now prints 65 claims where it printed 0; 'state check --root <ws>' now prints OK where it printed 'state file not found: STATE.md'; 'state add --root <path that does not exist>' now refuses and creates nothing, where it fabricated the whole tree, wrote the claim and printed success at exit 0. Full suite 308 passed, 304 of them pre-existing. The gap this clears was filed 2026-08-24 and was still true; it named only 'state check', and the survey found the same shape in every state subcommand and in index.` (2026-08-29, ce00656)
   ↳ adr:0005 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_root_scoping.py
+- state check separates an unreachable subject from an unchanged one — verified by `canary: fix stashed => the 2 new tests fail; restored => 312 passed. Against cozycode's real ledger the same 33 fatal claims now split into 18 unreachable, 5 path-less, 21 changed` (2026-08-29)
+  ↳ adr:0008 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_state_check.py
 
 ## In Development
 
@@ -102,8 +104,8 @@
 
 ## Registers
 
-- **Plans** — [specs/_index.html](specs/_index.html)
-- **Decisions (ADRs)** — [docs/adr/](docs/adr/)
+- **Plans** — [/Users/seancozart/dev/cozyplan/specs/_index.html](/Users/seancozart/dev/cozyplan/specs/_index.html)
+- **Decisions (ADRs)** — [/Users/seancozart/dev/cozyplan/docs/adr/](/Users/seancozart/dev/cozyplan/docs/adr/)
   - ADR-0001 — GitHub is the source of truth for work items; ADRs stay as files
   - ADR-0002 — The interview works the design tree in rounds, not one question at a time
   - ADR-0003 — The system map records cross-boundary contracts only
@@ -115,4 +117,4 @@
   - ADR-0009 — Role ownership maps are git's job, not cozyplan's
   - ADR-0010 — Fail open on the subject, fail loud on the apparatus
 - **Components** — [SYSTEM.md](SYSTEM.md)
-- **Ledger** — [docs/journal.md](docs/journal.md)
+- **Ledger** — [/Users/seancozart/dev/cozyplan/docs/journal.md](/Users/seancozart/dev/cozyplan/docs/journal.md)
