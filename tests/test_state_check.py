@@ -422,12 +422,17 @@ def test_a_sha_that_is_not_an_ancestor_is_named_as_such(pt, git_repo, capsys):
     another branch" the same lookup miss. They are different reports and stayed so.
     """
     sha = head(git_repo)
+    # Never hardcode "main". A runner whose init.defaultBranch is something else
+    # makes the checkout fail, the test stay on the side branch, and the assertion
+    # pass for the wrong reason -- which is how this first reached CI.
+    base = branch_of(git_repo)
     git(git_repo, "checkout", "-q", "-b", "sidebranch")
     (git_repo / "side.txt").write_text("x\n", encoding="utf-8")
     git(git_repo, "add", "-A")
     git(git_repo, "commit", "-m", "on the side")
     side = head(git_repo)
-    git(git_repo, "checkout", "-q", "main")
+    git(git_repo, "checkout", "-q", base)
+    assert branch_of(git_repo) == base, "could not return to the base branch"
     write_state(git_repo, sha, claims=[
         f"- a claim — verified by `pytest tests` (2026-08-18, {side})"])
     assert run(pt, git_repo) != 0
