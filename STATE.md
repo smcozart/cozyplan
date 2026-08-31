@@ -6,17 +6,13 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-31T11:34:58-05:00 |
-| Repo state | main @ 3103a97 |
+| Last synced | 2026-08-31T11:37:40-05:00 |
+| Repo state | main @ 376eca4 |
 
 ## Current Working State
 
-- Every hook can demonstrate it ran: selftest drives all four with a payload they must react to and fails on silence — verified by `python3 skills/cozyplan/scripts/plan_tool.py hooks selftest --shipped` (2026-08-24, 39993cd)
-  ↳ session:s-enforce-01 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:hooks/run-hook.sh path:tests/test_hooks_selftest.py
 - doctor keeps the record and the outcome apart: a registered-but-inert hook layer reads ok on 'hooks registered' and gap on 'hooks observed' — verified by `python3 -m pytest tests/test_doctor.py tests/test_hooks_selftest.py` (2026-08-24, 39993cd)
   ↳ session:s-enforce-01 adr:0010 adr:0004 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_doctor.py path:tests/test_hooks_selftest.py
-- Hooks resolve an interpreter at call time and fail loud when none does — the PreToolUse guard exits 2 rather than passing a plan write unchecked — verified by `echo '{}' | PATH=/nonexistent /bin/sh hooks/run-hook.sh skills/cozyplan/scripts/hooks/guard_plan_edit.py 2` (2026-08-24, 39993cd)
-  ↳ session:s-enforce-01 adr:0010 path:hooks/run-hook.sh path:hooks/hooks.json
 - Both hook registration paths write the same run-hook.sh command, and a project-internal install is registered against ${CLAUDE_PROJECT_DIR} so a committed settings.json survives a clone — verified by `python3 -m pytest tests/test_hooks_install.py tests/test_hooks_selftest.py` (2026-08-24, e9110c0)
   ↳ session:s-enforce-01 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:skills/cozyplan/scripts/hooks/run-hook.sh path:tests/test_hooks_install.py
 - A vendored repo registers its own copy and that registration demonstrably runs — init --vendor then hooks selftest reports 4/4 observed — verified by `plan_tool init --root <tmp> --vendor; plan_tool hooks selftest --root <tmp>` (2026-08-24, e9110c0)
@@ -72,6 +68,10 @@
   ↳ adr:0005 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_state_check.py
 - state check tells a path it cannot see apart from one that is gone, instead of reporting both as untracked — verified by `canary: fix stashed => 5 tests fail, the gone cases printing OK STATE.md consistent with git, which is the silence; restored => 325 passed, up from 321. Against cozycode it reports 29 unverifiable-here as one census note and found a real gone entry: a claim naming docs/adr/0011 which ADR-0017 moved to cozysites in 334a847 and nobody re-anchored. One batched git check-ignore --stdin for the whole run, so the O(1) test still passes` (2026-08-31, 3103a97)
   ↳ adr:0010 adr:0019 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_state_check.py
+- Every hook can demonstrate it ran: selftest drives all four with a payload they must react to and fails on silence — verified by `re-proved 2026-08-31: python3 skills/cozyplan/scripts/plan_tool.py hooks selftest --shipped => 4/4 observed. Path corrected in the same pass: the entry named hooks/run-hook.sh, which moved to skills/cozyplan/scripts/hooks/ in e9110c0 and the new path check reported as gone` (2026-08-31, 376eca4)
+  ↳ path:skills/cozyplan/scripts/plan_tool.py path:skills/cozyplan/scripts/hooks/run-hook.sh path:tests/test_hooks_selftest.py
+- Hooks resolve an interpreter at call time and fail loud when none does, so the PreToolUse guard exits 2 rather than passing a plan write unchecked — verified by `proved at 39993cd with PATH emptied so no interpreter resolves, and NOT re-run on 2026-08-31: the shape that reproduces it replaces PATH outright, which this machine's safe-PATH hook refuses, and env -i still finds an interpreter so it does not reproduce the condition. Only the recorded path was corrected, from hooks/run-hook.sh to skills/cozyplan/scripts/hooks/run-hook.sh, which moved in e9110c0. The sha is left at the original deliberately, so its age reports honestly` (2026-08-31, 39993cd)
+  ↳ path:skills/cozyplan/scripts/hooks/run-hook.sh path:hooks/hooks.json
 
 ## In Development
 
