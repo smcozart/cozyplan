@@ -6,8 +6,8 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-30T18:02:45-05:00 |
-| Repo state | main @ 9dc1140 |
+| Last synced | 2026-08-31T11:34:58-05:00 |
+| Repo state | main @ 3103a97 |
 
 ## Current Working State
 
@@ -70,6 +70,8 @@
   ↳ adr:0005 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_state_check.py
 - state check costs the same whatever the ledger holds, and a claim anchored off the ancestry is named rather than read as fresh — verified by `measured against the previous implementation on a synthetic ledger: 50 claims 0.95s to 0.09s, 800 claims 13.84s to 0.10s, 3200 claims 55.36s to 0.12s. Flat at 50,000 claims and 28.3 MB: render 0.39s, check 0.55s, where the old cost would have been about 865s. Output on cozycode's real ledger is unchanged at 18 unreachable, 11 path-less, 25 changed, 42 fatal. Canary: the old implementation reported OK for a claim anchored to a side branch, because rev-list counts zero for a non-ancestor and zero reads as fresh` (2026-08-30, 9dc1140)
   ↳ adr:0005 adr:0010 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_state_check.py
+- state check tells a path it cannot see apart from one that is gone, instead of reporting both as untracked — verified by `canary: fix stashed => 5 tests fail, the gone cases printing OK STATE.md consistent with git, which is the silence; restored => 325 passed, up from 321. Against cozycode it reports 29 unverifiable-here as one census note and found a real gone entry: a claim naming docs/adr/0011 which ADR-0017 moved to cozysites in 334a847 and nobody re-anchored. One batched git check-ignore --stdin for the whole run, so the O(1) test still passes` (2026-08-31, 3103a97)
+  ↳ adr:0010 adr:0019 path:skills/cozyplan/scripts/plan_tool.py path:tests/test_state_check.py
 
 ## In Development
 

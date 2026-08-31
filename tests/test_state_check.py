@@ -214,6 +214,13 @@ def test_a_claim_whose_own_paths_changed_is_flagged(pt, git_repo, capsys):
 def test_a_commit_touching_nothing_the_claim_depends_on_stays_quiet(pt, git_repo, capsys):
     """A test run or a spike must produce no prompt, or the signal loses credibility."""
     sha = head(git_repo)
+    # The claim's path has to actually be carried by git: a path this repo neither
+    # tracks nor ignores is a different report now, and it would fire here.
+    (git_repo / "src").mkdir()
+    (git_repo / "src" / "ingest").write_text("v1\n", encoding="utf-8")
+    git(git_repo, "add", "-A")
+    git(git_repo, "commit", "-m", "ingest")
+    sha = head(git_repo)
     write_state(git_repo, sha, claims=_claim_with_paths(sha, "src/ingest"))
     (git_repo / "NOTES.md").write_text("a spike\n", encoding="utf-8")
     git(git_repo, "add", "-A")
@@ -302,17 +309,78 @@ def _age_out(repo, n=3):
         git(repo, "commit", "-m", f"unrelated {i}")
 
 
+def _ignore(repo, pattern):
+    """Make `pattern` gitignored here, the way a sibling repository is (ADR-0019)."""
+    (repo / ".gitignore").write_text(pattern + "\n", encoding="utf-8")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-m", "ignore a sibling")
+
+
 def test_an_aged_claim_whose_subject_this_repo_cannot_see_says_so(pt, git_repo, capsys):
     """ADR-0018 rule 5. `git diff` returns nothing for an untracked path, and nothing
     is what an untouched path returns too. Found live in cozycode: 18 of 35 aged
     claims pointed into a gitignored sibling repo and every one read clean."""
     sha = head(git_repo)
+    _ignore(git_repo, "cozysites/")
     write_state(git_repo, sha, claims=_claim_with_paths(sha, "cozysites/sites/reference"))
     _age_out(git_repo)
     assert run(pt, git_repo, "--max-claim-age", "1") != 0
     out = capsys.readouterr().out
-    assert "subject is not tracked in this repo" in out
+    assert "unverifiable here, not verified" in out
     assert "own code changed" not in out
+
+
+def test_an_ignored_subject_is_unverifiable_and_a_missing_one_is_gone(pt, git_repo, capsys):
+    """The middle state, named honestly. Both paths are untracked and `ls-files` cannot
+    tell them apart; `check-ignore` can, and they are opposite reports — one is the
+    checker unable to look (ADR-0019, permanent, not fatal), the other is a file that
+    was renamed or deleted out from under the claim (a defect, and fatal)."""
+    sha = head(git_repo)
+    _ignore(git_repo, "cozysites/")
+    write_state(git_repo, sha, claims=[
+        f"- ingest works — verified by `pytest tests` (2026-08-18, {sha})",
+        "  ↳ path:cozysites/sites/reference",
+        f"- export works — verified by `pytest tests` (2026-08-18, {sha})",
+        "  ↳ path:docs/adr/0011-renamed-away.md",
+    ])
+    assert run(pt, git_repo) == 1
+    out = capsys.readouterr().out
+    assert "neither tracks nor ignores" in out
+    assert "0011-renamed-away.md" in out
+    assert "cozysites/sites/reference" not in out.split("FAIL")[1]
+
+
+def test_a_gone_path_is_fatal_at_any_age_and_needs_no_limit(pt, git_repo, capsys):
+    """A claim whose path no longer exists is wrong on the day it is written. The old
+    notice only spoke past --max-claim-age, which is the under-warning ADR-0010 exists
+    to prevent, and this shape was silent entirely."""
+    sha = head(git_repo)
+    write_state(git_repo, sha, claims=_claim_with_paths(sha, "src/vanished.py"))
+    assert run(pt, git_repo) == 1
+    assert "cannot be re-run" in capsys.readouterr().out
+
+
+def test_a_gone_path_is_reported_even_beside_a_tracked_one(pt, git_repo, capsys):
+    """A claim with one live path and one dead one used to fall through to the diff and
+    report clean, because the untracked branch only fired when NO path was tracked."""
+    sha = head(git_repo)
+    write_state(git_repo, sha, claims=_claim_with_paths(sha, "README.md", "src/vanished.py"))
+    assert run(pt, git_repo) == 1
+    assert "src/vanished.py" in capsys.readouterr().out
+
+
+def test_an_ignored_subject_never_fails_the_run_but_leaves_a_trace(pt, git_repo, capsys):
+    """Not fatal: every solution and deliverable would be permanently red for a
+    structural fact no commit here can change. Not silent either — ADR-0010 forbids the
+    apparatus leaving the same trace as a verified claim, and one census line is that
+    trace without 42 identical ones."""
+    sha = head(git_repo)
+    _ignore(git_repo, "cozysites/")
+    write_state(git_repo, sha, claims=_claim_with_paths(sha, "cozysites/sites/reference"))
+    assert run(pt, git_repo) == 0
+    out = capsys.readouterr().out
+    assert "1 claim(s) name a subject git ignores here" in out
+    assert "unverifiable in this repository" in out
 
 
 def test_an_aged_claim_with_no_path_is_called_unverified_not_clean(pt, git_repo, capsys):
@@ -324,15 +392,16 @@ def test_an_aged_claim_with_no_path_is_called_unverified_not_clean(pt, git_repo,
 
 
 def test_a_healthy_ledger_gains_no_new_noise(pt, git_repo, capsys):
-    """Both notices are gated on the age limit already firing, because a path-less
-    claim producing noise on a healthy ledger is a decision this suite already made."""
+    """The per-claim notices are gated on the age limit already firing, because a
+    path-less claim producing noise on a healthy ledger is a decision this suite
+    already made. The unverifiable census is a count, not a line per claim."""
     sha = head(git_repo)
     write_state(git_repo, sha)
     _age_out(git_repo)
     assert run(pt, git_repo) == 0
     out = capsys.readouterr().out
     assert "unverified here, not clean" not in out
-    assert "subject is not tracked" not in out
+    assert "unverifiable" not in out
 
 
 def test_a_tracked_subject_still_reports_a_real_change(pt, git_repo, capsys):

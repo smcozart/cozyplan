@@ -2021,6 +2021,22 @@ def git(root: Path, *argv: str) -> tuple[bool, str]:
     return r.returncode == 0, r.stdout.strip()
 
 
+def git_stdin(root: Path, argv: list[str], text: str) -> tuple[bool, str]:
+    """git with its input on stdin, so one batched call can replace a per-item loop.
+
+    Separate from `git()` deliberately: that one closes stdin, and its call count is
+    what pins the O(1)-in-claims property this module is measured on. `ok` is true
+    for exit 0 and exit 1, because `check-ignore` uses 1 for "matched nothing",
+    which is an answer rather than a failure.
+    """
+    try:
+        r = subprocess.run(["git", *argv], cwd=str(root), input=text,
+                           capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return False, ""
+    return r.returncode in (0, 1), r.stdout
+
+
 def rev_count(root: Path, rng: str) -> int | None:
     """Commits in `rng`, or None when git could not answer. None is not zero: a
     missing binary, shallow clone or corrupt object must be reported, never read
@@ -2045,6 +2061,8 @@ class HistoryIndex:
       depth        full sha -> commits between it and HEAD. One `rev-list HEAD`.
       last_change  path -> the smallest depth at which it changed. One `log`.
       tracked      every path git carries here. One `ls-files`.
+      ignored      which of the claims' untracked paths git is ignoring on purpose.
+                   One `check-ignore --stdin`, fed every claim path at once.
 
     `last_change` is CONSERVATIVE by construction. A path whose most recent change
     is older than the claim is identical in both trees, so "unchanged" is exact and
@@ -2054,11 +2072,12 @@ class HistoryIndex:
     warning is the defect this whole check exists to prevent (ADR-0010).
     """
 
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, paths: list[str] | None = None):
         self.ok = False
         self.depth: dict[str, int] = {}
         self.last_change: dict[str, int] = {}
         self.tracked: set[str] = set()
+        self.ignored: set[str] = set()
         self._short: dict[str, str] = {}
 
         ok_r, revs = git(root, "rev-list", "HEAD")
@@ -2088,6 +2107,24 @@ class HistoryIndex:
         if not ok_t:
             return
         self.tracked = {p for p in files.splitlines() if p.strip()}
+
+        # An untracked path is two different facts wearing one face. Under ADR-0019 a
+        # ledger entry may name a path inside a gitignored sibling repository — normal,
+        # permanent, and unreachable from here. Or the file was renamed or deleted, and
+        # the claim now points at nothing. `ls-files` cannot tell them apart;
+        # `check-ignore` can, and it is asked ONCE for every claim path in the run,
+        # never once per claim (test_history_is_read_once_not_once_per_claim).
+        #
+        # git, never the filesystem: whether the sibling repo happens to be cloned on
+        # this disk is a fact about the machine, and a check that reads it reports a
+        # different answer to two people looking at the same commit.
+        unresolved = [p.rstrip("/") for p in dict.fromkeys(paths or ())]
+        unresolved = [p for p in unresolved if p and not self.is_tracked(p)]
+        if unresolved:
+            ok_i, out = git_stdin(root, ["check-ignore", "-z", "--stdin"],
+                                  "\0".join(unresolved) + "\0")
+            if ok_i:
+                self.ignored = {p for p in out.split("\0") if p}
         self.ok = True
 
     def age(self, sha: str) -> int | None:
@@ -2099,6 +2136,12 @@ class HistoryIndex:
     def is_tracked(self, path: str) -> bool:
         p = path.rstrip("/")
         return p in self.tracked or any(t.startswith(p + "/") for t in self.tracked)
+
+    def is_ignored(self, path: str) -> bool:
+        """True when git is ignoring this path on purpose — so the checker cannot look,
+        rather than having looked and found nothing. Only meaningful for a path the
+        constructor was given; anything else is simply unknown here and reads False."""
+        return path.rstrip("/") in self.ignored
 
     def changed_since(self, paths: list[str], age: int) -> list[str]:
         """Every file under `paths` that changed in the `age` commits since the claim.
@@ -2193,7 +2236,10 @@ def check_state(state_path: Path, root: Path, adr_dir: Path, journal: Path,
     if not claims:
         notes.append("Current Working State is empty")
     # One index for every claim, instead of two git calls per claim. See HistoryIndex.
-    hist = HistoryIndex(root) if in_git else None
+    # It is handed every claim path up front so the ignore question is one call too.
+    claim_paths = [p for _, trail in claims for p in re.findall(r"path:(\S+)", trail)]
+    hist = HistoryIndex(root, claim_paths) if in_git else None
+    unverifiable = 0
     for ln, trail in claims:
         m = STATE_CLAIM_RE.match(ln.strip())
         if not m:
@@ -2249,22 +2295,50 @@ def check_state(state_path: Path, root: Path, adr_dir: Path, journal: Path,
             # "unreachable". Found live in cozycode, where 18 of 35 aged claims point
             # into a gitignored sibling repository and every one of them read clean.
             #
-            # Both notices are gated on the claim already being past the age limit.
-            # A path-less claim producing noise on a healthy ledger is a decision this
-            # suite already made deliberately; this only adds detail where a human is
-            # being asked to re-prove something and needs to know what the tool saw.
+            # Untracked was one bucket and is two, and ADR-0010 gives them opposite
+            # volumes because they are opposite kinds of failure.
+            #
+            # GONE — untracked and not ignored. The file was renamed or deleted, so the
+            # proof can never be re-run and the claim points at nothing. That is a defect
+            # in the subject, it is exactly the shape of "claim cites <sha>, which is not
+            # a commit in this repo" one field over, and it is fatal for the same reason.
+            # It is NOT gated on the age limit: a claim whose path no longer exists is
+            # wrong on the day it is written, and waiting N commits to say so is the
+            # under-warning this check exists to prevent. Silent until now.
+            #
+            # UNVERIFIABLE HERE — untracked because git is ignoring it, which under
+            # ADR-0019 means it lives in a sibling repository this one structurally
+            # cannot see. Normal and permanent. That is the apparatus admitting it
+            # cannot look, and ADR-0010 forbids only one thing about it: leaving the
+            # same trace as a verified claim. So it leaves a different one and is never
+            # fatal — every solution and every deliverable would be permanently red for
+            # a fact no commit here can change. One census note per run rather than one
+            # note per claim, because 42 identical lines is how a report teaches people
+            # to skim past it; the per-claim detail appears where somebody is already
+            # being asked to re-prove the thing, i.e. past the age limit.
             paths = re.findall(r"path:(\S+)", trail)
+            gone = [p for p in paths if not hist.is_tracked(p) and not hist.is_ignored(p)]
+            if gone:
+                # Reported for any claim carrying one, including a claim whose other
+                # paths are tracked — that case used to fall through to the diff and
+                # report clean.
+                problems.append(
+                    f"claim names {len(gone)} path(s) this repo neither tracks nor "
+                    f"ignores — renamed or deleted, so its proof cannot be re-run "
+                    f"(e.g. {gone[0]}): {m.group('what')[:60]}")
             if not paths:
                 if aged_out:
                     warns.append(
                         f"claim names no path, so whether its subject changed cannot be "
                         f"checked — it is unverified here, not clean: {m.group('what')[:60]}")
             elif not any(hist.is_tracked(p) for p in paths):
-                if aged_out:
-                    warns.append(
-                        f"claim's subject is not tracked in this repo, so whether it "
-                        f"changed cannot be checked (e.g. {paths[0]}): "
-                        f"{m.group('what')[:60]}")
+                if not gone:
+                    unverifiable += 1
+                    if aged_out:
+                        warns.append(
+                            f"claim's subject is git-ignored here, so this checker cannot "
+                            f"look at it — unverifiable here, not verified (e.g. "
+                            f"{paths[0]}): {m.group('what')[:60]}")
             else:
                 touched = hist.changed_since(paths, age or 0)
                 if touched:
@@ -2272,6 +2346,12 @@ def check_state(state_path: Path, root: Path, adr_dir: Path, journal: Path,
                         f"claim's own code changed since it was proved "
                         f"({len(touched)} file(s), e.g. {touched[0]}): "
                         f"{m.group('what')[:60]}")
+
+    if unverifiable:
+        notes.append(
+            f"{unverifiable} claim(s) name a subject git ignores here, so they are "
+            f"unverifiable in this repository — not verified (ADR-0019: a ledger belongs "
+            f"where its subject can be reached)")
 
     # 5. The ADR register against what git will actually hand a clone.
     #
