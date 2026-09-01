@@ -514,3 +514,46 @@ def test_an_unknown_sha_is_still_reported_as_unknown(pt, git_repo, capsys):
         "- a claim — verified by `pytest tests` (2026-08-18, deadbee)"])
     assert run(pt, git_repo) != 0
     assert "not a commit in this repo" in capsys.readouterr().out
+
+
+def test_a_log_ahead_of_the_render_is_named_rather_than_passed(pt, git_repo, capsys):
+    """`state add` writes the log; `state render` writes STATE.md; every other check
+    here reads only STATE.md. So a log and its render can disagree while this command
+    prints OK -- observed 2026-09-01 with 123 passed in one file and 114 in the other.
+    That is ADR-0010 inside the checking tool: it observed the record of the outcome.
+    """
+    sha = head(git_repo)
+    write_state(git_repo, sha)
+    log = git_repo / "docs" / "state.ndjson"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text(
+        '{"kind": "claim", "key": "k", "what": "a claim the render never saw", '
+        f'"proof": "pytest tests", "sha": "{sha}", "date": "2026-09-01", '
+        '"ts": "2026-09-01T00:00:00Z"}\n', encoding="utf-8")
+    git(git_repo, "add", "-A")
+    git(git_repo, "commit", "-m", "log ahead of render")
+
+    run(pt, git_repo)
+    out = capsys.readouterr().out
+    assert "is stale against the log" in out
+    assert "a claim the render never saw" in out, "the warn must name what is missing"
+
+
+def test_a_log_the_render_already_carries_is_not_reported_stale(pt, git_repo, capsys):
+    """The other half of the canary. A warn that cannot go green is noise, and this
+    repository already has one signal nobody clears.
+    """
+    sha = head(git_repo)
+    write_state(git_repo, sha, claims=["- carried through — verified by `pytest tests` "
+                                       f"(2026-09-01, {sha})"])
+    log = git_repo / "docs" / "state.ndjson"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text(
+        '{"kind": "claim", "key": "k", "what": "carried through", '
+        f'"proof": "pytest tests", "sha": "{sha}", "date": "2026-09-01", '
+        '"ts": "2026-09-01T00:00:00Z"}\n', encoding="utf-8")
+    git(git_repo, "add", "-A")
+    git(git_repo, "commit", "-m", "log matches render")
+
+    run(pt, git_repo)
+    assert "is stale against the log" not in capsys.readouterr().out
