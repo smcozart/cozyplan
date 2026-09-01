@@ -557,3 +557,35 @@ def test_a_log_the_render_already_carries_is_not_reported_stale(pt, git_repo, ca
 
     run(pt, git_repo)
     assert "is stale against the log" not in capsys.readouterr().out
+
+
+def test_clear_is_addressed_by_key_and_does_not_need_what(pt, git_repo, capsys):
+    """A retraction is addressed by --key. --what exists only to derive a key when none
+    is given, so requiring both made the common case fail for an unrelated reason --
+    observed 2026-09-01, where three rejected clears were followed by a real `state
+    render` whose success was the last line printed, so a batch that retracted nothing
+    read as having worked.
+    """
+    sha = head(git_repo)
+    write_state(git_repo, sha)
+    assert pt.main(["state", "add", "--root", str(git_repo), "--kind", "gap",
+                    "--what", "a gap to retract", "--sha", sha]) == 0
+    capsys.readouterr()
+
+    assert pt.main(["state", "add", "--root", str(git_repo), "--clear",
+                    "--key", "a gap to retract"]) == 0
+    assert "(cleared)" in capsys.readouterr().out
+
+
+def test_clear_with_neither_key_nor_what_is_refused(pt, git_repo, capsys):
+    assert pt.main(["state", "add", "--root", str(git_repo), "--clear"]) != 0
+    assert "--clear needs --key" in capsys.readouterr().err
+
+
+def test_clear_of_an_unknown_key_still_refuses(pt, git_repo, capsys):
+    """The ADR-0010 guard below it must survive: appending a clear no earlier event
+    matches printed "(cleared)" and looked exactly like a successful one.
+    """
+    assert pt.main(["state", "add", "--root", str(git_repo), "--clear",
+                    "--key", "nothing-has-this-key"]) != 0
+    assert "nothing to clear" in capsys.readouterr().err

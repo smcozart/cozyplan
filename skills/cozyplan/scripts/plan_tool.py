@@ -3222,7 +3222,18 @@ def cmd_state(args) -> int:
     log_path = under(root, args.log)
 
     if args.state_cmd == "add":
-        if not args.what:
+        # A retraction is addressed by --key. `--what` exists only to DERIVE a key when
+        # none is given, so requiring it for a --clear makes the operation fail for a
+        # reason that has nothing to do with it. Observed 2026-09-01: three clears
+        # rejected for a missing --what, then a real `state render` in the same block
+        # whose success was the last line printed -- so a batch that retracted nothing
+        # read as having worked. Same shape as the defect this command already guards
+        # below, one step earlier in the pipeline.
+        if args.clear:
+            if not (args.key or args.what):
+                return fail("--clear needs --key naming the entry to retract "
+                            "(or --what, to derive the key the way `state add` does)")
+        elif not args.what:
             return fail("--what is required")
         # `render_state` writes the proof inside backticks and STATE_CLAIM_RE reads
         # it back with [^`]+, so a backtick in the proof produces a line that cannot
@@ -3241,7 +3252,8 @@ def cmd_state(args) -> int:
                             f"as one parseable line. Rewrite it without that character "
                             f"-- name the command in plain text.")
         _, who = git(root, "config", "user.name")
-        ev = {"kind": args.kind, "key": args.key or args.what[:60], "what": args.what,
+        ev = {"kind": args.kind, "key": args.key or (args.what or "")[:60],
+              "what": args.what or "",
               "by": who or "",
               "ts": args.ts or datetime.now().astimezone().isoformat(timespec="seconds")}
         # The proof date is the event's own date — one field, never disagreeing
