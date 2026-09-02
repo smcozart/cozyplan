@@ -2192,8 +2192,14 @@ def check_state(state_path: Path, root: Path, adr_dir: Path, journal: Path,
     if log_path is not None:
         try:
             projected = project_state(read_state_log(root, log_path))
+            # Anchored to the list-item marker the render writes, not a bare substring.
+            # A bare `what in text` silently passes when the text happens to appear
+            # anywhere else -- found 2026-09-01 with a five-character `what` that also
+            # occurred inside an unrelated proof string, so the check reported clean over
+            # a genuinely stale file. A check with a false negative is worse than none:
+            # it converts "unproved" into "proved" and does it quietly.
             missing = [ev.get("what", "") for kind in STATE_KINDS for ev in projected[kind]
-                       if ev.get("what") and ev["what"] not in text]
+                       if ev.get("what") and ("- " + ev["what"]) not in text]
         except Exception as exc:                  # noqa: BLE001 - reported, never swallowed
             # Loud on the apparatus. Unable to look is not the same as nothing to report.
             notes.append(f"could not compare {state_path.name} against the log: "
