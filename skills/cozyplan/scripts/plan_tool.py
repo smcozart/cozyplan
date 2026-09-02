@@ -3287,11 +3287,33 @@ def cmd_state(args) -> int:
             # of ADR-0010. It happened three times in one session before this.
             # Only keys an event actually SET. A previous mistyped clear is itself in
             # the log, so counting clears would let one typo validate the next.
-            known = {e.get("key") for e in read_state_log(root, log_path)
+            #
+            # Matched on (kind, key), because that is what `project_state` reduces
+            # by. Checking the key ALONE was a defect: `--kind` defaults to claim, so
+            # clearing a gap without naming its kind found the gap, allowed the
+            # clear, then appended a cleared CLAIM under a key that had never been
+            # one — leaving the gap standing while reporting success and naming the
+            # right key. The one guard that would have caught it was the guard that
+            # waved it through. Found by cozyapps 2026-09-01, by reading the rendered
+            # file rather than the command's own report of what it did.
+            known = {(e.get("kind"), e.get("key")) for e in read_state_log(root, log_path)
                      if e.get("key") and not e.get("cleared")}
-            if ev["key"] not in known:
-                near = [k for k in sorted(known)
-                        if k and (k.startswith(ev["key"][:20]) or ev["key"].startswith(k[:20]))]
+            if (ev["kind"], ev["key"]) not in known:
+                # The key exists under another kind. That is a different mistake from
+                # a typo and gets a different sentence, because it is the exact case
+                # that used to succeed wrongly.
+                other = sorted({k for (k, key) in known if key == ev["key"] and k})
+                if other:
+                    return fail(
+                        f"nothing to clear: key {ev['key']!r} exists as "
+                        f"{' and '.join(other)}, not as {ev['kind']}. A clear only "
+                        f"retracts an entry of the same kind, so this would have "
+                        f"appended a cleared {ev['kind']} and left the "
+                        f"{other[0]} standing.\n"
+                        f"  retract it with: --kind {other[0]} --clear --key {ev['key']}")
+                near = [key for (_, key) in sorted(known)
+                        if key and (key.startswith(ev["key"][:20])
+                                    or ev["key"].startswith(key[:20]))]
                 msg = (f"nothing to clear: no earlier event has key {ev['key']!r}. "
                        f"Keys are derived from --what and truncated, so pass --key exactly.")
                 if near:

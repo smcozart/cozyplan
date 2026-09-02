@@ -565,6 +565,12 @@ def test_clear_is_addressed_by_key_and_does_not_need_what(pt, git_repo, capsys):
     observed 2026-09-01, where three rejected clears were followed by a real `state
     render` whose success was the last line printed, so a batch that retracted nothing
     read as having worked.
+
+    This test used to omit `--kind` on the clear while clearing a GAP, and expect 0.
+    That is the kind-blind defect, and this test asserted it: `--kind` defaults to
+    claim, so the clear was appended as a cleared CLAIM and the gap stayed in the
+    projection. The subject here is `--what`, never `--kind`, so naming the kind
+    keeps the test on its own subject instead of pinning an unrelated bug in place.
     """
     sha = head(git_repo)
     write_state(git_repo, sha)
@@ -572,8 +578,8 @@ def test_clear_is_addressed_by_key_and_does_not_need_what(pt, git_repo, capsys):
                     "--what", "a gap to retract", "--sha", sha]) == 0
     capsys.readouterr()
 
-    assert pt.main(["state", "add", "--root", str(git_repo), "--clear",
-                    "--key", "a gap to retract"]) == 0
+    assert pt.main(["state", "add", "--root", str(git_repo), "--kind", "gap",
+                    "--clear", "--key", "a gap to retract"]) == 0
     assert "(cleared)" in capsys.readouterr().out
 
 

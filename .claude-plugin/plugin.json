@@ -1,6 +1,6 @@
 {
   "name": "cozyplan",
-  "version": "3.9.1",
+  "version": "3.9.2",
   "description": "CozyPlan \u2014 HTML-first engineering plans with a discuss phase, living context artifacts, and a project state layer derived from git (generated STATE.md + append-only event log + ADRs) \u2014 plan well, record why, understand the system, know its exact working state.",
   "author": {
     "name": "Sean Cozart"

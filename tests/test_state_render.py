@@ -202,3 +202,46 @@ def test_one_bad_clear_cannot_validate_the_next(pt, git_repo, capsys):
     capsys.readouterr()
     assert _add(pt, git_repo, kind="gap", clear=True, key="typo-key", what="x") == 1, (
         "the failed clear must not have made its own key legitimate")
+
+
+# ── a clear retracts its OWN kind, never a different one ─────────────────────
+# The projection reduces by (kind, key); this guard checked the key alone. So a
+# gap cleared without --kind, which defaults to claim, was found by the guard,
+# waved through, and written as a cleared CLAIM under a key that had never been
+# one — leaving the gap standing while the command reported success and named
+# the right key. The one guard that would have caught it was the guard that
+# passed it. Found 2026-09-01 by reading the rendered file rather than the
+# command's own report of what it did.
+
+def test_clearing_a_gap_without_naming_its_kind_fails(pt, git_repo, capsys):
+    assert _add(pt, git_repo, kind="gap", key="k", what="a real gap") == 0
+    capsys.readouterr()
+    assert _add(pt, git_repo, clear=True, key="k", what="x") == 1, (
+        "--kind defaults to claim, and 'k' is a gap, so this must refuse")
+    err = capsys.readouterr().err
+    assert "exists as gap" in err, err
+    assert "--kind gap" in err, "the error must name the command that works"
+
+
+def test_the_gap_survives_a_wrong_kinded_clear(pt, git_repo):
+    """The defect was not the exit status, it was the projection. A cleared claim
+    appended under a gap's key left the gap in STATE.md while reporting success."""
+    assert _add(pt, git_repo, kind="gap", key="k", what="a real gap") == 0
+    _add(pt, git_repo, clear=True, key="k", what="x")
+    events = pt.read_state_log(git_repo, git_repo / "docs" / "state.ndjson")
+    state = pt.project_state(events)
+    assert [e["key"] for e in state["gap"]] == ["k"], "the gap must still stand"
+    assert not any(e.get("cleared") for e in events), (
+        "the refused clear must not have been written to the log at all")
+
+
+def test_the_same_key_can_be_a_claim_and_a_gap_independently(pt, git_repo):
+    """Two kinds, one key, cleared separately. This is what keying the projection
+    by (kind, key) means, and it is why a clear cannot be kind-blind."""
+    assert _add(pt, git_repo, kind="gap", key="dual", what="the gap side") == 0
+    assert _add(pt, git_repo, kind="claim", key="dual", what="the claim side") == 0
+    assert _add(pt, git_repo, kind="gap", clear=True, key="dual", what="x") == 0
+    state = pt.project_state(pt.read_state_log(git_repo, git_repo / "docs" / "state.ndjson"))
+    assert [e["key"] for e in state["gap"]] == []
+    assert [e["key"] for e in state["claim"]] == ["dual"], (
+        "clearing the gap must leave the claim of the same name alone")
