@@ -2621,10 +2621,18 @@ def render_state(root: Path, projected: dict, adr_dir: Path,
              # The sha is HEAD at RENDER time. The prescribed order is add, render, commit,
              # so the commit carrying this line is never the commit named by it: there is
              # no fixed point, and re-rendering moves the staleness rather than removing it.
-             # The annotation is inside the cell because a note under the table is prose a
-             # reader must find; REPO_STATE_RE tolerates it so older STATE.md files still parse.
+             #
+             # The annotation is a THIRD CELL, not text inside the second one, and that is
+             # a compatibility decision rather than a layout one. Every released reader
+             # matches this row with a pattern ending `@ <sha>\s*\|`, so a parenthetical
+             # inside the cell makes the row UNPARSEABLE to them -- and a reader that cannot
+             # parse it skips the whole freshness block, losing the sha-exists, ancestor and
+             # drift checks and reporting one generic failure instead. A third cell satisfies
+             # `\s*\|` immediately after the sha, so old readers still match and still
+             # extract the right sha. Kept in the table because a note underneath it is prose
+             # a reader has to go and find.
              f"| Repo state | {branch if ok_b else '?'} @ {sha if ok_s else '?'} "
-             f"(HEAD at render time, never the commit that carries this line) |"]
+             f"| HEAD at render time, never the commit that carries this line |"]
     if origin:
         ok_c, counts = git(root, "rev-list", "--left-right", "--count", f"{origin}...HEAD")
         if ok_c and counts:

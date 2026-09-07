@@ -7,6 +7,8 @@ rather than failing the run.
 
 from __future__ import annotations
 
+import re
+
 from conftest import git
 
 SYNC = """# Demo — State
@@ -661,3 +663,38 @@ def test_render_dates_the_repo_state_sha_and_check_still_parses_it(pt, git_repo,
     assert pt.REPO_STATE_RE.search(rendered), "render wrote a line its own regex rejects"
     assert pt.REPO_STATE_RE.search("| Repo state | main @ abc1234 |\n"), \
         "the un-annotated form must still parse"
+
+
+# The Repo state pattern as every released reader up to and including 3.9.2 spells it.
+# Frozen on purpose: it is a historical constant, there is no live source in this
+# repository to read it out of, and the point of the test is that those readers keep
+# working against what this version renders.
+RELEASED_REPO_STATE_RE = re.compile(
+    r"^\|\s*Repo state\s*\|\s*(?P<branch>\S+)\s*@\s*(?P<sha>[0-9a-f]{7,40})\s*\|", re.M)
+
+
+def test_what_render_writes_is_still_readable_by_older_plan_tools(pt, git_repo):
+    """Forward compatibility, which the backward-compatibility test does not cover.
+
+    Widening this version's regex lets it read OLD files. It says nothing about whether
+    an OLD reader can read what this version WRITES, and those are different directions.
+    The first attempt put the annotation inside the Repo state cell, and every released
+    reader then failed to match the row -- which is worse than a cosmetic break, because
+    a reader that cannot parse the row skips the entire freshness block and loses the
+    sha-exists, ancestor and drift checks while reporting one generic parse failure.
+
+    Found by cozysites re-rendering with the new version and checking with the cached
+    old one, which is the mixed state a workspace is in for as long as its consumers
+    upgrade at different times.
+    """
+    pt.main(["state", "add", "--root", str(git_repo), "--kind", "gap",
+             "--what", "something is missing"])
+    pt.main(["state", "render", "--root", str(git_repo)])
+    rendered = (git_repo / "STATE.md").read_text(encoding="utf-8")
+
+    m = RELEASED_REPO_STATE_RE.search(rendered)
+    assert m, "a released plan_tool cannot parse the Repo state row this version renders"
+    assert m.group("sha") == head(git_repo), \
+        "an old reader parses the row but pulls the wrong sha out of it"
+    assert pt.REPO_STATE_RE.search(rendered), "this version cannot parse its own render"
+    assert "HEAD at render time, never the commit that carries this line" in rendered
