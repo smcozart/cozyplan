@@ -319,12 +319,19 @@ def _ignore(repo, pattern):
 def test_an_aged_claim_whose_subject_this_repo_cannot_see_says_so(pt, git_repo, capsys):
     """ADR-0018 rule 5. `git diff` returns nothing for an untracked path, and nothing
     is what an untouched path returns too. Found live in cozycode: 18 of 35 aged
-    claims pointed into a gitignored sibling repo and every one read clean."""
+    claims pointed into a gitignored sibling repo and every one read clean.
+
+    The exit expectation was `!= 0` until the age verdict learned to wait for the
+    reachability verdict. It was incidental to this test's subject, which is the
+    WORDING, and it was pinning the defect: a repository whose only aged claims name
+    gitignored siblings was permanently red for a fact no commit there could change.
+    Now green, and still saying what it cannot see.
+    """
     sha = head(git_repo)
     _ignore(git_repo, "cozysites/")
     write_state(git_repo, sha, claims=_claim_with_paths(sha, "cozysites/sites/reference"))
     _age_out(git_repo)
-    assert run(pt, git_repo, "--max-claim-age", "1") != 0
+    assert run(pt, git_repo, "--max-claim-age", "1") == 0
     out = capsys.readouterr().out
     assert "unverifiable here, not verified" in out
     assert "own code changed" not in out
@@ -595,3 +602,62 @@ def test_clear_of_an_unknown_key_still_refuses(pt, git_repo, capsys):
     assert pt.main(["state", "add", "--root", str(git_repo), "--clear",
                     "--key", "nothing-has-this-key"]) != 0
     assert "nothing to clear" in capsys.readouterr().err
+
+
+def test_an_aged_unreachable_subject_is_not_fatal_while_an_aged_reachable_one_is(
+        pt, git_repo, capsys):
+    """The age verdict must wait for the reachability verdict, which is computed later
+    in the same iteration.
+
+    "Re-run its proof and re-anchor it" is an instruction no commit in THIS repository
+    can follow when the subject lives in a gitignored sibling (ADR-0019). The checker
+    already knew that -- the census note says such a claim is unverifiable here rather
+    than verified -- but the age check fired first and made it fatal anyway. ADR-0010:
+    an apparatus problem must not leave the same trace as a subject problem.
+
+    Both claims in this run are equally old. Only the one somebody here can act on is
+    fatal, which is what separates this fix from switching the gate off: assert the
+    reachable one is still reported, or a suppression that swallowed everything would
+    pass too.
+    """
+    sha = head(git_repo)
+    _ignore(git_repo, "cozysites/")
+    (git_repo / "src").mkdir(exist_ok=True)
+    (git_repo / "src" / "here.py").write_text("x = 1\n", encoding="utf-8")
+    git(git_repo, "add", "-A")
+    git(git_repo, "commit", "-m", "a file this repo can see")
+    write_state(git_repo, sha, claims=[
+        f"- unreachable subject — verified by `pytest tests` (2026-08-18, {sha})",
+        "  ↳ path:cozysites/sites/reference",
+        f"- reachable subject — verified by `pytest tests` (2026-08-18, {sha})",
+        "  ↳ path:src/here.py",
+    ])
+    _age_out(git_repo)
+    assert run(pt, git_repo, "--max-claim-age", "1") == 1
+    out = capsys.readouterr().out
+    fails = out.split("FAIL")[1]
+    assert "reachable subject" in fails
+    assert "unreachable subject" not in fails
+    assert "unverifiable here, not verified" in out
+
+
+def test_render_dates_the_repo_state_sha_and_check_still_parses_it(pt, git_repo, capsys):
+    """`state render` writes HEAD at render time, and the prescribed order is add,
+    render, commit -- so the commit carrying that line is never the commit named by it.
+    There is no fixed point, and re-rendering moves the staleness rather than removing
+    it. The annotation says so inside the cell, because a note under the table is prose
+    a reader has to find.
+
+    The regex must therefore tolerate a parenthetical without requiring one: a STATE.md
+    rendered before this change is still a valid file, and a check that stopped parsing
+    it would turn a cosmetic improvement into a breaking one.
+    """
+    pt.main(["state", "add", "--root", str(git_repo), "--kind", "gap",
+             "--what", "something is missing"])
+    pt.main(["state", "render", "--root", str(git_repo)])
+    rendered = (git_repo / "STATE.md").read_text(encoding="utf-8")
+    line = next(ln for ln in rendered.splitlines() if "Repo state" in ln)
+    assert "HEAD at render time, never the commit that carries this line" in line
+    assert pt.REPO_STATE_RE.search(rendered), "render wrote a line its own regex rejects"
+    assert pt.REPO_STATE_RE.search("| Repo state | main @ abc1234 |\n"), \
+        "the un-annotated form must still parse"

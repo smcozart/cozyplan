@@ -1993,7 +1993,7 @@ STATE_CLAIM_RE = re.compile(
     r"\((?P<when>[^)]+)\)\s*$"
 )
 STATE_WHEN_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})(?:\s*,\s*(?P<sha>[0-9a-f]{7,40}))?$")
-REPO_STATE_RE = re.compile(r"^\|\s*Repo state\s*\|\s*(?P<branch>\S+)\s*@\s*(?P<sha>[0-9a-f]{7,40})\s*\|",
+REPO_STATE_RE = re.compile(r"^\|\s*Repo state\s*\|\s*(?P<branch>\S+)\s*@\s*(?P<sha>[0-9a-f]{7,40})\s*(?:\([^|]*\))?\s*\|",
                            re.M)
 LAST_SYNCED_RE = re.compile(r"^\|\s*Last synced\s*\|\s*(?P<ts>[^|]+?)\s*\|", re.M)
 ADR_FILE_RE = re.compile(r"^(?P<num>\d{4})-")
@@ -2309,12 +2309,20 @@ def check_state(state_path: Path, root: Path, adr_dir: Path, journal: Path,
                                     f"repo: {m.group('what')[:60]}")
                 continue
             aged_out = False
+            # HELD, not appended. The reachability of this claim's subject is not known
+            # until `paths` is computed ~40 lines below, and the UNVERIFIABLE HERE comment
+            # there says such a claim "is never fatal". It was fatal anyway, because this
+            # verdict fired first. Same shape as the portable-count guard cozysites moved:
+            # a check placed next to its consequence rather than next to its inputs fires
+            # earlier than its inputs are ready. Decided at the end of the iteration.
+            aged_problem = None
+            subject_unreachable = False
             if age:
                 # A claim nobody re-proves is the thing this layer exists to prevent,
                 # so it can be made fatal rather than only mentioned.
                 msg = f"claim proved {age} commit(s) ago: {m.group('what')[:60]}"
                 if max_claim_age is not None and age > max_claim_age:
-                    problems.append(f"{msg} (limit {max_claim_age}) — re-run its proof "
+                    aged_problem = (f"{msg} (limit {max_claim_age}) — re-run its proof "
                                     f"and re-anchor it, or record it as a gap")
                     aged_out = True
                 else:
@@ -2369,6 +2377,7 @@ def check_state(state_path: Path, root: Path, adr_dir: Path, journal: Path,
             elif not any(hist.is_tracked(p) for p in paths):
                 if not gone:
                     unverifiable += 1
+                    subject_unreachable = True
                     if aged_out:
                         warns.append(
                             f"claim's subject is git-ignored here, so this checker cannot "
@@ -2381,6 +2390,13 @@ def check_state(state_path: Path, root: Path, adr_dir: Path, journal: Path,
                         f"claim's own code changed since it was proved "
                         f"({len(touched)} file(s), e.g. {touched[0]}): "
                         f"{m.group('what')[:60]}")
+
+            # Fatal only if somebody in THIS repository can act on it. Asking a session
+            # to "re-run its proof and re-anchor it" for a subject git ignores here is an
+            # instruction no commit here can follow — ADR-0010's apparatus problem spent
+            # as a subject problem. The census note above still counts it.
+            if aged_problem is not None and not subject_unreachable:
+                problems.append(aged_problem)
 
     if unverifiable:
         notes.append(
@@ -2602,7 +2618,13 @@ def render_state(root: Path, projected: dict, adr_dir: Path,
              "     History lives in the log; this file is the current view. -->", "",
              "| Sync | |", "|---|---|",
              f"| Last synced | {newest or '(no events)'} |",
-             f"| Repo state | {branch if ok_b else '?'} @ {sha if ok_s else '?'} |"]
+             # The sha is HEAD at RENDER time. The prescribed order is add, render, commit,
+             # so the commit carrying this line is never the commit named by it: there is
+             # no fixed point, and re-rendering moves the staleness rather than removing it.
+             # The annotation is inside the cell because a note under the table is prose a
+             # reader must find; REPO_STATE_RE tolerates it so older STATE.md files still parse.
+             f"| Repo state | {branch if ok_b else '?'} @ {sha if ok_s else '?'} "
+             f"(HEAD at render time, never the commit that carries this line) |"]
     if origin:
         ok_c, counts = git(root, "rev-list", "--left-right", "--count", f"{origin}...HEAD")
         if ok_c and counts:

@@ -6,8 +6,8 @@
 
 | Sync | |
 |---|---|
-| Last synced | 2026-08-31T11:37:40-05:00 |
-| Repo state | main @ 376eca4 |
+| Last synced | 2026-09-06T19:07:26-05:00 |
+| Repo state | main @ e943c71 (HEAD at render time, never the commit that carries this line) |
 
 ## Current Working State
 
@@ -72,6 +72,8 @@
   ↳ path:skills/cozyplan/scripts/plan_tool.py path:skills/cozyplan/scripts/hooks/run-hook.sh path:tests/test_hooks_selftest.py
 - Hooks resolve an interpreter at call time and fail loud when none does, so the PreToolUse guard exits 2 rather than passing a plan write unchecked — verified by `proved at 39993cd with PATH emptied so no interpreter resolves, and NOT re-run on 2026-08-31: the shape that reproduces it replaces PATH outright, which this machine's safe-PATH hook refuses, and env -i still finds an interpreter so it does not reproduce the condition. Only the recorded path was corrected, from hooks/run-hook.sh to skills/cozyplan/scripts/hooks/run-hook.sh, which moved in e9110c0. The sha is left at the original deliberately, so its age reports honestly` (2026-08-31, 39993cd)
   ↳ path:skills/cozyplan/scripts/hooks/run-hook.sh path:hooks/hooks.json
+- The age verdict waits for the reachability verdict, so an aged claim whose subject this repository gitignores is reported as unverifiable rather than as fatal, and an aged claim somebody here CAN act on is still fatal. Ported from cozycode, where the fix was made by hand in the vendored copy and therefore existed in exactly one file on that machine -- no released version had it, so no consumer could reach it by upgrading. Also: state render now dates the Repo state sha inside its own cell, because the prescribed order is add, render, commit and the commit carrying that line is never the commit named by it. REPO_STATE_RE tolerates the parenthetical without requiring it, so a STATE.md rendered before this change still parses — verified by `Two canaries written BEFORE the change and observed red: the two-claim discrimination test failed on the unreachable claim appearing in the FAIL block, and the render test failed on the annotation being absent. After the change both pass and the full suite is 335 passed, exit 0, against a 333 baseline taken the same way with uv run --with pytest. One EXISTING test was repaired rather than deleted: test_an_aged_claim_whose_subject_this_repo_cannot_see_says_so asserted exit != 0 on the scenario this fix makes green, so it was pinning the defect while testing the wording; its exit assertion is now == 0 and its docstring says why. The patched file is byte-identical to the copy cozycode had been running, verified with diff exit 0` (2026-09-06, e943c71)
+  ↳ path:skills/cozyplan/scripts/plan_tool.py path:tests/test_state_check.py
 
 ## In Development
 
