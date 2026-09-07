@@ -698,3 +698,36 @@ def test_what_render_writes_is_still_readable_by_older_plan_tools(pt, git_repo):
         "an old reader parses the row but pulls the wrong sha out of it"
     assert pt.REPO_STATE_RE.search(rendered), "this version cannot parse its own render"
     assert "HEAD at render time, never the commit that carries this line" in rendered
+
+
+def test_a_clear_says_when_the_same_key_survives_under_another_kind(pt, git_repo, capsys):
+    """A clear that exits 0 can still leave a row with that key rendering.
+
+    The kind-blind clear is refused now: clearing a gap as a claim exits 1 and names
+    the right kind. But a key living under BOTH kinds is a legal state, and clearing
+    one of them succeeds while the other keeps rendering. That is correct -- the caller
+    asked to clear the claim and the claim was cleared -- and it is also exactly what a
+    person reads as "that key is gone".
+
+    cozyapps found the original defect by reading the rendered file rather than the
+    command's report of what it did, and a gap sat closed-but-live for five days. This
+    does not refuse the operation; it removes the need to go and look.
+    """
+    for kind, what in (("claim", "a claim"), ("gap", "a gap too")):
+        pt.main(["state", "add", "--root", str(git_repo), "--kind", kind,
+                 "--key", "both", "--what", what])
+    capsys.readouterr()
+    assert pt.main(["state", "add", "--root", str(git_repo), "--kind", "claim",
+                    "--clear", "--key", "both"]) == 0
+    out = capsys.readouterr().out
+    assert "(cleared)" in out
+    assert "still live as gap" in out, \
+        "a surviving row under another kind was not mentioned, so the clear reads as total"
+
+    # And the ordinary case must stay quiet: nothing survives, nothing is said.
+    pt.main(["state", "add", "--root", str(git_repo), "--kind", "gap",
+             "--key", "lonely", "--what", "only one kind"])
+    capsys.readouterr()
+    assert pt.main(["state", "add", "--root", str(git_repo), "--kind", "gap",
+                    "--clear", "--key", "lonely"]) == 0
+    assert "still live as" not in capsys.readouterr().out

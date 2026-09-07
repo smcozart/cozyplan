@@ -3328,6 +3328,14 @@ def cmd_state(args) -> int:
             # file rather than the command's own report of what it did.
             known = {(e.get("kind"), e.get("key")) for e in read_state_log(root, log_path)
                      if e.get("key") and not e.get("cleared")}
+            # A key may legally live under two kinds, and clearing one leaves the other
+            # RENDERING. That is correct, and it is also what a person reads as "gone".
+            # cozyapps found a gap sitting closed-but-live for five days because the
+            # clear reported success and nothing said what it had not touched. Reported
+            # on the success line rather than refused: the operation is legitimate, and
+            # the cost was going to look, not the outcome.
+            survives = sorted({k for (k, key) in known
+                               if key == ev["key"] and k and k != ev["kind"]})
             if (ev["kind"], ev["key"]) not in known:
                 # The key exists under another kind. That is a different mistake from
                 # a typo and gets a different sentence, because it is the exact case
@@ -3364,6 +3372,10 @@ def cmd_state(args) -> int:
             f.write(json.dumps(ev, ensure_ascii=False, sort_keys=True) + "\n")
         print(f"state: appended {args.kind} '{ev['key']}'"
               + (" (cleared)" if args.clear else "") + f" -> {log_path}")
+        if args.clear and survives:
+            print(f"  note: this key is still live as {' and '.join(survives)}, so it "
+                  f"keeps rendering. Clear that too with: "
+                  f"--kind {survives[0]} --clear --key {ev['key']}")
         return 0
 
     if args.state_cmd == "migrate":
